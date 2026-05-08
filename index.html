@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FYP-26-S2-7: Maize Tassel Detection System</title>
+    <style>
+        :root {
+            --primary-color: #2E7D32; /* Agricultural green */
+            --secondary-color: #4CAF50;
+            --background-color: #F5F5F5;
+            --text-color: #333333;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: var(--background-color);
+            color: var(--text-color);
+            line-height: 1.6;
+        }
+
+        header {
+            background-color: var(--primary-color);
+            color: white;
+            padding: 2rem 0;
+            text-align: center;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        header h1 {
+            margin: 0;
+            font-size: 2.5rem;
+        }
+
+        header p {
+            margin: 10px 0 0 0;
+            font-size: 1.2rem;
+            opacity: 0.9;
+        }
+
+        nav {
+            background-color: #333;
+            display: flex;
+            justify-content: center;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+        }
+
+        nav a {
+            color: white;
+            text-decoration: none;
+            padding: 15px 30px;
+            font-weight: bold;
+            transition: background-color 0.3s;
+        }
+
+        nav a:hover {
+            background-color: var(--secondary-color);
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 40px auto;
+            padding: 0 20px;
+        }
+
+        section {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+
+        h2 {
+            border-bottom: 2px solid var(--primary-color);
+            padding-bottom: 10px;
+            color: var(--primary-color);
+        }
+
+        .team-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+
+        .team-member {
+            background: var(--background-color);
+            padding: 15px;
+            border-left: 4px solid var(--primary-color);
+            border-radius: 4px;
+        }
+
+        .team-member h3 {
+            margin: 0 0 5px 0;
+            color: var(--primary-color);
+        }
+
+        .role-badge {
+            display: inline-block;
+            background: var(--secondary-color);
+            color: white;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            margin-bottom: 10px;
+        }
+
+        .docs-list {
+            list-style: none;
+            padding: 0;
+        }
+
+        .docs-list li {
+            padding: 15px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .status-badge {
+            background: #E0E0E0;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 0.9rem;
+            font-weight: bold;
+        }
+
+        .status-badge.completed {
+            background: #D4EDDA;
+            color: #155724;
+        }
+
+        .status-badge.progress {
+            background: #FFF3CD;
+            color: #856404;
+        }
+
+        footer {
+            text-align: center;
+            padding: 20px;
+            background: #333;
+            color: white;
+            margin-top: 50px;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>Maize Tassel Detection System</h1>
+        <p>Group: FYP-26-S2-7</p>
+    </header>
+
+    <nav>
+        <a href="#about">Project Overview</a>
+        <a href="#team">Who is Who</a>
+        <a href="#docs">Project Documentation</a>
+    </nav>
+
+    <div class="container">
+        <!-- Section 1: Main Page / Objective -->
+        <section id="about">
+            <h2>Project Objective & Description</h2>
+            <p><strong>Objective:</strong> To develop an automated application that analyses maize field images to detect and count the number of maize tassels using deep learning techniques (YOLO). This system aims to support agricultural monitoring by reducing manual counting effort and improving the speed and consistency of maize estimation.</p>
+            
+            <p><strong>Key Features:</strong></p>
+            <ul>
+                <li><strong>Image Upload:</strong> Interface for users (Farmers/Researchers) to upload field images safely.</li>
+                <li><strong>Pre-processing & AI Inference:</strong> Utilizing YOLO for accurate object detection under various field conditions.</li>
+                <li><strong>Automated Counting:</strong> Returning bounding boxes and exact tassel counts with statistical confidence scores.</li>
+                <li><strong>Distributed Processing:</strong> Capable of analyzing large datasets securely to assist modern agribusiness management.</li>
+            </ul>
+        </section>
+
+        <!-- Section 2: Who is Who -->
+        <section id="team">
+            <h2>Team Members (Who is Who)</h2>
+            <p><strong>Supervisor:</strong> Mr. Singgo Jappit &nbsp;&nbsp;|&nbsp;&nbsp; <strong>Assessor:</strong> Mr. Tian Sion Hui</p>
+            
+            <div class="team-grid">
+                <div class="team-member">
+                    <h3>Philip</h3>
+                    <span class="role-badge">Team Leader & AI & Backend Code</span>
+                    <p><strong>ID:</strong> S8931707</p>
+                    <p><strong>Email:</strong> rpa150@uow.edu.au</p>
+                </div>
+
+                <div class="team-member">
+                    <h3>Li Qiankun</h3>
+                    <span class="role-badge">AI Code & Model Training</span>
+                    <p><strong>ID:</strong> 7912936</p>
+                    <p><strong>Email:</strong> qli013@mymail.sim.edu.sg</p>
+                </div>
+
+                <div class="team-member">
+                    <h3>Zhang Yixin</h3>
+                    <span class="role-badge">Frontend & Backend Integration</span>
+                    <p><strong>ID:</strong> 9107241</p>
+                    <p><strong>Email:</strong> yz845@uow.edu.au</p>
+                </div>
+
+                <div class="team-member">
+                    <h3>Li Baichuan</h3>
+                    <span class="role-badge">Frontend UI & Backend Services</span>
+                    <p><strong>ID:</strong> 9182111</p>
+                    <p><strong>Email:</strong> bl836@uow.edu.au</p>
+                </div>
+
+                <div class="team-member">
+                    <h3>Zhang Jialu</h3>
+                    <span class="role-badge">Frontend UI & Backend Services</span>
+                    <p><strong>ID:</strong> 9090411</p>
+                    <p><strong>Email:</strong> jz118@uow.edu.au</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 3: Project Documentations -->
+        <section id="docs">
+            <h2>Project Documentation (Works in Progress)</h2>
+            <p>This section outlines the current status of all project-related documentation for internal team communication.</p>
+            
+            <ul class="docs-list">
+                <li>
+                    <div>
+                        <strong>Project Briefing Notes</strong><br>
+                        Overview of initial Week 1 requirements.
+                    </div>
+                    <span class="status-badge completed">Completed (Week 1)</span>
+                </li>
+                <li>
+                    <div>
+                        <strong>Literature Review & Research findings</strong><br>
+                        Research on Big Data analysis and YOLO deep learning object detection for agronomy.
+                    </div>
+                    <span class="status-badge completed">Completed (Week 3)</span>
+                </li>
+                <li>
+                    <div>
+                        <strong>System Requirements Specification (SRS/PRD)</strong><br>
+                        Includes specific functional/non-functional requirements, WBS, Gantt Chart, System Architecture diagram, and UI Mockups.
+                    </div>
+                    <span class="status-badge completed">Completed (Week 4-5)</span>
+                </li>
+                 <li>
+                    <div>
+                        <strong>Design Specifications</strong><br>
+                        Includes system flowchart, UI, security database tables, and API architectures.
+                    </div>
+                    <span class="status-badge completed">Completed (Week 4-5)</span>
+                </li>
+                <li>
+                    <div>
+                        <strong>Working Prototype codebase (Sprint 1)</strong><br>
+                        Initial React/Flask integration and basic YOLO inference capability.
+                    </div>
+                    <span class="status-badge progress">In Progress</span>
+                </li>
+            </ul>
+        </section>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 FYP-26-S2-7 Maize Tassel Detection System. All rights reserved.</p>
+    </footer>
+
+</body>
+</html>
