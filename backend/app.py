@@ -1,11 +1,33 @@
+from __future__ import annotations
+
+import os
+import json
+import random
+from contextlib import contextmanager
+from datetime import date, datetime, timedelta
+from decimal import Decimal
+from pathlib import Path
+from typing import Any
+
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-import random
+
+try:
+    import psycopg
+    from psycopg.rows import dict_row
+except ImportError:  # Allows the prototype to run before dependencies are installed.
+    psycopg = None
+    dict_row = None
+
 
 app = Flask(__name__)
 CORS(app)
 
-# --- Mock Data ---
+UPLOAD_DIR = Path(__file__).resolve().parent / "uploads"
+UPLOAD_DIR.mkdir(exist_ok=True)
+
+
+# --- Mock Data: same domain entities as the frontend BCE prototype ---
 MOCK_RESULTS = [
     {"image_name": "maize_001.jpg", "count": 37, "confidence": 0.89, "processing_time": 2.4},
     {"image_name": "maize_002.jpg", "count": 42, "confidence": 0.91, "processing_time": 2.1},
@@ -15,57 +37,514 @@ MOCK_RESULTS = [
 ]
 
 MOCK_HISTORY = [
-    {"result_id": i+1, "image_name": r["image_name"], "tassel_count": r["count"],
-     "confidence_score": r["confidence"], "processing_time": r["processing_time"],
-     "created_at": f"2026-06-{10+i:02d}", "annotated_image_path": f"/mock/annotated_{r['image_name']}"}
+    {
+        "result_id": i + 1,
+        "image_id": i + 1,
+        "image_name": r["image_name"],
+        "tassel_count": r["count"],
+        "count": r["count"],
+        "confidence_score": r["confidence"],
+        "confidence": r["confidence"],
+        "processing_time": r["processing_time"],
+        "created_at": f"2026-06-{10 + i:02d}",
+        "annotated_image_path": f"/mock/annotated_{r['image_name']}",
+    }
     for i, r in enumerate(MOCK_RESULTS)
 ]
 
-# --- API Endpoints ---
 
-@app.route('/api/health', methods=['GET'])
+def db_config() -> dict[str, str]:
+    return {
+        "host": os.getenv("PGHOST", "localhost"),
+        "port": os.getenv("PGPORT", "5432"),
+        "dbname": os.getenv("PGDATABASE", "maize_detector"),
+        "user": os.getenv("PGUSER", "postgres"),
+        "password": os.getenv("PGPASSWORD", ""),
+    }
+
+
+@contextmanager
+def db_connection():
+    if psycopg is None:
+        raise RuntimeError("psycopg is not installed")
+
+    config = db_config()
+    if not config["password"]:
+        raise RuntimeError("PGPASSWORD is not configured")
+
+    conn = psycopg.connect(**config, row_factory=dict_row)
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def jsonable(value: Any) -> Any:
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, (date, datetime)):
+        return value.isoformat()
+    if isinstance(value, list):
+        return [jsonable(item) for item in value]
+    if isinstance(value, dict):
+        return {key: jsonable(item) for key, item in value.items()}
+    return value
+
+
+def ok(data: dict[str, Any], status: int = 200):
+    return jsonify(jsonable(data)), status
+
+
+def db_ready() -> tuple[bool, str | None]:
+    try:
+        with db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1 AS ok")
+                cur.fetchone()
+        return True, None
+    except Exception as exc:
+        return False, str(exc)
+
+
+def pick_mock_result(image_name: str | None = None) -> dict[str, Any]:
+    result = random.choice(MOCK_RESULTS).copy()
+    if image_name:
+        result["image_name"] = image_name
+    return {**result, "status": "success", "source": "mock"}
+
+
+def normalize_detection_row(row: dict[str, Any]) -> dict[str, Any]:
+    count = row.get("tassel_count", row.get("count", 0))
+    confidence = row.get("confidence_score", row.get("confidence", 0))
+    return {
+        "result_id": row.get("result_id"),
+        "image_id": row.get("image_id"),
+        "image_name": row.get("image_name"),
+        "tassel_count": count,
+        "count": count,
+        "confidence_score": confidence,
+        "confidence": confidence,
+        "processing_time": row.get("processing_time"),
+        "annotated_image_path": row.get("annotated_image_path"),
+        "bbox_data": row.get("bbox_data"),
+        "created_at": row.get("created_at"),
+        "status": "success",
+        "source": "database",
+    }
+
+
+def latest_detection_for_image(conn, image_id: int) -> dict[str, Any] | None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                dr.result_id,
+                dr.image_id,
+                i.image_name,
+                dr.tassel_count,
+                dr.confidence_score,
+                dr.processing_time,
+                dr.annotated_image_path,
+                dr.bbox_data,
+                dr.created_at
+            FROM detection_results dr
+            JOIN images i ON i.image_id = dr.image_id
+            WHERE dr.image_id = %s
+            ORDER BY dr.created_at DESC, dr.result_id DESC
+            LIMIT 1
+            """,
+            (image_id,),
+        )
+        row = cur.fetchone()
+    return normalize_detection_row(row) if row else None
+
+
+def create_image_record(conn, image_name: str, file_size: int | None = None, user_id: int | None = None) -> int:
+    user_id = user_id or 1
+    image_path = f"uploads/{image_name}"
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO images (user_id, image_name, image_path, status, file_size, access_level)
+            VALUES (%s, %s, %s, 'processing', %s, 'private')
+            RETURNING image_id
+            """,
+            (user_id, image_name, image_path, file_size),
+        )
+        return cur.fetchone()["image_id"]
+
+
+def create_mock_detection(conn, image_id: int) -> dict[str, Any]:
+    mock = random.choice(MOCK_RESULTS)
+    tassel_count = mock["count"]
+    confidence = mock["confidence"]
+    processing_time = mock["processing_time"]
+    bbox_data = {
+        "model": "prototype-yolo-mock",
+        "boxes": [
+            {"x": 100, "y": 60, "width": 80, "height": 80, "confidence": round(confidence - 0.02, 2)},
+            {"x": 250, "y": 120, "width": 80, "height": 80, "confidence": confidence},
+            {"x": 400, "y": 80, "width": 80, "height": 80, "confidence": round(confidence - 0.04, 2)},
+        ],
+    }
+
+    with conn.cursor() as cur:
+        cur.execute("UPDATE images SET status = 'completed' WHERE image_id = %s", (image_id,))
+        cur.execute(
+            """
+            INSERT INTO detection_results (
+                image_id,
+                tassel_count,
+                confidence_score,
+                annotated_image_path,
+                processing_time,
+                bbox_data
+            )
+            VALUES (%s, %s, %s, %s, %s, %s::jsonb)
+            RETURNING result_id
+            """,
+            (
+                image_id,
+                tassel_count,
+                confidence,
+                f"uploads/annotated_image_{image_id}.jpg",
+                processing_time,
+                json.dumps(bbox_data),
+            ),
+        )
+        result_id = cur.fetchone()["result_id"]
+
+    result = latest_detection_for_image(conn, image_id)
+    result["result_id"] = result_id
+    return result
+
+
+@app.route("/api/health", methods=["GET"])
 def health():
-    return jsonify({"status": "ok", "service": "Maize Detector API", "version": "0.1.0"})
+    ready, error = db_ready()
+    return ok(
+        {
+            "status": "ok",
+            "service": "Maize Detector API",
+            "version": "0.2.0",
+            "database": "connected" if ready else "mock",
+            "database_error": error if not ready else None,
+        }
+    )
 
-@app.route('/api/upload', methods=['POST'])
+
+@app.route("/api/upload", methods=["POST"])
 def upload():
-    # Mock: does not actually save file
-    return jsonify({"status": "success", "message": "Image uploaded", "image_id": random.randint(100, 999)})
+    file = request.files.get("image") or request.files.get("file")
+    payload = request.get_json(silent=True) or {}
+    user_id = request.form.get("user_id") or payload.get("user_id") or 1
 
-@app.route('/api/predict', methods=['POST'])
+    if file:
+        image_name = file.filename or "uploaded_maize_image.jpg"
+        file_size = request.content_length
+        file.save(UPLOAD_DIR / image_name)
+    else:
+        image_name = payload.get("image_name") or payload.get("imageName") or "uploaded_maize_image.jpg"
+        file_size = payload.get("file_size")
+
+    try:
+        with db_connection() as conn:
+            image_id = create_image_record(conn, image_name=image_name, file_size=file_size, user_id=int(user_id))
+        return ok(
+            {
+                "status": "success",
+                "message": "Image uploaded",
+                "image_id": image_id,
+                "image_name": image_name,
+                "source": "database",
+            },
+            201,
+        )
+    except Exception as exc:
+        return ok(
+            {
+                "status": "success",
+                "message": "Image upload accepted in mock mode",
+                "image_id": random.randint(100, 999),
+                "image_name": image_name,
+                "source": "mock",
+                "database_error": str(exc),
+            },
+            202,
+        )
+
+
+@app.route("/api/predict", methods=["POST"])
 def predict():
-    result = random.choice(MOCK_RESULTS)
-    return jsonify({**result, "status": "success"})
+    payload = request.get_json(silent=True) or {}
+    image_id = payload.get("image_id") or payload.get("imageId")
+    image_name = payload.get("image_name") or payload.get("imageName") or "maize_sample.jpg"
 
-@app.route('/api/history', methods=['GET'])
+    try:
+        with db_connection() as conn:
+            if image_id:
+                image_id = int(image_id)
+                existing = latest_detection_for_image(conn, image_id)
+                if existing:
+                    return ok(existing)
+            else:
+                image_id = create_image_record(conn, image_name=image_name, file_size=payload.get("file_size"))
+
+            result = create_mock_detection(conn, image_id)
+            return ok(result, 201)
+    except Exception as exc:
+        return ok({**pick_mock_result(image_name), "database_error": str(exc)}, 202)
+
+
+@app.route("/api/history", methods=["GET"])
 def history():
-    return jsonify({"records": MOCK_HISTORY, "total": len(MOCK_HISTORY)})
+    limit = min(int(request.args.get("limit", 20)), 100)
+    try:
+        with db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT
+                        dr.result_id,
+                        dr.image_id,
+                        i.image_name,
+                        dr.tassel_count,
+                        dr.confidence_score,
+                        dr.processing_time,
+                        dr.annotated_image_path,
+                        dr.bbox_data,
+                        dr.created_at
+                    FROM detection_results dr
+                    JOIN images i ON i.image_id = dr.image_id
+                    ORDER BY dr.created_at DESC, dr.result_id DESC
+                    LIMIT %s
+                    """,
+                    (limit,),
+                )
+                records = [normalize_detection_row(row) for row in cur.fetchall()]
+        return ok({"records": records, "total": len(records), "source": "database"})
+    except Exception as exc:
+        return ok({"records": MOCK_HISTORY[:limit], "total": len(MOCK_HISTORY[:limit]), "source": "mock", "database_error": str(exc)})
 
-@app.route('/api/report/daily', methods=['GET'])
+
+@app.route("/api/stats", methods=["GET"])
+def stats():
+    try:
+        with db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT
+                        COUNT(DISTINCT i.image_id) AS total_uploaded_images,
+                        COALESCE(SUM(dr.tassel_count), 0) AS total_detected_tassels,
+                        COALESCE(AVG(dr.tassel_count), 0) AS average_tassel_count
+                    FROM images i
+                    LEFT JOIN detection_results dr ON dr.image_id = i.image_id
+                    """
+                )
+                row = cur.fetchone()
+        return ok({**row, "model_status": "Active", "source": "database"})
+    except Exception as exc:
+        total = sum(r["count"] for r in MOCK_RESULTS)
+        return ok(
+            {
+                "total_uploaded_images": 128,
+                "total_detected_tassels": total,
+                "average_tassel_count": round(total / len(MOCK_RESULTS), 1),
+                "model_status": "Active",
+                "source": "mock",
+                "database_error": str(exc),
+            }
+        )
+
+
+def report_response(report_type: str):
+    fallback = {
+        "daily": {
+            "date": "2026-06-13",
+            "total_uploads": 24,
+            "successful_detections": 22,
+            "failed_detections": 2,
+            "average_tassel_count": 31,
+            "system_status": "Normal",
+        },
+        "weekly": {
+            "week": "2026-06-07 to 2026-06-13",
+            "total_uploads": 148,
+            "successful_detections": 139,
+            "failed_detections": 9,
+            "average_tassel_count": 33,
+            "most_active_day": "Friday",
+            "average_processing_time": 2.8,
+            "system_status": "Normal",
+        },
+        "monthly": {
+            "month": "June 2026",
+            "total_uploads": 520,
+            "successful_detections": 496,
+            "failed_detections": 24,
+            "average_tassel_count": 34,
+            "model_accuracy_estimate": 0.88,
+            "system_status": "Normal",
+        },
+    }
+
+    try:
+        with db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT *
+                    FROM reports
+                    WHERE report_type = %s
+                    ORDER BY report_date DESC, report_id DESC
+                    LIMIT 1
+                    """,
+                    (report_type,),
+                )
+                report = cur.fetchone()
+        if not report:
+            return ok({**fallback[report_type], "source": "mock"})
+
+        payload = {
+            "report_id": report["report_id"],
+            "report_type": report["report_type"],
+            "report_date": report["report_date"],
+            "total_uploads": report["total_uploads"],
+            "successful_detections": report["successful_detections"],
+            "failed_detections": report["failed_detections"],
+            "average_tassel_count": report["average_tassel_count"],
+            "chart_data": report["chart_data"],
+            "created_at": report["created_at"],
+            "system_status": "Normal",
+            "source": "database",
+        }
+
+        if report_type == "daily":
+            payload["date"] = report["report_date"]
+        elif report_type == "weekly":
+            end = report["report_date"]
+            start = end - timedelta(days=6)
+            payload["week"] = f"{start.isoformat()} to {end.isoformat()}"
+            payload["most_active_day"] = "Friday"
+            payload["average_processing_time"] = 2.8
+        else:
+            payload["month"] = report["report_date"].strftime("%B %Y")
+            payload["model_accuracy_estimate"] = 0.88
+
+        return ok(payload)
+    except Exception as exc:
+        return ok({**fallback[report_type], "source": "mock", "database_error": str(exc)})
+
+
+@app.route("/api/report/daily", methods=["GET"])
 def report_daily():
-    return jsonify({
-        "date": "2026-06-13",
-        "total_uploads": 24, "successful_detections": 22, "failed_detections": 2,
-        "average_tassel_count": 31, "system_status": "Normal"
-    })
+    return report_response("daily")
 
-@app.route('/api/report/weekly', methods=['GET'])
+
+@app.route("/api/report/weekly", methods=["GET"])
 def report_weekly():
-    return jsonify({
-        "week": "2026-06-07 to 2026-06-13",
-        "total_uploads": 148, "successful_detections": 139, "failed_detections": 9,
-        "most_active_day": "Friday", "average_processing_time": 2.8
-    })
+    return report_response("weekly")
 
-@app.route('/api/report/monthly', methods=['GET'])
+
+@app.route("/api/report/monthly", methods=["GET"])
 def report_monthly():
-    return jsonify({
-        "month": "June 2026",
-        "total_uploads": 520, "successful_detections": 496, "failed_detections": 24,
-        "average_tassel_count": 34, "model_accuracy_estimate": 0.88
-    })
+    return report_response("monthly")
 
-if __name__ == '__main__':
+
+@app.route("/api/users", methods=["GET"])
+def users():
+    try:
+        with db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT u.user_id, u.name, u.email, r.role_name AS role, u.status, u.created_at
+                    FROM users u
+                    JOIN roles r ON r.role_id = u.role_id
+                    ORDER BY u.user_id
+                    """
+                )
+                rows = cur.fetchall()
+        return ok({"users": rows, "total": len(rows), "source": "database"})
+    except Exception as exc:
+        return ok({"users": [], "total": 0, "source": "mock", "database_error": str(exc)})
+
+
+@app.route("/api/datasets", methods=["GET"])
+def datasets():
+    try:
+        with db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM datasets ORDER BY dataset_id")
+                rows = cur.fetchall()
+        return ok({"datasets": rows, "total": len(rows), "source": "database"})
+    except Exception as exc:
+        return ok({"datasets": [], "total": 0, "source": "mock", "database_error": str(exc)})
+
+
+@app.route("/api/logs", methods=["GET"])
+def logs():
+    try:
+        with db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT l.log_id, l.user_id, u.name AS user_name, l.action, l.details, l.created_at
+                    FROM system_logs l
+                    LEFT JOIN users u ON u.user_id = l.user_id
+                    ORDER BY l.created_at DESC, l.log_id DESC
+                    LIMIT 50
+                    """
+                )
+                rows = cur.fetchall()
+        return ok({"logs": rows, "total": len(rows), "source": "database"})
+    except Exception as exc:
+        return ok({"logs": [], "total": 0, "source": "mock", "database_error": str(exc)})
+
+
+@app.route("/api/fields", methods=["GET"])
+def fields():
+    # The Week 10 database does not yet include a fields table, so this endpoint
+    # keeps the Agronomist dashboard demonstrable until the next schema phase.
+    return ok(
+        {
+            "fields": [
+                {
+                    "field_id": 1,
+                    "field_name": "Field A - North",
+                    "location": "North Region",
+                    "latest_avg_count": 35,
+                    "baseline_count": 30,
+                    "health_status": "Healthy",
+                },
+                {
+                    "field_id": 2,
+                    "field_name": "Field B - East",
+                    "location": "East Region",
+                    "latest_avg_count": 18,
+                    "baseline_count": 30,
+                    "health_status": "At-Risk",
+                },
+                {
+                    "field_id": 3,
+                    "field_name": "Field C - South",
+                    "location": "South Region",
+                    "latest_avg_count": 42,
+                    "baseline_count": 40,
+                    "health_status": "Healthy",
+                },
+            ],
+            "source": "mock",
+        }
+    )
+
+
+if __name__ == "__main__":
     print("Maize Detector API running at http://localhost:5000")
-    print("Test: GET http://localhost:5000/api/health")
+    print("Database: PostgreSQL if PGPASSWORD is set, otherwise mock fallback")
     app.run(debug=True, port=5000)
