@@ -24,7 +24,7 @@ http://localhost:5000
 ## Main Endpoints
 
 - `GET /api/health`
-- `POST /api/upload`
+- `POST /api/upload` - accepts JPG/PNG files only
 - `POST /api/predict`
 - `GET /api/history`
 - `GET /api/stats`
@@ -32,8 +32,15 @@ http://localhost:5000
 - `GET /api/report/weekly`
 - `GET /api/report/monthly`
 - `GET /api/users`
+- `POST /api/users`
+- `PUT /api/users/<user_id>`
+- `DELETE /api/users/<user_id>` - disables the user to preserve database history
 - `GET /api/datasets`
 - `GET /api/logs`
 - `GET /api/fields`
+- `GET /api/backup`
+- `POST /api/backup`
 
 If PostgreSQL is unavailable, the backend falls back to mock data so the prototype remains demonstrable.
+
+`POST /api/backup` uses `pg_dump`. If PostgreSQL is not on `PATH`, set `PG_DUMP_PATH` to the full `pg_dump.exe` path.

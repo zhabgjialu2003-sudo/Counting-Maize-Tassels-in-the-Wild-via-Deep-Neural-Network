@@ -177,6 +177,15 @@ INSERT INTO system_logs (user_id, action, details, created_at) VALUES
     (4, 'access_policy',    'Updated Farmer access level: own_images',  '2026-06-10 12:00:00'),
     (4, 'role_changed',     'User Bob Brown: Farmer → Researcher',      '2026-06-08 15:30:00');
 
+-- Keep SERIAL sequences aligned after explicit sample IDs.
+SELECT setval(pg_get_serial_sequence('roles', 'role_id'), COALESCE((SELECT MAX(role_id) FROM roles), 1), true);
+SELECT setval(pg_get_serial_sequence('users', 'user_id'), COALESCE((SELECT MAX(user_id) FROM users), 1), true);
+SELECT setval(pg_get_serial_sequence('images', 'image_id'), COALESCE((SELECT MAX(image_id) FROM images), 1), true);
+SELECT setval(pg_get_serial_sequence('detection_results', 'result_id'), COALESCE((SELECT MAX(result_id) FROM detection_results), 1), true);
+SELECT setval(pg_get_serial_sequence('reports', 'report_id'), COALESCE((SELECT MAX(report_id) FROM reports), 1), true);
+SELECT setval(pg_get_serial_sequence('datasets', 'dataset_id'), COALESCE((SELECT MAX(dataset_id) FROM datasets), 1), true);
+SELECT setval(pg_get_serial_sequence('system_logs', 'log_id'), COALESCE((SELECT MAX(log_id) FROM system_logs), 1), true);
+
 -- ============================================================
 -- 5. Verify (run after execution to confirm)
 -- ============================================================

@@ -3,6 +3,9 @@ from __future__ import annotations
 import os
 import json
 import random
+import hashlib
+import shutil
+import subprocess
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -11,6 +14,7 @@ from typing import Any
 
 from flask import Flask, jsonify, request
 from flask_cors import CORS
+from werkzeug.utils import secure_filename
 
 try:
     import psycopg
@@ -25,6 +29,12 @@ CORS(app)
 
 UPLOAD_DIR = Path(__file__).resolve().parent / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
+BACKUP_DIR = Path(__file__).resolve().parent / "backups"
+BACKUP_DIR.mkdir(exist_ok=True)
+
+ALLOWED_IMAGE_EXTENSIONS = {"jpg", "jpeg", "png"}
+ALLOWED_IMAGE_MIME_TYPES = {"image/jpeg", "image/png"}
+VALID_USER_STATUSES = {"active", "disabled"}
 
 
 # --- Mock Data: same domain entities as the frontend BCE prototype ---
@@ -99,6 +109,10 @@ def ok(data: dict[str, Any], status: int = 200):
     return jsonify(jsonable(data)), status
 
 
+def fail(message: str, status: int = 400, **extra):
+    return ok({"status": "error", "message": message, **extra}, status)
+
+
 def db_ready() -> tuple[bool, str | None]:
     try:
         with db_connection() as conn:
@@ -115,6 +129,149 @@ def pick_mock_result(image_name: str | None = None) -> dict[str, Any]:
     if image_name:
         result["image_name"] = image_name
     return {**result, "status": "success", "source": "mock"}
+
+
+def allowed_image_filename(filename: str) -> bool:
+    suffix = Path(filename).suffix.lower().lstrip(".")
+    return suffix in ALLOWED_IMAGE_EXTENSIONS
+
+
+def validate_image_upload(filename: str, content_type: str | None = None) -> str | None:
+    if not filename:
+        return "Image filename is required"
+    if not allowed_image_filename(filename):
+        return "Only JPG and PNG image files are allowed"
+    normalized_type = content_type.split(";", 1)[0].lower() if content_type else None
+    if normalized_type and normalized_type not in ALLOWED_IMAGE_MIME_TYPES:
+        return "Only image/jpeg and image/png content types are allowed"
+    return None
+
+
+def clean_image_filename(filename: str) -> str:
+    suffix = Path(filename).suffix.lower()
+    clean_name = secure_filename(filename)
+    if not clean_name or "." not in clean_name:
+        suffix = suffix if suffix.lstrip(".") in ALLOWED_IMAGE_EXTENSIONS else ".jpg"
+        return f"uploaded_maize_image_{datetime.now().strftime('%Y%m%d_%H%M%S')}{suffix}"
+    return clean_name
+
+
+def hash_password(password: str) -> str:
+    digest = hashlib.sha256(password.encode("utf-8")).hexdigest()
+    return f"sha256${digest}"
+
+
+def normalize_user_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "user_id": row.get("user_id"),
+        "name": row.get("name"),
+        "email": row.get("email"),
+        "role_id": row.get("role_id"),
+        "role": row.get("role"),
+        "status": row.get("status"),
+        "created_at": row.get("created_at"),
+    }
+
+
+def fetch_user(conn, user_id: int) -> dict[str, Any] | None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT u.user_id, u.name, u.email, u.role_id, r.role_name AS role, u.status, u.created_at
+            FROM users u
+            JOIN roles r ON r.role_id = u.role_id
+            WHERE u.user_id = %s
+            """,
+            (user_id,),
+        )
+        row = cur.fetchone()
+    return normalize_user_row(row) if row else None
+
+
+def resolve_role_id(conn, payload: dict[str, Any], required: bool = False) -> int | None:
+    role_id = payload.get("role_id") or payload.get("roleId")
+    role_name = payload.get("role") or payload.get("role_name") or payload.get("roleName")
+
+    with conn.cursor() as cur:
+        if role_id is not None:
+            cur.execute("SELECT role_id FROM roles WHERE role_id = %s", (int(role_id),))
+            row = cur.fetchone()
+        elif role_name:
+            cur.execute("SELECT role_id FROM roles WHERE LOWER(role_name) = LOWER(%s)", (str(role_name),))
+            row = cur.fetchone()
+        elif required:
+            raise ValueError("role_id or role is required")
+        else:
+            return None
+
+    if not row:
+        raise ValueError("Role does not exist")
+    return row["role_id"]
+
+
+def validate_user_payload(payload: dict[str, Any], creating: bool = False) -> str | None:
+    if creating:
+        for field in ("name", "email"):
+            if not payload.get(field):
+                return f"{field} is required"
+        if not (payload.get("password") or payload.get("password_hash") or payload.get("passwordHash")):
+            return "password or password_hash is required"
+
+    if "email" in payload and payload.get("email"):
+        email = str(payload["email"])
+        if "@" not in email or "." not in email.rsplit("@", 1)[-1]:
+            return "A valid email address is required"
+
+    status = payload.get("status")
+    if status and status not in VALID_USER_STATUSES:
+        return "status must be active or disabled"
+
+    return None
+
+
+def db_error_response(exc: Exception, fallback_status: int = 500):
+    message = str(exc)
+    if "users_email_key" in message:
+        return fail("Email already exists", 409)
+    if "duplicate key value" in message:
+        return fail("Duplicate database key", 409, database_error=message)
+    if "PGPASSWORD is not configured" in message:
+        return fail("Database password is not configured", 503, database_error=message)
+    return fail("Database operation failed", fallback_status, database_error=message)
+
+
+def backup_file_info(path: Path) -> dict[str, Any]:
+    stat = path.stat()
+    return {
+        "file_name": path.name,
+        "path": f"backups/{path.name}",
+        "size_bytes": stat.st_size,
+        "created_at": datetime.fromtimestamp(stat.st_ctime).isoformat(),
+        "modified_at": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+    }
+
+
+def list_backup_files() -> list[dict[str, Any]]:
+    files = []
+    for pattern in ("*.sql", "*.dump"):
+        files.extend(BACKUP_DIR.glob(pattern))
+    unique_files = sorted(set(files), key=lambda item: item.stat().st_mtime, reverse=True)
+    return [backup_file_info(path) for path in unique_files if path.is_file()]
+
+
+def find_pg_dump() -> str | None:
+    configured = os.getenv("PG_DUMP_PATH")
+    if configured and Path(configured).exists():
+        return configured
+
+    for candidate in (
+        r"C:\PostgreSQL\18\bin\pg_dump.exe",
+        r"C:\Program Files\PostgreSQL\18\bin\pg_dump.exe",
+    ):
+        if Path(candidate).exists():
+            return candidate
+
+    return shutil.which("pg_dump")
 
 
 def normalize_detection_row(row: dict[str, Any]) -> dict[str, Any]:
@@ -244,11 +401,21 @@ def upload():
     user_id = request.form.get("user_id") or payload.get("user_id") or 1
 
     if file:
-        image_name = file.filename or "uploaded_maize_image.jpg"
+        original_name = file.filename or "uploaded_maize_image.jpg"
+        validation_error = validate_image_upload(original_name, file.content_type)
+        if validation_error:
+            return fail(validation_error, 400)
+
+        image_name = clean_image_filename(original_name)
         file_size = request.content_length
         file.save(UPLOAD_DIR / image_name)
     else:
         image_name = payload.get("image_name") or payload.get("imageName") or "uploaded_maize_image.jpg"
+        validation_error = validate_image_upload(image_name)
+        if validation_error:
+            return fail(validation_error, 400)
+
+        image_name = clean_image_filename(image_name)
         file_size = payload.get("file_size")
 
     try:
@@ -456,23 +623,161 @@ def report_monthly():
     return report_response("monthly")
 
 
-@app.route("/api/users", methods=["GET"])
+@app.route("/api/users", methods=["GET", "POST", "PUT", "DELETE"])
 def users():
+    if request.method in {"PUT", "DELETE"}:
+        payload = request.get_json(silent=True) or {}
+        user_id = payload.get("user_id") or payload.get("userId") or request.args.get("user_id") or request.args.get("userId")
+        if not user_id:
+            return fail("user_id is required", 400)
+        try:
+            return user_detail(int(user_id))
+        except ValueError:
+            return fail("user_id must be an integer", 400)
+
+    if request.method == "POST":
+        payload = request.get_json(silent=True) or {}
+        validation_error = validate_user_payload(payload, creating=True)
+        if validation_error:
+            return fail(validation_error, 400)
+
+        try:
+            with db_connection() as conn:
+                role_id = resolve_role_id(conn, payload, required=True)
+                password_hash = payload.get("password_hash") or payload.get("passwordHash")
+                if not password_hash:
+                    password_hash = hash_password(str(payload["password"]))
+
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO users (name, email, password_hash, role_id, status)
+                        VALUES (%s, %s, %s, %s, %s)
+                        RETURNING user_id
+                        """,
+                        (
+                            str(payload["name"]).strip(),
+                            str(payload["email"]).strip(),
+                            password_hash,
+                            role_id,
+                            payload.get("status", "active"),
+                        ),
+                    )
+                    user_id = cur.fetchone()["user_id"]
+
+                user = fetch_user(conn, user_id)
+            return ok({"status": "success", "message": "User created", "user": user, "source": "database"}, 201)
+        except ValueError as exc:
+            return fail(str(exc), 400)
+        except Exception as exc:
+            return db_error_response(exc)
+
     try:
         with db_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT u.user_id, u.name, u.email, r.role_name AS role, u.status, u.created_at
+                    SELECT u.user_id, u.name, u.email, u.role_id, r.role_name AS role, u.status, u.created_at
                     FROM users u
                     JOIN roles r ON r.role_id = u.role_id
                     ORDER BY u.user_id
                     """
                 )
-                rows = cur.fetchall()
+                rows = [normalize_user_row(row) for row in cur.fetchall()]
         return ok({"users": rows, "total": len(rows), "source": "database"})
     except Exception as exc:
         return ok({"users": [], "total": 0, "source": "mock", "database_error": str(exc)})
+
+
+@app.route("/api/users/<int:user_id>", methods=["GET", "PUT", "DELETE"])
+def user_detail(user_id: int):
+    if request.method == "GET":
+        try:
+            with db_connection() as conn:
+                user = fetch_user(conn, user_id)
+            if not user:
+                return fail("User not found", 404)
+            return ok({"user": user, "source": "database"})
+        except Exception as exc:
+            return db_error_response(exc)
+
+    if request.method == "PUT":
+        payload = request.get_json(silent=True) or {}
+        validation_error = validate_user_payload(payload)
+        if validation_error:
+            return fail(validation_error, 400)
+
+        try:
+            with db_connection() as conn:
+                if not fetch_user(conn, user_id):
+                    return fail("User not found", 404)
+
+                updates = []
+                params: list[Any] = []
+
+                if "name" in payload:
+                    if not payload.get("name"):
+                        return fail("name cannot be empty", 400)
+                    updates.append("name = %s")
+                    params.append(str(payload["name"]).strip())
+
+                if "email" in payload:
+                    if not payload.get("email"):
+                        return fail("email cannot be empty", 400)
+                    updates.append("email = %s")
+                    params.append(str(payload["email"]).strip())
+
+                role_id = resolve_role_id(conn, payload, required=False)
+                if role_id is not None:
+                    updates.append("role_id = %s")
+                    params.append(role_id)
+
+                if "status" in payload:
+                    updates.append("status = %s")
+                    params.append(payload["status"])
+
+                password_hash = payload.get("password_hash") or payload.get("passwordHash")
+                if payload.get("password"):
+                    password_hash = hash_password(str(payload["password"]))
+                if password_hash:
+                    updates.append("password_hash = %s")
+                    params.append(password_hash)
+
+                if not updates:
+                    return fail("No user fields provided to update", 400)
+
+                params.append(user_id)
+                with conn.cursor() as cur:
+                    cur.execute(f"UPDATE users SET {', '.join(updates)} WHERE user_id = %s", params)
+
+                user = fetch_user(conn, user_id)
+            return ok({"status": "success", "message": "User updated", "user": user, "source": "database"})
+        except ValueError as exc:
+            return fail(str(exc), 400)
+        except Exception as exc:
+            return db_error_response(exc)
+
+    try:
+        with db_connection() as conn:
+            user = fetch_user(conn, user_id)
+            if not user:
+                return fail("User not found", 404)
+
+            with conn.cursor() as cur:
+                cur.execute("UPDATE users SET status = 'disabled' WHERE user_id = %s", (user_id,))
+
+            user = fetch_user(conn, user_id)
+        return ok(
+            {
+                "status": "success",
+                "message": "User disabled",
+                "delete_mode": "soft",
+                "user": user,
+                "source": "database",
+            }
+        )
+    except Exception as exc:
+        return db_error_response(exc)
 
 
 @app.route("/api/datasets", methods=["GET"])
@@ -505,6 +810,68 @@ def logs():
         return ok({"logs": rows, "total": len(rows), "source": "database"})
     except Exception as exc:
         return ok({"logs": [], "total": 0, "source": "mock", "database_error": str(exc)})
+
+
+@app.route("/api/backup", methods=["GET", "POST"])
+def backup():
+    if request.method == "GET":
+        backups = list_backup_files()
+        return ok({"backups": backups, "total": len(backups), "source": "filesystem"})
+
+    config = db_config()
+    if not config["password"]:
+        return fail("Database password is not configured", 503)
+
+    pg_dump = find_pg_dump()
+    if not pg_dump:
+        return fail("pg_dump was not found. Set PG_DUMP_PATH or add PostgreSQL bin to PATH.", 503)
+
+    database_name = secure_filename(config["dbname"]) or "maize_detector"
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_path = BACKUP_DIR / f"{database_name}_{timestamp}.sql"
+
+    command = [
+        pg_dump,
+        "-h",
+        config["host"],
+        "-p",
+        config["port"],
+        "-U",
+        config["user"],
+        "-d",
+        config["dbname"],
+        "-F",
+        "p",
+        "-f",
+        str(backup_path),
+    ]
+    env = os.environ.copy()
+    env["PGPASSWORD"] = config["password"]
+
+    try:
+        completed = subprocess.run(command, env=env, capture_output=True, text=True, timeout=90, check=False)
+        if completed.returncode != 0:
+            if backup_path.exists():
+                backup_path.unlink()
+            return fail(
+                "Database backup failed",
+                500,
+                backup_error=(completed.stderr or completed.stdout or "pg_dump returned a non-zero exit code").strip(),
+            )
+
+        return ok(
+            {
+                "status": "success",
+                "message": "Database backup created",
+                "backup": backup_file_info(backup_path),
+                "source": "pg_dump",
+            },
+            201,
+        )
+    except subprocess.TimeoutExpired:
+        if backup_path.exists():
+            backup_path.unlink()
+        return fail("Database backup timed out", 504)
 
 
 @app.route("/api/fields", methods=["GET"])
