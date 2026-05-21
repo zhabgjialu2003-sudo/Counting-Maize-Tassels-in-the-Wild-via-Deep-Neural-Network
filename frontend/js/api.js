@@ -65,6 +65,29 @@ async function apiPost(endpoint, body) {
   }
 }
 
+// === Field Normalization (snake_case API → camelCase frontend) ===
+function normalizeResult(raw) {
+  return {
+    resultId:   raw.result_id   ?? raw.resultId   ?? Date.now(),
+    imageName:  raw.image_name  ?? raw.imageName  ?? 'maize_sample.jpg',
+    tasselCount:raw.count       ?? raw.tasselCount ?? raw.tassel_count ?? 0,
+    confidenceScore: raw.confidence ?? raw.confidenceScore ?? raw.confidence_score ?? 0.85,
+    processingTime: raw.processing_time ?? raw.processingTime ?? raw.time ?? 2.0,
+    createdAt:  raw.created_at  ?? raw.createdAt  ?? new Date().toISOString().slice(0,10),
+    annotatedImagePath: raw.annotated_image_path ?? raw.annotatedImagePath ?? null,
+  };
+}
+
+// === Mock Fallback Helpers ===
+function mockPredict(imageName) {
+  const base = MockData.results[Math.floor(Math.random() * MockData.results.length)];
+  return normalizeResult({ ...base, resultId: Date.now(), imageName: imageName || base.imageName });
+}
+
+function mockHistory() {
+  return { records: MockData.results.map(r => normalizeResult(r)), total: MockData.results.length };
+}
+
 // === Navigation Helper ===
 function setActiveNav() {
   const page = location.pathname.split('/').pop().replace('.html', '');

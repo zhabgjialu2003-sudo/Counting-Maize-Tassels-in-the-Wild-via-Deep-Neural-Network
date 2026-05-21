@@ -75,32 +75,41 @@
 <script>
 setActiveNav();
 
-// Load result from session or URL param or mock
+// Load result from session, URL param, or mock — normalize all sources
 let resultData = null;
 const stored = sessionStorage.getItem('lastResult');
 const params = new URLSearchParams(location.search);
 const resultId = params.get('id');
 
 if (stored) {
-  resultData = JSON.parse(stored);
+  resultData = normalizeResult(JSON.parse(stored));
 } else if (resultId) {
-  resultData = MockData.results.find(r => r.resultId === parseInt(resultId));
+  const found = MockData.results.find(r => r.resultId === parseInt(resultId));
+  resultData = found ? normalizeResult(found) : null;
 }
-if (!resultData) resultData = MockData.results[0];
+if (!resultData) resultData = normalizeResult(MockData.results[0]);
 
-// Populate UI (matching A.3 BCE boundary methods)
+// Populate UI — BCE A.3 ResultPage: displayCount + displayConfidence + showProcessingTime
 document.getElementById('imageNameLabel').textContent = 'Image: ' + resultData.imageName;
 document.getElementById('countDisplay').textContent = resultData.tasselCount;
 document.getElementById('confidenceDisplay').textContent = formatPercent(resultData.confidenceScore);
 document.getElementById('timeDisplay').textContent = resultData.processingTime.toFixed(1) + 's';
 
-// Annotated image — use a placeholder SVG simulating bounding boxes
-const placeholderAnnotated = `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400"><rect width="600" height="400" fill="#e8f5e9"/><text x="300" y="180" text-anchor="middle" fill="#2d6a4f" font-size="18">Maize Field Image — ${resultData.tasselCount} Tassels Detected</text><rect x="100" y="60" width="80" height="80" fill="none" stroke="#e76f51" stroke-width="2" rx="4"/><rect x="250" y="120" width="80" height="80" fill="none" stroke="#e76f51" stroke-width="2" rx="4"/><rect x="400" y="80" width="80" height="80" fill="none" stroke="#e76f51" stroke-width="2" rx="4"/><rect x="150" y="220" width="80" height="80" fill="none" stroke="#e76f51" stroke-width="2" rx="4"/><rect x="350" y="200" width="80" height="80" fill="none" stroke="#e76f51" stroke-width="2" rx="4"/></svg>`)}`;
-document.getElementById('annotatedImg').src = placeholderAnnotated;
+// BCE A.4 ResultPage: showAnnotatedImage — bounding boxes via SVG placeholder
+const svgAnnotated = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400">
+  <rect width="600" height="400" fill="#e8f5e9"/>
+  <text x="300" y="180" text-anchor="middle" fill="#2d6a4f" font-size="18">Maize Field Image — ${resultData.tasselCount} Tassels Detected</text>
+  ${[ [100,60],[250,120],[400,80],[150,220],[350,200] ].map(([x,y]) => `<rect x="${x}" y="${y}" width="80" height="80" fill="none" stroke="#e76f51" stroke-width="2" rx="4"/>`).join('')}
+</svg>`;
+document.getElementById('annotatedImg').src = 'data:image/svg+xml,' + encodeURIComponent(svgAnnotated);
 
-// Original image placeholder
-const placeholderOriginal = `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400"><rect width="600" height="400" fill="#f0f4c3"/><text x="300" y="190" text-anchor="middle" fill="#558b2f" font-size="18">Original Maize Field Photo</text><text x="300" y="220" text-anchor="middle" fill="#888" font-size="12">${resultData.imageName}</text></svg>`)}`;
-document.getElementById('originalImg').src = placeholderOriginal;
+// BCE A.4 ResultPage: showOriginalImage — plain field photo placeholder
+const svgOriginal = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400">
+  <rect width="600" height="400" fill="#f0f4c3"/>
+  <text x="300" y="190" text-anchor="middle" fill="#558b2f" font-size="18">Original Maize Field Photo</text>
+  <text x="300" y="220" text-anchor="middle" fill="#888" font-size="12">${resultData.imageName}</text>
+</svg>`;
+document.getElementById('originalImg').src = 'data:image/svg+xml,' + encodeURIComponent(svgOriginal);
 
 function toggleCompare() {
   const checked = document.getElementById('compareToggle').checked;

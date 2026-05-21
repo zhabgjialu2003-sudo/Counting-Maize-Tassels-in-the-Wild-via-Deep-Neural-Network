@@ -53,16 +53,41 @@ function renderTab(type) {
   if (type === 'users') {
     // D.1 BCE: AdminPage — showUserTable + addUserForm + editUser + disableUser + searchUser
     const users = MockData.users;
+    let rowsHtml = '';
+    users.forEach((u, i) => {
+      const statusBadge = u.status === 'active' ? 'badge-green' : 'badge-red';
+      const toggleLabel = u.status === 'active' ? 'Disable' : 'Enable';
+      rowsHtml += '<tr>';
+      rowsHtml += '<td>' + u.name + '</td>';
+      rowsHtml += '<td>' + u.email + '</td>';
+      rowsHtml += '<td>' + u.role + '</td>';
+      rowsHtml += '<td><span class="badge ' + statusBadge + '">' + u.status + '</span></td>';
+      rowsHtml += '<td>';
+      rowsHtml += '<button class="btn btn-sm btn-outline" data-action="edit" data-userid="' + u.userId + '">Edit</button> ';
+      rowsHtml += '<button class="btn btn-sm btn-outline" data-action="toggle" data-userid="' + u.userId + '">' + toggleLabel + '</button>';
+      rowsHtml += '</td></tr>';
+    });
     el.innerHTML = `
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.75rem;margin-bottom:1rem;">
-          <input type="text" placeholder="Search by name or email..." class="form-group" style="max-width:300px;margin-bottom:0;" oninput="searchUsers(this.value)">
-          <button class="btn btn-primary btn-sm" onclick="alert('Add user form opened')">+ Add User</button>
+          <input type="text" placeholder="Search by name or email..." oninput="filterUserTable(this.value)" style="max-width:300px;">
+          <button class="btn btn-primary btn-sm" data-action="addUser">+ Add User</button>
         </div>
-        <div class="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead><tbody id="userTable">
-          ${users.map(u => `<tr><td>${u.name}</td><td>${u.email}</td><td>${u.role}</td><td><span class="badge ${u.status==='active'?'badge-green':'badge-red'}">${u.status}</span></td><td><button class="btn btn-sm btn-outline" onclick="alert('Edit ${u.name}')">Edit</button> <button class="btn btn-sm btn-outline" onclick="alert('${u.name} ${u.status===\\'active\\'?\\'disabled\\':\\'enabled\\'}')">${u.status==='active'?'Disable':'Enable'}</button></td></tr>`).join('')}
-        </tbody></table></div>
+        <div class="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody id="userTable">${rowsHtml}</tbody></table></div>
       </div>`;
+    // Delegate click events on user table
+    document.getElementById('userTable').onclick = function(e) {
+      const btn = e.target.closest('button');
+      if (!btn) return;
+      const action = btn.dataset.action;
+      const uid = parseInt(btn.dataset.userid);
+      const user = users.find(u => u.userId === uid);
+      if (action === 'edit' && user) alert('Editing: ' + user.name);
+      if (action === 'toggle' && user) alert(user.name + ' ' + (user.status === 'active' ? 'disabled' : 'enabled'));
+    };
+    // Delegate add user
+    el.querySelector('[data-action="addUser"]').onclick = function() { alert('Add user form opened'); };
   } else if (type === 'storage') {
     // D.2 BCE: AdminPage — showStorageStatus + manageAccessControl + viewImageStore
     el.innerHTML = `
@@ -100,9 +125,24 @@ function renderTab(type) {
           <button class="btn btn-primary btn-sm" onclick="alert('Upload new dataset dialog')">+ Upload New</button>
         </div>
         <div class="table-wrap"><table><thead><tr><th>Name</th><th>Images</th><th>Annotation</th><th>Format</th><th>Actions</th></tr></thead><tbody>
-          ${ds.map(d => `<tr><td>${d.datasetName}</td><td>${d.totalImages}</td><td><span class="badge ${d.annotationStatus==='completed'?'badge-green':d.annotationStatus==='in_progress'?'badge-yellow':'badge-red'}">${d.annotationStatus}</span></td><td>${d.annotationFormat||'—'}</td><td><button class="btn btn-sm btn-outline" onclick="alert('Edit annotations for ${d.datasetName}')">Edit</button> <button class="btn btn-sm btn-outline" style="color:var(--red);" onclick="confirm('Delete ${d.datasetName}?') && alert('Deleted')">Delete</button></td></tr>`).join('')}
+          ${ds.map((d,i) => {
+            const badgeClass = d.annotationStatus === 'completed' ? 'badge-green' : d.annotationStatus === 'in_progress' ? 'badge-yellow' : 'badge-red';
+            return '<tr><td>' + d.datasetName + '</td><td>' + d.totalImages + '</td><td><span class="badge ' + badgeClass + '">' + d.annotationStatus + '</span></td><td>' + (d.annotationFormat || '—') + '</td><td><button class="btn btn-sm btn-outline" data-dsaction="edit" data-dsid="' + d.datasetId + '">Edit</button> <button class="btn btn-sm btn-outline" style="color:var(--red);" data-dsaction="delete" data-dsid="' + d.datasetId + '">Delete</button></td></tr>';
+          }).join('')}
         </tbody></table></div>
       </div>`;
+    // Dataset click delegation
+    setTimeout(() => {
+      const dsTable = document.querySelector('#tabContent table');
+      if (dsTable) dsTable.onclick = function(e) {
+        const btn = e.target.closest('button');
+        if (!btn) return;
+        const action = btn.dataset.dsaction;
+        const dsId = btn.dataset.dsid;
+        if (action === 'edit') alert('Editing dataset #' + dsId);
+        if (action === 'delete' && confirm('Delete dataset #' + dsId + '?')) alert('Deleted');
+      };
+    }, 0);
   } else if (type === 'permissions') {
     // D.5 BCE: AdminPage — editPermissions + UserController — updateRole + updatePermissions
     el.innerHTML = `
@@ -135,6 +175,15 @@ function renderTab(type) {
         </tbody></table></div>
       </div>`;
   }
+}
+
+function filterUserTable(query) {
+  const rows = document.querySelectorAll('#userTable tr');
+  rows.forEach(row => {
+    const name = row.cells[0].textContent.toLowerCase();
+    const email = row.cells[1].textContent.toLowerCase();
+    row.style.display = (!query || name.includes(query.toLowerCase()) || email.includes(query.toLowerCase())) ? '' : 'none';
+  });
 }
 
 renderTab('users');
