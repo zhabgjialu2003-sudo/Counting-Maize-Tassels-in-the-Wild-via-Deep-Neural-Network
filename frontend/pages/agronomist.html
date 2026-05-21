@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Maize Detector — Agronomist Dashboard</title>
+<link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+
+<nav class="nav">
+  <a class="nav-brand" href="dashboard.html">Maize Detector</a>
+  <div class="nav-links">
+    <a href="dashboard.html">Home</a>
+    <a href="upload.html">Upload</a>
+    <a href="history.html">History</a>
+    <a href="report.html">Report</a>
+    <a href="export.html">Export</a>
+    <a href="agronomist.html">Agronomist</a>
+    <a href="admin.html">Admin</a>
+  </div>
+</nav>
+
+<div class="container">
+  <h2 class="page-title">Agronomist Dashboard</h2>
+  <p class="page-subtitle">Multi-field monitoring, health evaluation, and insights</p>
+
+  <!-- Tabs for different BCE AgronomistPage functions -->
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('dashboard')">Multi-Field (C.4)</button>
+    <button class="tab" onclick="switchTab('health')">Health (C.1)</button>
+    <button class="tab" onclick="switchTab('growth')">Growth (C.2)</button>
+    <button class="tab" onclick="switchTab('alerts')">Alerts (C.3)</button>
+    <button class="tab" onclick="switchTab('insights')">Insights (C.5)</button>
+  </div>
+
+  <div id="tabContent"></div>
+</div>
+
+<script src="../js/api.js"></script>
+<script>
+setActiveNav();
+const fields = MockData.fields;
+
+function switchTab(type) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  event.target.classList.add('active');
+  renderTab(type);
+}
+
+function renderTab(type) {
+  const el = document.getElementById('tabContent');
+  if (type === 'dashboard') {
+    // C.4 BCE: AgronomistPage — showFieldGrid + showStatusBadge + filterByRegion
+    el.innerHTML = `<div><div class="form-group" style="max-width:250px;margin-bottom:1rem;"><label>Filter by Region</label><select onchange="filterFields(this.value)"><option value="">All Regions</option><option>North Region</option><option>East Region</option><option>South Region</option></select></div><div class="field-grid" id="fieldGrid">${renderFieldCards(fields)}</div></div>`;
+  } else if (type === 'health') {
+    // C.1 BCE: AgronomistPage — showHealthIndicator + showTasselCount + addRecommendation
+    const f = fields[1]; // default to Field B (at-risk)
+    el.innerHTML = `<div class="card"><h3 style="color:var(--green);">${f.fieldName} — Health Evaluation</h3><div class="card-grid" style="margin-top:1rem;"><div class="stat-card"><div class="value">${f.latestAvgCount}</div><div class="label">Latest Tassel Count</div></div><div class="stat-card"><div class="value">${f.baselineCount}</div><div class="label">Baseline Count</div></div><div class="stat-card"><div class="value" style="color:${f.healthStatus==='Healthy'?'var(--green)':'var(--red)'};">${f.healthStatus}</div><div class="label">Health Status</div></div></div><div class="form-group" style="margin-top:1rem;"><label>Recommendation</label><textarea rows="3" placeholder="Enter farming recommendation..."></textarea></div><button class="btn btn-primary" onclick="alert('Evaluation saved! Notification sent to farmer.')">Submit Evaluation</button></div>`;
+  } else if (type === 'growth') {
+    // C.2 BCE: AgronomistPage — showGrowthChart + selectTimeRange + showWeeklyAverage
+    el.innerHTML = `<div class="card"><div style="display:flex;gap:0.75rem;align-items:end;margin-bottom:1rem;"><div class="form-group" style="margin-bottom:0;"><label>Select Field</label><select>${fields.map(f=>`<option>${f.fieldName}</option>`).join('')}</select></div><div class="form-group" style="margin-bottom:0;"><label>Period (weeks)</label><select><option>2</option><option selected>4</option><option>8</option></select></div></div><h4>Weekly Average Tassel Counts</h4><div style="display:flex;align-items:end;gap:1.5rem;height:220px;padding:1rem;background:var(--gray-50);border-radius:6px;"><div style="text-align:center;"><div style="width:60px;height:80px;background:var(--green-light);border-radius:6px 6px 0 0;"></div><small>Wk1 (20)</small></div><div style="text-align:center;"><div style="width:60px;height:100px;background:var(--green-light);border-radius:6px 6px 0 0;"></div><small>Wk2 (25)</small></div><div style="text-align:center;"><div style="width:60px;height:124px;background:var(--green-light);border-radius:6px 6px 0 0;"></div><small>Wk3 (31)</small></div><div style="text-align:center;"><div style="width:60px;height:140px;background:var(--green);border-radius:6px 6px 0 0;"></div><small>Wk4 (35)</small></div></div><p class="info-text" style="margin-top:1rem;">Growth Rate: <strong style="color:var(--green)">+15/week</strong> | Stage: <strong>VT Tasseling</strong></p></div>`;
+  } else if (type === 'alerts') {
+    // C.3 BCE: AgronomistPage — highlightAnomaly + showWarningBadge + requestReview
+    el.innerHTML = `<div class="card"><div class="alert alert-warning" style="display:flex;align-items:center;gap:0.5rem;"><span style="font-size:1.5rem;">&#9888;</span><div><strong>Abnormal Pattern Detected — Field B (East)</strong><br>Tassel count: 18 (Baseline: 30). Drop of 40% on Mon/Tue. Possible irrigation issue.</div></div>${fields.map(f=>`<div class="card" style="display:flex;justify-content:space-between;align-items:center;border:1px solid var(--gray-100);margin-bottom:0.5rem;"><div><strong>${f.fieldName}</strong> — ${f.location}<br><small>Baseline: ${f.baselineCount} | Latest: ${f.latestAvgCount}</small></div><span class="badge ${f.healthStatus==='Healthy'?'badge-green':'badge-red'}">${f.healthStatus==='Healthy'?'Normal':'Anomaly'}</span><button class="btn btn-sm btn-outline" onclick="alert('Review requested for ${f.fieldName}')">Review</button></div>`).join('')}</div>`;
+  } else if (type === 'insights') {
+    // C.5 BCE: AgronomistPage — showInsightCards + showRecommendation + exportSummary
+    el.innerHTML = `<div class="card"><h3 style="color:var(--green);">Key Takeaways</h3><div class="card" style="border-left:4px solid var(--green);">All fields show healthy tassel counts except Field B</div><div class="card" style="border-left:4px solid var(--red);">Field B: 20% tassel deficit detected — inspect irrigation before next survey</div><div class="card" style="border-left:4px solid var(--gold);">Field A: Growth rate consistent with VT tasseling stage</div><button class="btn btn-outline" style="margin-top:1rem;" onclick="alert('Summary exported!')">Export Summary</button></div>`;
+  }
+}
+
+function renderFieldCards(fields) {
+  return fields.map(f => `<div class="card" style="text-align:center;border:2px solid ${f.status==='Warning'?'var(--red)':'var(--green-light)'};"><h3>${f.fieldName}</h3><p class="info-text">${f.location}</p><div style="font-size:2rem;font-weight:700;color:${f.status==='Warning'?'var(--red)':'var(--green)'};">${f.latestAvgCount}</div><div>Avg Tassel Count</div><span class="badge ${f.status==='Healthy'?'badge-green':'badge-red'}" style="margin-top:0.5rem;">${f.status}</span></div>`).join('');
+}
+
+function filterFields(region) {
+  const filtered = region ? fields.filter(f => f.location === region) : fields;
+  document.getElementById('fieldGrid').innerHTML = renderFieldCards(filtered);
+}
+
+renderTab('dashboard');
+</script>
+</body>
+</html>

@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Maize Detector — History</title>
+<link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+
+<nav class="nav">
+  <a class="nav-brand" href="dashboard.html">Maize Detector</a>
+  <div class="nav-links">
+    <a href="dashboard.html">Home</a>
+    <a href="upload.html">Upload</a>
+    <a href="history.html">History</a>
+    <a href="report.html">Report</a>
+    <a href="export.html">Export</a>
+    <a href="agronomist.html">Agronomist</a>
+    <a href="admin.html">Admin</a>
+  </div>
+</nav>
+
+<div class="container">
+  <h2 class="page-title">Detection History</h2>
+  <p class="page-subtitle">View and filter past tassel counting records</p>
+
+  <!-- Filters (B.3 BCE: filterByDate + searchByField + sortByColumn) -->
+  <div class="card" style="display:flex;gap:0.75rem;flex-wrap:wrap;align-items:end;">
+    <div class="form-group" style="flex:1;min-width:150px;margin-bottom:0;">
+      <label>From</label>
+      <input type="date" id="filterFrom" onchange="applyFilters()">
+    </div>
+    <div class="form-group" style="flex:1;min-width:150px;margin-bottom:0;">
+      <label>To</label>
+      <input type="date" id="filterTo" onchange="applyFilters()">
+    </div>
+    <div class="form-group" style="flex:1;min-width:150px;margin-bottom:0;">
+      <label>Search Field</label>
+      <input type="text" id="searchField" placeholder="e.g. plot-b12" oninput="applyFilters()">
+    </div>
+    <div class="form-group" style="min-width:120px;margin-bottom:0;">
+      <label>Sort By</label>
+      <select id="sortColumn" onchange="applyFilters()">
+        <option value="date">Date</option>
+        <option value="count">Count</option>
+        <option value="confidence">Confidence</option>
+      </select>
+    </div>
+    <button class="btn btn-sm btn-outline" onclick="resetFilters()">Reset</button>
+  </div>
+
+  <!-- Trend Indicator (B.3 BCE: showTrendIndicator) -->
+  <div id="trendBar" class="card" style="text-align:center;margin-top:1rem;">
+    <span style="font-size:1.1rem;font-weight:600;" id="trendText">Trend: —</span>
+  </div>
+
+  <!-- History Table -->
+  <div class="card" style="margin-top:1rem;">
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Image Name</th><th>Date</th><th>Tassel Count</th><th>Confidence</th><th>Action</th></tr></thead>
+      <tbody id="historyTableBody"></tbody>
+    </table>
+    </div>
+  </div>
+</div>
+
+<script src="../js/api.js"></script>
+<script>
+setActiveNav();
+let allRecords = [...MockData.results].reverse();
+
+function renderTable(records) {
+  const rows = records.map(r => {
+    const badge = r.confidenceScore >= 0.9 ? 'badge-green' : r.confidenceScore >= 0.75 ? 'badge-yellow' : 'badge-red';
+    return `<tr><td>${r.imageName}</td><td>${formatDate(r.createdAt)}</td><td><strong>${r.tasselCount}</strong></td><td><span class="badge ${badge}">${formatPercent(r.confidenceScore)}</span></td><td><a href="result.html?id=${r.resultId}" class="btn btn-sm btn-outline">View</a></td></tr>`;
+  }).join('');
+  document.getElementById('historyTableBody').innerHTML = rows || '<tr><td colspan="5" style="text-align:center;color:var(--gray-500);">No records found</td></tr>';
+}
+
+function applyFilters() {
+  let filtered = [...allRecords];
+  const from = document.getElementById('filterFrom').value;
+  const to = document.getElementById('filterTo').value;
+  const search = document.getElementById('searchField').value.toLowerCase();
+  const sort = document.getElementById('sortColumn').value;
+
+  if (from) filtered = filtered.filter(r => r.createdAt >= from);
+  if (to) filtered = filtered.filter(r => r.createdAt <= to);
+  if (search) filtered = filtered.filter(r => r.imageName.toLowerCase().includes(search));
+
+  if (sort === 'count') filtered.sort((a, b) => b.tasselCount - a.tasselCount);
+  else if (sort === 'confidence') filtered.sort((a, b) => b.confidenceScore - a.confidenceScore);
+  else filtered.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+  renderTable(filtered);
+  updateTrend(filtered);
+}
+
+function updateTrend(records) {
+  if (records.length < 2) { document.getElementById('trendText').textContent = 'Trend: Insufficient data'; return; }
+  const first = records[records.length - 1].tasselCount;
+  const last = records[0].tasselCount;
+  const diff = last - first;
+  const arrow = diff > 0 ? '↑ Increasing' : diff < 0 ? '↓ Decreasing' : '→ Stable';
+  const color = diff > 0 ? 'var(--green)' : diff < 0 ? 'var(--red)' : 'var(--gray-500)';
+  const el = document.getElementById('trendText');
+  el.textContent = `Trend: ${arrow} (${diff > 0 ? '+' : ''}${diff})`;
+  el.style.color = color;
+}
+
+function resetFilters() {
+  document.getElementById('filterFrom').value = '';
+  document.getElementById('filterTo').value = '';
+  document.getElementById('searchField').value = '';
+  document.getElementById('sortColumn').value = 'date';
+  applyFilters();
+}
+
+applyFilters();
+</script>
+</body>
+</html>

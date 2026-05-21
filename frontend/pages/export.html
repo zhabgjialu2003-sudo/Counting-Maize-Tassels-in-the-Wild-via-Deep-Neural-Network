@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Maize Detector — Export Data</title>
+<link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+
+<nav class="nav">
+  <a class="nav-brand" href="dashboard.html">Maize Detector</a>
+  <div class="nav-links">
+    <a href="dashboard.html">Home</a>
+    <a href="upload.html">Upload</a>
+    <a href="history.html">History</a>
+    <a href="report.html">Report</a>
+    <a href="export.html">Export</a>
+    <a href="agronomist.html">Agronomist</a>
+    <a href="admin.html">Admin</a>
+  </div>
+</nav>
+
+<div class="container">
+  <h2 class="page-title">Export Detection Results</h2>
+  <p class="page-subtitle">Download analysis records in standard formats</p>
+
+  <!-- Export Options (B.2 BCE: selectRecords + chooseFormat + setDateRange) -->
+  <div class="card">
+    <!-- Date Range (B.2 BCE: setDateRange) -->
+    <div style="display:flex;gap:0.75rem;flex-wrap:wrap;">
+      <div class="form-group" style="flex:1;min-width:150px;">
+        <label>From Date</label>
+        <input type="date" id="dateFrom">
+      </div>
+      <div class="form-group" style="flex:1;min-width:150px;">
+        <label>To Date</label>
+        <input type="date" id="dateTo">
+      </div>
+      <!-- Format (B.2 BCE: chooseFormat) -->
+      <div class="form-group" style="flex:1;min-width:150px;">
+        <label>Format</label>
+        <select id="exportFormat">
+          <option value="csv">CSV (.csv)</option>
+          <option value="json">JSON (.json)</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Select Records (B.2 BCE: selectRecords) -->
+    <div class="table-wrap" style="margin:1rem 0;">
+    <table>
+      <thead><tr><th><input type="checkbox" id="selectAll" onchange="toggleAll(this)"></th><th>Image</th><th>Date</th><th>Count</th><th>Confidence</th></tr></thead>
+      <tbody id="recordTable"></tbody>
+    </table>
+    </div>
+    <p class="info-text"><span id="selectedCount">0</span> records selected</p>
+
+    <!-- Download (B.2 BCE: downloadFile) -->
+    <button class="btn btn-primary btn-lg" id="downloadBtn" onclick="exportData()" disabled>
+      Download File
+    </button>
+  </div>
+</div>
+
+<script src="../js/api.js"></script>
+<script>
+setActiveNav();
+const records = MockData.results.map(r => ({...r, selected: false}));
+
+function renderRecords() {
+  document.getElementById('recordTable').innerHTML = records.map((r, i) =>
+    `<tr><td><input type="checkbox" onchange="toggleRecord(${i}, this)"></td><td>${r.imageName}</td><td>${formatDate(r.createdAt)}</td><td>${r.tasselCount}</td><td><span class="badge badge-green">${formatPercent(r.confidenceScore)}</span></td></tr>`
+  ).join('');
+}
+
+function toggleAll(cb) { records.forEach(r => r.selected = cb.checked); updateCount(); }
+function toggleRecord(i, cb) { records[i].selected = cb.checked; updateCount(); }
+function updateCount() {
+  const n = records.filter(r => r.selected).length;
+  document.getElementById('selectedCount').textContent = n;
+  document.getElementById('downloadBtn').disabled = n === 0;
+}
+
+function exportData() {
+  const selected = records.filter(r => r.selected);
+  if (selected.length === 0) return;
+  const fmt = document.getElementById('exportFormat').value;
+  let content, filename;
+
+  if (fmt === 'csv') {
+    const headers = 'image_name,date,tassel_count,confidence';
+    const rows = selected.map(r => `${r.imageName},${r.createdAt},${r.tasselCount},${r.confidenceScore}`).join('\n');
+    content = headers + '\n' + rows;
+    filename = `maize_results_${new Date().toISOString().slice(0,10)}.csv`;
+  } else {
+    content = JSON.stringify(selected.map(r => ({
+      image_name: r.imageName, date: r.createdAt, tassel_count: r.tasselCount, confidence: r.confidenceScore
+    })), null, 2);
+    filename = `maize_results_${new Date().toISOString().slice(0,10)}.json`;
+  }
+
+  const blob = new Blob([content], {type: fmt === 'csv' ? 'text/csv' : 'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  alert(`${selected.length} records exported as ${filename}`);
+}
+
+renderRecords();
+</script>
+</body>
+</html>

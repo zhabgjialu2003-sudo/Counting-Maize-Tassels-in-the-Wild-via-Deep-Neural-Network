@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Maize Detector — System Report</title>
+<link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+
+<nav class="nav">
+  <a class="nav-brand" href="dashboard.html">Maize Detector</a>
+  <div class="nav-links">
+    <a href="dashboard.html">Home</a>
+    <a href="upload.html">Upload</a>
+    <a href="history.html">History</a>
+    <a href="report.html">Report</a>
+    <a href="export.html">Export</a>
+    <a href="agronomist.html">Agronomist</a>
+    <a href="admin.html">Admin</a>
+  </div>
+</nav>
+
+<div class="container">
+  <h2 class="page-title">System Report</h2>
+  <p class="page-subtitle">Daily / Weekly / Monthly operation summary</p>
+
+  <!-- Tabs (B.5 BCE: ReportPage navigation) -->
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('daily')">Daily</button>
+    <button class="tab" onclick="switchTab('weekly')">Weekly</button>
+    <button class="tab" onclick="switchTab('monthly')">Monthly</button>
+  </div>
+
+  <div id="reportContent"></div>
+
+  <!-- Export PDF (B.5 BCE: exportPDF) -->
+  <div style="margin-top:1rem;">
+    <button class="btn btn-primary" onclick="exportPDF()">Export Report as PDF</button>
+  </div>
+</div>
+
+<script src="../js/api.js"></script>
+<script>
+setActiveNav();
+
+const reportData = {
+  daily: { title: 'Daily Report — June 13, 2026', totalUploads: 24, successfulDetections: 22, failedDetections: 2, avgTasselCount: 31, avgProcessingTime: 2.8, systemStatus: 'Normal' },
+  weekly: { title: 'Weekly Report — June 7-13, 2026', totalUploads: 148, successfulDetections: 139, failedDetections: 9, avgTasselCount: 33, avgProcessingTime: 2.8, mostActiveDay: 'Friday', systemStatus: 'Normal' },
+  monthly: { title: 'Monthly Report — June 2026', totalUploads: 520, successfulDetections: 496, failedDetections: 24, avgTasselCount: 34, avgProcessingTime: 2.9, modelAccuracy: '88%', systemStatus: 'Normal' },
+};
+
+function renderReport(type) {
+  const d = reportData[type];
+  document.getElementById('reportContent').innerHTML = `
+    <div class="card"><h3 style="color:var(--green);margin-bottom:0.75rem;">${d.title}</h3>
+      <div class="card-grid">
+        <div class="stat-card"><div class="value">${d.totalUploads}</div><div class="label">Total Uploads</div></div>
+        <div class="stat-card"><div class="value">${d.successfulDetections}</div><div class="label">Successful Detections</div></div>
+        <div class="stat-card"><div class="value" style="color:var(--red);">${d.failedDetections}</div><div class="label">Failed Detections</div></div>
+        <div class="stat-card"><div class="value">${d.avgTasselCount}</div><div class="label">Avg Tassel Count</div></div>
+        ${d.mostActiveDay ? `<div class="stat-card"><div class="value">${d.mostActiveDay}</div><div class="label">Most Active Day</div></div>` : ''}
+        ${d.modelAccuracy ? `<div class="stat-card"><div class="value">${d.modelAccuracy}</div><div class="label">Model Accuracy</div></div>` : ''}
+        <div class="stat-card"><div class="value">${d.avgProcessingTime}s</div><div class="label">Avg Processing Time</div></div>
+        <div class="stat-card"><div class="value" style="color:var(--green);">${d.systemStatus}</div><div class="label">System Status</div></div>
+      </div>
+      <!-- Bar Chart (B.5 BCE: showBarChart) — CSS-only bars -->
+      <div style="margin-top:1.5rem;"><h4 style="margin-bottom:0.5rem;">Success Rate (Bar Chart)</h4>
+        <div style="background:var(--gray-100);border-radius:6px;height:40px;overflow:hidden;display:flex;">
+          <div style="background:var(--green);height:100%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:0.8rem;font-weight:600;width:${(d.successfulDetections/(d.successfulDetections+d.failedDetections)*100).toFixed(0)}%;min-width:${d.failedDetections===0?'100':(d.successfulDetections/(d.successfulDetections+d.failedDetections)*100).toFixed(0)}%;">Success (${(d.successfulDetections/(d.successfulDetections+d.failedDetections)*100).toFixed(0)}%)</div>
+          ${d.failedDetections > 0 ? `<div style="background:var(--red);height:100%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:0.8rem;font-weight:600;width:${(d.failedDetections/(d.successfulDetections+d.failedDetections)*100).toFixed(0)}%;">Fail (${(d.failedDetections/(d.successfulDetections+d.failedDetections)*100).toFixed(0)}%)</div>` : ''}
+        </div>
+      </div>
+      <!-- Trend Line (B.5 BCE: showTrendLine) — CSS-only line -->
+      <div style="margin-top:1.5rem;"><h4 style="margin-bottom:0.5rem;">Detection Trend</h4>
+        <div style="background:var(--white);border:1px solid var(--gray-100);border-radius:6px;padding:1.5rem;text-align:center;">
+          <svg width="100%" height="150" viewBox="0 0 400 150"><polyline fill="none" stroke="var(--green)" stroke-width="3" points="20,120 80,100 140,110 200,85 260,95 320,60 380,40"/><circle cx="380" cy="40" r="4" fill="var(--green)"/></svg>
+          <p class="info-text">▲ Detection count trending upward over the period</p>
+        </div>
+      </div>
+    </div>`;
+}
+
+function switchTab(type) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  event.target.classList.add('active');
+  renderReport(type);
+}
+
+function exportPDF() {
+  alert('Report PDF generated and downloaded!\n(Prototype: opens browser print dialog)');
+  window.print();
+}
+
+renderReport('daily');
+</script>
+</body>
+</html>

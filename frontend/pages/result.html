@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Maize Detector — Detection Result</title>
+<link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+
+<nav class="nav">
+  <a class="nav-brand" href="dashboard.html">Maize Detector</a>
+  <div class="nav-links">
+    <a href="dashboard.html">Home</a>
+    <a href="upload.html">Upload</a>
+    <a href="history.html">History</a>
+    <a href="report.html">Report</a>
+    <a href="export.html">Export</a>
+    <a href="agronomist.html">Agronomist</a>
+    <a href="admin.html">Admin</a>
+  </div>
+</nav>
+
+<div class="container">
+  <h2 class="page-title">Detection Result</h2>
+  <p class="page-subtitle" id="imageNameLabel">Image: —</p>
+
+  <!-- Count Display (A.3 BCE: displayCount) -->
+  <div class="card" style="text-align:center;">
+    <div style="font-size:4rem;font-weight:800;color:var(--green);" id="countDisplay">—</div>
+    <div style="font-size:1rem;color:var(--gray-500);">Detected Tassels</div>
+  </div>
+
+  <!-- Metrics (A.3 BCE: displayConfidence + showProcessingTime) -->
+  <div class="card-grid" style="margin-top:1rem;">
+    <div class="stat-card">
+      <div class="value" id="confidenceDisplay">—</div>
+      <div class="label">Confidence Score</div>
+    </div>
+    <div class="stat-card">
+      <div class="value" id="timeDisplay">—</div>
+      <div class="label">Processing Time (seconds)</div>
+    </div>
+  </div>
+
+  <!-- Image Compare (A.4 BCE: showOriginalImage + showAnnotatedImage + toggleCompare) -->
+  <div class="card" style="margin-top:1rem;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+      <h3 style="color:var(--green);">Image View</h3>
+      <label class="toggle" onclick="toggleCompare()">
+        <input type="checkbox" id="compareToggle"> Compare Original vs Annotated
+      </label>
+    </div>
+    <div id="imageContainer" class="compare" style="display:grid;grid-template-columns:1fr;">
+      <div>
+        <p style="text-align:center;font-weight:600;margin-bottom:0.5rem;">Annotated Image (with bounding boxes)</p>
+        <img id="annotatedImg" src="" alt="Annotated" style="width:100%;border-radius:6px;border:1px solid var(--gray-300);min-height:200px;">
+      </div>
+      <div id="originalPanel" style="display:none;">
+        <p style="text-align:center;font-weight:600;margin-bottom:0.5rem;">Original Image</p>
+        <img id="originalImg" src="" alt="Original" style="width:100%;border-radius:6px;border:1px solid var(--gray-300);min-height:200px;">
+      </div>
+    </div>
+  </div>
+
+  <!-- Actions -->
+  <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-top:1rem;">
+    <button class="btn btn-primary" onclick="saveResult()">Save Result</button>
+    <a href="export.html" class="btn btn-outline">Export Result</a>
+    <a href="upload.html" class="btn btn-outline">Upload Another</a>
+  </div>
+</div>
+
+<script src="../js/api.js"></script>
+<script>
+setActiveNav();
+
+// Load result from session or URL param or mock
+let resultData = null;
+const stored = sessionStorage.getItem('lastResult');
+const params = new URLSearchParams(location.search);
+const resultId = params.get('id');
+
+if (stored) {
+  resultData = JSON.parse(stored);
+} else if (resultId) {
+  resultData = MockData.results.find(r => r.resultId === parseInt(resultId));
+}
+if (!resultData) resultData = MockData.results[0];
+
+// Populate UI (matching A.3 BCE boundary methods)
+document.getElementById('imageNameLabel').textContent = 'Image: ' + resultData.imageName;
+document.getElementById('countDisplay').textContent = resultData.tasselCount;
+document.getElementById('confidenceDisplay').textContent = formatPercent(resultData.confidenceScore);
+document.getElementById('timeDisplay').textContent = resultData.processingTime.toFixed(1) + 's';
+
+// Annotated image — use a placeholder SVG simulating bounding boxes
+const placeholderAnnotated = `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400"><rect width="600" height="400" fill="#e8f5e9"/><text x="300" y="180" text-anchor="middle" fill="#2d6a4f" font-size="18">Maize Field Image — ${resultData.tasselCount} Tassels Detected</text><rect x="100" y="60" width="80" height="80" fill="none" stroke="#e76f51" stroke-width="2" rx="4"/><rect x="250" y="120" width="80" height="80" fill="none" stroke="#e76f51" stroke-width="2" rx="4"/><rect x="400" y="80" width="80" height="80" fill="none" stroke="#e76f51" stroke-width="2" rx="4"/><rect x="150" y="220" width="80" height="80" fill="none" stroke="#e76f51" stroke-width="2" rx="4"/><rect x="350" y="200" width="80" height="80" fill="none" stroke="#e76f51" stroke-width="2" rx="4"/></svg>`)}`;
+document.getElementById('annotatedImg').src = placeholderAnnotated;
+
+// Original image placeholder
+const placeholderOriginal = `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400"><rect width="600" height="400" fill="#f0f4c3"/><text x="300" y="190" text-anchor="middle" fill="#558b2f" font-size="18">Original Maize Field Photo</text><text x="300" y="220" text-anchor="middle" fill="#888" font-size="12">${resultData.imageName}</text></svg>`)}`;
+document.getElementById('originalImg').src = placeholderOriginal;
+
+function toggleCompare() {
+  const checked = document.getElementById('compareToggle').checked;
+  document.getElementById('imageContainer').style.gridTemplateColumns = checked ? '1fr 1fr' : '1fr';
+  document.getElementById('originalPanel').style.display = checked ? 'block' : 'none';
+}
+
+function saveResult() {
+  alert('Result saved to history!');
+  location.href = 'history.html';
+}
+</script>
+</body>
+</html>

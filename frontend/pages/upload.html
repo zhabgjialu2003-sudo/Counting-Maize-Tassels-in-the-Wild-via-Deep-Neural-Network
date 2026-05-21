@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Maize Detector — Upload</title>
+<link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+
+<nav class="nav">
+  <a class="nav-brand" href="dashboard.html">Maize Detector</a>
+  <div class="nav-links">
+    <a href="dashboard.html">Home</a>
+    <a href="upload.html">Upload</a>
+    <a href="history.html">History</a>
+    <a href="report.html">Report</a>
+    <a href="export.html">Export</a>
+    <a href="agronomist.html">Agronomist</a>
+    <a href="admin.html">Admin</a>
+  </div>
+</nav>
+
+<div class="container">
+  <h2 class="page-title">Upload Maize Image</h2>
+  <p class="page-subtitle">Select maize field images for tassel detection (JPG / PNG only)</p>
+
+  <!-- Batch toggle (A.5 BCE: selectMultipleFiles) -->
+  <div class="card" style="margin-bottom:1rem;">
+    <label class="toggle">
+      <input type="checkbox" id="batchMode" onchange="toggleBatch()">
+      <strong>Batch Upload</strong> — select multiple images at once
+    </label>
+  </div>
+
+  <!-- Upload Area (A.1 BCE: selectFile + previewImage) -->
+  <div class="card">
+    <div class="form-group">
+      <label>Select Image<small id="batchHint" style="display:none;"> — hold Ctrl/Cmd to select multiple</small></label>
+      <input type="file" id="fileInput" accept="image/jpeg,image/png" onchange="handleFiles(this.files)" style="padding:0.5rem;">
+    </div>
+
+    <!-- Preview (A.1 BCE: previewImage) -->
+    <div class="preview-box" id="previewBox">
+      <p style="color:var(--gray-500);">Preview will appear here after selecting an image</p>
+    </div>
+    <div id="fileInfo" class="info-text" style="margin-bottom:0.5rem;"></div>
+
+    <!-- Batch progress (A.5 BCE: showBatchProgress) -->
+    <div id="batchProgress" style="display:none;margin:1rem 0;">
+      <div style="display:flex;justify-content:space-between;margin-bottom:0.3rem;"><span>Uploading...</span><span id="progressText">0/0</span></div>
+      <div class="progress-bar"><div class="fill" id="progressFill" style="width:0%;"></div></div>
+    </div>
+
+    <!-- Error display (A.1 BCE: showError) -->
+    <div id="errorBox"></div>
+
+    <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-top:1rem;">
+      <button class="btn btn-primary btn-lg" id="analyzeBtn" onclick="submitUpload()" disabled>
+        Analyze
+      </button>
+      <button class="btn btn-outline" onclick="resetUpload()">Clear</button>
+    </div>
+  </div>
+</div>
+
+<script src="../js/api.js"></script>
+<script>
+setActiveNav();
+let selectedFiles = [];
+let isBatch = false;
+
+function toggleBatch() {
+  isBatch = document.getElementById('batchMode').checked;
+  document.getElementById('fileInput').multiple = isBatch;
+  document.getElementById('batchHint').style.display = isBatch ? 'inline' : 'none';
+  document.getElementById('fileInput').value = '';
+  selectedFiles = [];
+  updatePreview();
+}
+
+function handleFiles(files) {
+  selectedFiles = [];
+  document.getElementById('errorBox').innerHTML = '';
+  const validTypes = ['image/jpeg', 'image/png'];
+  const maxSize = 10 * 1024 * 1024; // 10MB
+
+  for (let f of files) {
+    if (!validTypes.includes(f.type)) {
+      showError(`${f.name}: Invalid type (${f.type || 'unknown'}). Only JPG/PNG accepted.`);
+      continue;
+    }
+    if (f.size > maxSize) {
+      showError(`${f.name}: File too large (${(f.size/1024/1024).toFixed(1)}MB). Max 10MB.`);
+      continue;
+    }
+    selectedFiles.push(f);
+  }
+  updatePreview();
+}
+
+function updatePreview() {
+  const box = document.getElementById('previewBox');
+  const btn = document.getElementById('analyzeBtn');
+  const info = document.getElementById('fileInfo');
+  if (selectedFiles.length === 0) {
+    box.innerHTML = '<p style="color:var(--gray-500);">Preview will appear here after selecting an image</p>';
+    info.textContent = '';
+    btn.disabled = true;
+    return;
+  }
+  box.innerHTML = selectedFiles.map((f, i) =>
+    `<div style="margin-bottom:1rem;"><p><strong>${f.name}</strong> (${(f.size/1024).toFixed(1)} KB)</p><img src="${URL.createObjectURL(f)}" alt="${f.name}"></div>`
+  ).join('');
+  info.textContent = `${selectedFiles.length} file(s) selected, ready to analyze`;
+  btn.disabled = false;
+}
+
+function showError(msg) {
+  const el = document.getElementById('errorBox');
+  el.innerHTML += `<div class="alert alert-error">${msg}</div>`;
+}
+
+async function submitUpload() {
+  if (selectedFiles.length === 0) return;
+  const btn = document.getElementById('analyzeBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Analyzing...';
+
+  if (selectedFiles.length > 1) {
+    // Batch mode (A.5 BCE: showBatchProgress + showBatchResult)
+    const progDiv = document.getElementById('batchProgress');
+    progDiv.style.display = 'block';
+    let success = 0, failed = 0;
+    for (let i = 0; i < selectedFiles.length; i++) {
+      document.getElementById('progressText').textContent = `${i+1}/${selectedFiles.length}`;
+      document.getElementById('progressFill').style.width = ((i+1)/selectedFiles.length*100)+'%';
+      // Simulate upload + analyze
+      await new Promise(r => setTimeout(r, 600 + Math.random()*400));
+      const res = await apiPost('/api/predict', { imageName: selectedFiles[i].name });
+      if (res.ok) success++; else failed++;
+    }
+    document.getElementById('batchProgress').style.display = 'none';
+    const msg = `<div class="alert ${failed>0?'alert-warning':'alert-success'}"><strong>Batch complete:</strong> ${success} uploaded, ${failed} skipped</div>`;
+    document.getElementById('errorBox').innerHTML = msg;
+    if (success > 0) {
+      // Redirect to result for last successful one
+      setTimeout(() => location.href = 'result.html', 1500);
+    }
+  } else {
+    // Single upload (A.1 BCE: submitUpload)
+    await new Promise(r => setTimeout(r, 800 + Math.random()*500));
+    const res = await apiPost('/api/predict', { imageName: selectedFiles[0].name });
+    if (res.ok) {
+      document.getElementById('errorBox').innerHTML = '<div class="alert alert-success">Upload successful! Redirecting to result...</div>';
+      sessionStorage.setItem('lastResult', JSON.stringify(res.data));
+      setTimeout(() => location.href = 'result.html', 1000);
+    } else {
+      showError('Upload failed. Please check your connection and try again.');
+    }
+  }
+  btn.disabled = false;
+  btn.textContent = 'Analyze';
+}
+
+function resetUpload() {
+  selectedFiles = [];
+  document.getElementById('fileInput').value = '';
+  document.getElementById('errorBox').innerHTML = '';
+  document.getElementById('batchProgress').style.display = 'none';
+  updatePreview();
+}
+</script>
+</body>
+</html>

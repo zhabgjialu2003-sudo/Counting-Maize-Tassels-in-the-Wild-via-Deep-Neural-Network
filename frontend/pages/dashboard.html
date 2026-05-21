@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Maize Detector — Dashboard</title>
+<link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+
+<nav class="nav">
+  <a class="nav-brand" href="#">Maize Detector</a>
+  <div class="nav-links">
+    <a href="dashboard.html">Home</a>
+    <a href="upload.html">Upload</a>
+    <a href="history.html">History</a>
+    <a href="report.html">Report</a>
+    <a href="export.html">Export</a>
+    <a href="agronomist.html">Agronomist</a>
+    <a href="admin.html">Admin</a>
+  </div>
+</nav>
+
+<div class="container">
+  <h2 class="page-title">Welcome to Maize Detector</h2>
+  <p class="page-subtitle">Your AI-powered maize tassel counting assistant</p>
+
+  <!-- Quick Action Buttons (A.8 BCE: DashboardPage.showQuickActions) -->
+  <div class="card" style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1.5rem;">
+    <a href="upload.html" class="btn btn-primary btn-lg">Upload Image</a>
+    <a href="history.html" class="btn btn-outline btn-lg">View History</a>
+    <a href="report.html" class="btn btn-outline btn-lg">Generate Report</a>
+  </div>
+
+  <!-- Summary Cards (A.8 BCE: DashboardPage.showSummaryCards) -->
+  <div class="card-grid">
+    <div class="stat-card">
+      <div class="value" id="totalImages">128</div>
+      <div class="label">Total Uploaded Images</div>
+    </div>
+    <div class="stat-card">
+      <div class="value" id="totalTassels">3,482</div>
+      <div class="label">Total Detected Tassels</div>
+    </div>
+    <div class="stat-card">
+      <div class="value" id="avgCount">27.2</div>
+      <div class="label">Average Tassel Count</div>
+    </div>
+    <div class="stat-card">
+      <div class="value" id="modelStatus">Active</div>
+      <div class="label">Model Status</div>
+    </div>
+  </div>
+
+  <!-- Recent Records (A.8 BCE: DashboardPage.simpleNavigation → linked records) -->
+  <div class="card">
+    <h3 style="margin-bottom:0.75rem;color:var(--green);">Recent Detection Records</h3>
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Image</th><th>Date</th><th>Count</th><th>Confidence</th><th></th></tr></thead>
+      <tbody id="recentTable"></tbody>
+    </table>
+    </div>
+  </div>
+</div>
+
+<script src="../js/api.js"></script>
+<script>
+setActiveNav();
+// Populate from MockData matching DetectionResult entity
+const data = MockData.results.slice(0, 5);
+document.getElementById('totalImages').textContent = data.length * 26;
+document.getElementById('totalTassels').textContent = data.reduce((s, r) => s + r.tasselCount * 26, 0).toLocaleString();
+document.getElementById('avgCount').textContent = (data.reduce((s, r) => s + r.tasselCount, 0) / data.length).toFixed(1);
+const rows = data.map(r => `<tr><td>${r.imageName}</td><td>${formatDate(r.createdAt)}</td><td>${r.tasselCount}</td><td><span class="badge badge-green">${formatPercent(r.confidenceScore)}</span></td><td><a href="result.html?id=${r.resultId}" class="btn btn-sm btn-outline">View</a></td></tr>`).join('');
+document.getElementById('recentTable').innerHTML = rows;
+</script>
+</body>
+</html>

@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Maize Detector — Admin Panel</title>
+<link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+
+<nav class="nav">
+  <a class="nav-brand" href="dashboard.html">Maize Detector</a>
+  <div class="nav-links">
+    <a href="dashboard.html">Home</a>
+    <a href="upload.html">Upload</a>
+    <a href="history.html">History</a>
+    <a href="report.html">Report</a>
+    <a href="export.html">Export</a>
+    <a href="agronomist.html">Agronomist</a>
+    <a href="admin.html">Admin</a>
+  </div>
+</nav>
+
+<div class="container">
+  <h2 class="page-title">Admin Panel</h2>
+  <p class="page-subtitle">System management and monitoring</p>
+
+  <!-- Tabs for Admin BCE pages -->
+  <div class="tabs" style="flex-wrap:wrap;">
+    <button class="tab active" onclick="switchTab('users')">Users (D.1)</button>
+    <button class="tab" onclick="switchTab('storage')">Storage (D.2)</button>
+    <button class="tab" onclick="switchTab('monitor')">Monitor (D.3)</button>
+    <button class="tab" onclick="switchTab('datasets')">Datasets (D.4)</button>
+    <button class="tab" onclick="switchTab('permissions')">Permissions (D.5)</button>
+    <button class="tab" onclick="switchTab('backup')">Backup (D.6)</button>
+  </div>
+
+  <div id="tabContent"></div>
+</div>
+
+<script src="../js/api.js"></script>
+<script>
+setActiveNav();
+
+function switchTab(type) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  event.target.classList.add('active');
+  renderTab(type);
+}
+
+function renderTab(type) {
+  const el = document.getElementById('tabContent');
+  if (type === 'users') {
+    // D.1 BCE: AdminPage — showUserTable + addUserForm + editUser + disableUser + searchUser
+    const users = MockData.users;
+    el.innerHTML = `
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.75rem;margin-bottom:1rem;">
+          <input type="text" placeholder="Search by name or email..." class="form-group" style="max-width:300px;margin-bottom:0;" oninput="searchUsers(this.value)">
+          <button class="btn btn-primary btn-sm" onclick="alert('Add user form opened')">+ Add User</button>
+        </div>
+        <div class="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead><tbody id="userTable">
+          ${users.map(u => `<tr><td>${u.name}</td><td>${u.email}</td><td>${u.role}</td><td><span class="badge ${u.status==='active'?'badge-green':'badge-red'}">${u.status}</span></td><td><button class="btn btn-sm btn-outline" onclick="alert('Edit ${u.name}')">Edit</button> <button class="btn btn-sm btn-outline" onclick="alert('${u.name} ${u.status===\\'active\\'?\\'disabled\\':\\'enabled\\'}')">${u.status==='active'?'Disable':'Enable'}</button></td></tr>`).join('')}
+        </tbody></table></div>
+      </div>`;
+  } else if (type === 'storage') {
+    // D.2 BCE: AdminPage — showStorageStatus + manageAccessControl + viewImageStore
+    el.innerHTML = `
+      <div class="card"><h3 style="color:var(--green);">Storage Status</h3>
+        <div class="card-grid" style="margin-top:1rem;">
+          <div class="stat-card"><div class="value">520</div><div class="label">Total Images</div></div>
+          <div class="stat-card"><div class="value">1,240 MB</div><div class="label">Total Size</div></div>
+          <div class="stat-card"><div class="value" style="color:var(--green);">Encrypted</div><div class="label">Security Status</div></div>
+        </div>
+        <div style="margin-top:1rem;"><h4>Access Control</h4>
+          <div class="form-group"><label>Role</label><select><option>Farmer</option><option>Researcher</option><option>Agronomist</option></select></div>
+          <div class="form-group"><label>Access Level</label><select><option>Own Images Only</option><option>All Images</option></select></div>
+          <button class="btn btn-primary btn-sm" onclick="alert('Access policy saved')">Save Policy</button>
+        </div>
+      </div>`;
+  } else if (type === 'monitor') {
+    // D.3 BCE: AdminDashboardPage — showActiveUsers + showQueueLength + showUptime + showErrorRate
+    el.innerHTML = `
+      <div class="card"><h3 style="color:var(--green);">System Monitor</h3>
+        <div class="card-grid" style="margin-top:1rem;">
+          <div class="stat-card"><div class="value">6</div><div class="label">Active Users</div></div>
+          <div class="stat-card"><div class="value">11</div><div class="label">Queue Length</div></div>
+          <div class="stat-card"><div class="value" style="color:var(--green);">99.7%</div><div class="label">Uptime</div></div>
+          <div class="stat-card"><div class="value" style="color:var(--red);">1.6%</div><div class="label">Error Rate</div></div>
+        </div>
+        <div class="info-text" style="margin-top:1rem;">API Calls (24h): 1,420 | Avg Response: 1.8s | Model: v1.0 Active</div>
+      </div>`;
+  } else if (type === 'datasets') {
+    // D.4 BCE: AdminPage — uploadDataset + viewDatasetList + editAnnotations + deleteDataset
+    const ds = MockData.datasets;
+    el.innerHTML = `
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;margin-bottom:1rem;">
+          <h3 style="color:var(--green);margin:0;">Dataset Management</h3>
+          <button class="btn btn-primary btn-sm" onclick="alert('Upload new dataset dialog')">+ Upload New</button>
+        </div>
+        <div class="table-wrap"><table><thead><tr><th>Name</th><th>Images</th><th>Annotation</th><th>Format</th><th>Actions</th></tr></thead><tbody>
+          ${ds.map(d => `<tr><td>${d.datasetName}</td><td>${d.totalImages}</td><td><span class="badge ${d.annotationStatus==='completed'?'badge-green':d.annotationStatus==='in_progress'?'badge-yellow':'badge-red'}">${d.annotationStatus}</span></td><td>${d.annotationFormat||'—'}</td><td><button class="btn btn-sm btn-outline" onclick="alert('Edit annotations for ${d.datasetName}')">Edit</button> <button class="btn btn-sm btn-outline" style="color:var(--red);" onclick="confirm('Delete ${d.datasetName}?') && alert('Deleted')">Delete</button></td></tr>`).join('')}
+        </tbody></table></div>
+      </div>`;
+  } else if (type === 'permissions') {
+    // D.5 BCE: AdminPage — editPermissions + UserController — updateRole + updatePermissions
+    el.innerHTML = `
+      <div class="card"><h3 style="color:var(--green);">Role & Permission Management</h3>
+        <div class="form-group"><label>Select User</label><select>${MockData.users.map(u=>`<option>${u.name} (${u.role})</option>`).join('')}</select></div>
+        <h4 style="margin-top:1rem;">Permissions Matrix</h4>
+        <div class="table-wrap"><table><thead><tr><th>Permission</th><th>Read</th><th>Write</th><th>Delete</th></tr></thead><tbody>
+          <tr><td>Upload Images</td><td><input type="checkbox" checked></td><td><input type="checkbox" checked></td><td><input type="checkbox"></td></tr>
+          <tr><td>View Results</td><td><input type="checkbox" checked></td><td><input type="checkbox"></td><td><input type="checkbox"></td></tr>
+          <tr><td>Export Data</td><td><input type="checkbox" checked></td><td><input type="checkbox"></td><td><input type="checkbox"></td></tr>
+          <tr><td>Manage Users</td><td><input type="checkbox"></td><td><input type="checkbox"></td><td><input type="checkbox"></td></tr>
+        </tbody></table></div>
+        <button class="btn btn-primary" style="margin-top:1rem;" onclick="alert('Permissions updated successfully!')">Save Changes</button>
+        <button class="btn btn-outline" style="margin-top:1rem;" onclick="alert('New custom role created')">+ New Custom Role</button>
+      </div>`;
+  } else if (type === 'backup') {
+    // D.6 BCE: AdminPage — startBackup + viewBackupHistory + restoreBackup
+    el.innerHTML = `
+      <div class="card"><h3 style="color:var(--green);">System Backup</h3>
+        <div class="card-grid" style="margin-top:1rem;">
+          <div class="stat-card"><div class="value">520 MB</div><div class="label">Last Backup Size</div></div>
+          <div class="stat-card"><div class="value">June 13</div><div class="label">Last Backup Date</div></div>
+          <div class="stat-card"><div class="value" style="color:var(--green);">Active</div><div class="label">Auto-Backup Schedule</div></div>
+        </div>
+        <button class="btn btn-primary btn-lg" onclick="alert('Backup started... Completed! 520MB saved.')">Backup Now</button>
+        <h4 style="margin-top:1.5rem;">Backup History</h4>
+        <div class="table-wrap"><table><thead><tr><th>Date</th><th>Size</th><th>Status</th><th>Action</th></tr></thead><tbody>
+          <tr><td>June 13, 2026</td><td>520 MB</td><td><span class="badge badge-green">Complete</span></td><td><button class="btn btn-sm btn-outline" onclick="alert('Restore initiated from June 13 backup')">Restore</button></td></tr>
+          <tr><td>June 6, 2026</td><td>240 MB</td><td><span class="badge badge-green">Complete</span></td><td><button class="btn btn-sm btn-outline" onclick="alert('Restore initiated from June 6 backup')">Restore</button></td></tr>
+        </tbody></table></div>
+      </div>`;
+  }
+}
+
+renderTab('users');
+</script>
+</body>
+</html>
