@@ -3,6 +3,9 @@ from __future__ import annotations
 import os
 import json
 import random
+
+from dotenv import load_dotenv
+load_dotenv()  # load .env file so PGPASSWORD etc. are always available
 import hashlib
 import shutil
 import subprocess
