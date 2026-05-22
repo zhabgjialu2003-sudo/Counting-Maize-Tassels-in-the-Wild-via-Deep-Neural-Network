@@ -175,12 +175,15 @@ function renderAnnotationOverlay(data, hasRealImage) {
     const y = box.y ?? box.ymin ?? 0;
     const w = box.width ?? ((box.xmax ?? x) - x) ?? 20;
     const h = box.height ?? ((box.ymax ?? y) - y) ?? 20;
-    return `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="none" stroke="#e76f51" stroke-width="4" rx="4"/>`;
+    var conf = box.confidence || box.conf || 0.9;
+    var opacity = 0.35 + conf * 0.55;  // 0.80~0.90 based on confidence
+    return '<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + h +
+      '" fill="rgba(220,38,38,0.12)" stroke="#dc2626" stroke-width="2" rx="2" opacity="' + opacity.toFixed(2) + '"/>';
   }).join('');
   const pointMarkup = points.slice(0, 300).map(point => {
     const x = point.x ?? point.cx ?? 0;
     const y = point.y ?? point.cy ?? 0;
-    return `<circle cx="${x}" cy="${y}" r="12" fill="none" stroke="#e76f51" stroke-width="4"/>`;
+    return '<circle cx="' + x + '" cy="' + y + '" r="6" fill="rgba(220,38,38,0.15)" stroke="#dc2626" stroke-width="2"/>';
   }).join('');
 
   overlay.innerHTML = boxMarkup + pointMarkup;
