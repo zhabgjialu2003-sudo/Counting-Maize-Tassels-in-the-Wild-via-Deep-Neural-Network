@@ -104,8 +104,12 @@ function displayResult(data) {
   document.getElementById('confidenceDisplay').textContent = formatPercent(data.confidenceScore);
   document.getElementById('timeDisplay').textContent = Number(data.processingTime || 0).toFixed(1) + 's';
 
-  const originalUrl = resolveAssetUrl(data.originalImagePath || data.imagePath);
-  const annotatedUrl = resolveAssetUrl(data.annotatedImagePath) || originalUrl;
+  // Prefer serving real images from the database via API
+  const imageId = data.imageId;
+  const dbOriginalUrl = imageId ? `${API_BASE}/api/images/${imageId}/file/original` : null;
+  const dbAnnotatedUrl = imageId ? `${API_BASE}/api/images/${imageId}/file/annotated` : null;
+  const originalUrl = dbOriginalUrl || resolveAssetUrl(data.originalImagePath || data.imagePath);
+  const annotatedUrl = dbAnnotatedUrl || resolveAssetUrl(data.annotatedImagePath) || originalUrl;
   const fallbackAnnotated = createPlaceholderSvg(`Maize Field Image - ${data.tasselCount} Tassels Detected`, '#e8f5e9', '#2d6a4f');
   const fallbackOriginal = createPlaceholderSvg(data.imageName, '#f0f4c3', '#558b2f');
 
