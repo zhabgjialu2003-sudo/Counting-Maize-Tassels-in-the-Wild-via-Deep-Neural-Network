@@ -12,7 +12,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, Response, send_from_directory
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 
@@ -828,8 +828,54 @@ def user_detail(user_id: int):
         return db_error_response(exc)
 
 
-@app.route("/api/datasets", methods=["GET"])
+@app.route("/api/users/<int:user_id>/status", methods=["PUT"])
+def user_status(user_id: int):
+    """Toggle user status (active/disabled) — D.1 admin requirement."""
+    payload = request.get_json(silent=True) or {}
+    new_status = payload.get("status")
+    if new_status not in VALID_USER_STATUSES:
+        return fail(f"status must be one of: {', '.join(sorted(VALID_USER_STATUSES))}", 400)
+
+    try:
+        with db_connection() as conn:
+            user = fetch_user(conn, user_id)
+            if not user:
+                return fail("User not found", 404)
+            with conn.cursor() as cur:
+                cur.execute("UPDATE users SET status = %s WHERE user_id = %s", (new_status, user_id))
+            user = fetch_user(conn, user_id)
+        return ok({"status": "success", "message": f"User {new_status}", "user": user, "source": "database"})
+    except Exception as exc:
+        return db_error_response(exc)
+
+
+@app.route("/api/datasets", methods=["GET", "POST"])
 def datasets():
+    if request.method == "POST":
+        payload = request.get_json(silent=True) or {}
+        name = payload.get("dataset_name") or payload.get("datasetName")
+        if not name:
+            return fail("dataset_name is required", 400)
+        try:
+            with db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "INSERT INTO datasets (dataset_name, dataset_path, total_images, annotation_status, annotation_format) "
+                        "VALUES (%s, %s, %s, %s, %s) RETURNING dataset_id",
+                        (str(name).strip(),
+                         payload.get("dataset_path", ""),
+                         int(payload.get("total_images", 0)),
+                         payload.get("annotation_status", "not_started"),
+                         payload.get("annotation_format")),
+                    )
+                    ds_id = cur.fetchone()["dataset_id"]
+                with conn.cursor() as cur:
+                    cur.execute("SELECT * FROM datasets WHERE dataset_id = %s", (ds_id,))
+                    ds = cur.fetchone()
+            return ok({"status": "success", "message": "Dataset created", "dataset": ds, "source": "database"}, 201)
+        except Exception as exc:
+            return db_error_response(exc)
+
     try:
         with db_connection() as conn:
             with conn.cursor() as cur:
@@ -838,6 +884,114 @@ def datasets():
         return ok({"datasets": rows, "total": len(rows), "source": "database"})
     except Exception as exc:
         return ok({"datasets": [], "total": 0, "source": "mock", "database_error": str(exc)})
+
+
+@app.route("/api/datasets/<int:dataset_id>", methods=["PUT", "DELETE"])
+def dataset_detail(dataset_id: int):
+    if request.method == "DELETE":
+        try:
+            with db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("DELETE FROM datasets WHERE dataset_id = %s", (dataset_id,))
+            return ok({"status": "success", "message": "Dataset deleted", "source": "database"})
+        except Exception as exc:
+            return db_error_response(exc)
+
+    payload = request.get_json(silent=True) or {}
+    try:
+        with db_connection() as conn:
+            updates, params = [], []
+            for col in ["dataset_name", "annotation_status", "annotation_format"]:
+                if col in payload and payload[col] is not None:
+                    updates.append(f"{col} = %s")
+                    params.append(str(payload[col]).strip() if col == "dataset_name" else payload[col])
+            if "total_images" in payload:
+                updates.append("total_images = %s")
+                params.append(int(payload["total_images"]))
+            if not updates:
+                return fail("No fields provided to update", 400)
+            params.append(dataset_id)
+            with conn.cursor() as cur:
+                cur.execute(f"UPDATE datasets SET {', '.join(updates)} WHERE dataset_id = %s", params)
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM datasets WHERE dataset_id = %s", (dataset_id,))
+                ds = cur.fetchone()
+        return ok({"status": "success", "message": "Dataset updated", "dataset": ds, "source": "database"})
+    except Exception as exc:
+        return db_error_response(exc)
+
+
+@app.route("/api/admin/stats")
+def admin_stats():
+    return stats()
+
+
+@app.route("/api/admin/logs")
+def admin_logs():
+    return logs()
+
+
+@app.route("/api/admin/backup", methods=["POST"])
+def admin_backup_create():
+    return backup()
+
+
+@app.route("/api/admin/backups")
+def admin_backups():
+    return backup()
+
+
+@app.route("/api/admin/storage")
+def admin_storage():
+    try:
+        with db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) AS cnt FROM images")
+                total_images = cur.fetchone()["cnt"]
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) AS cnt FROM image_files")
+                total_files = cur.fetchone()["cnt"]
+            with conn.cursor() as cur:
+                cur.execute("SELECT COALESCE(SUM(file_size), 0) AS sum_bytes FROM image_files")
+                total_bytes = cur.fetchone()["sum_bytes"]
+        return ok({
+            "total_images": total_images,
+            "total_files": total_files,
+            "total_size_bytes": int(total_bytes),
+            "total_size_mb": round(int(total_bytes) / (1024 * 1024), 2),
+            "encrypted": True,
+            "source": "database",
+        })
+    except Exception as exc:
+        return ok({
+            "total_images": 520, "total_size_mb": 1240, "encrypted": True,
+            "source": "mock", "database_error": str(exc),
+        })
+
+
+@app.route("/api/images/<int:image_id>/file/<string:file_type>")
+def serve_image_file(image_id: int, file_type: str):
+    """Serve binary image data from image_files table."""
+    if file_type not in ("original", "annotated"):
+        return fail("file_type must be original or annotated", 400)
+    try:
+        with db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT image_data, mime_type, file_name FROM image_files "
+                    "WHERE image_id = %s AND file_type = %s",
+                    (image_id, file_type),
+                )
+                row = cur.fetchone()
+        if not row:
+            return fail("File not found", 404)
+        return Response(
+            bytes(row["image_data"]),
+            mimetype=row["mime_type"],
+            headers={"Content-Disposition": f'inline; filename="{row["file_name"]}"'},
+        )
+    except Exception as exc:
+        return db_error_response(exc)
 
 
 @app.route("/api/logs", methods=["GET"])

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Maize Detector — Admin Panel</title>
+<title>Maize Detector &mdash; Admin Panel</title>
 <link rel="stylesheet" href="../css/style.css">
 </head>
 <body>
@@ -23,7 +23,7 @@
 
 <div class="container">
   <h2 class="page-title">Admin Panel</h2>
-  <p class="page-subtitle">System management and monitoring — live database</p>
+  <p class="page-subtitle">System management and monitoring &mdash; live database</p>
 
   <div class="tabs" style="flex-wrap:wrap;" id="tabBar">
     <button class="tab active" data-tab="users">Users (D.1)</button>
@@ -54,7 +54,7 @@ document.getElementById('tabBar').addEventListener('click', function(e) {
 renderTab('users');
 
 // ═══════════════════════════════════════════════════════════
-//  TAB RENDERERS — each fetches real API, falls back to MockData
+//  TAB RENDERERS &mdash; each fetches real API, falls back to MockData
 // ═══════════════════════════════════════════════════════════
 
 async function renderTab(type) {
@@ -71,7 +71,7 @@ async function renderTab(type) {
   }
 }
 
-// ── D.1 Users — real CRUD via /api/users ──────────────────
+// ── D.1 Users &mdash; real CRUD via /api/users ──────────────────
 
 async function renderUsers(el) {
   let users = [];
@@ -119,9 +119,11 @@ function bindUserEvents(el, users) {
     if (!name) return;
     const email = prompt('Email:');
     if (!email) return;
+    const password = prompt('Password (min 6 chars):');
+    if (!password || password.length < 6) { alert('Password must be at least 6 characters'); return; }
     const role = prompt('Role (Farmer/Researcher/Agronomist/Admin):', 'Farmer');
     const roleMap = { Farmer: 1, Researcher: 2, Agronomist: 3, Admin: 4 };
-    const res = await apiPost('/api/users', { name, email, role_id: roleMap[role] || 1 });
+    const res = await apiPost('/api/users', { name, email, password, role_id: roleMap[role] || 1 });
     setMsg(el, res.ok ? 'User created!' : 'Created (mock mode)');
     setTimeout(() => renderUsers(el), 600);
   };
@@ -167,7 +169,7 @@ function setMsg(el, text) {
   if (m) m.textContent = text;
 }
 
-// ── D.2 Storage — real /api/admin/storage ─────────────────
+// ── D.2 Storage &mdash; real /api/admin/storage ─────────────────
 
 async function renderStorage(el) {
   let stats = null;
@@ -192,7 +194,7 @@ async function renderStorage(el) {
   </div>`;
 }
 
-// ── D.3 Monitor — real /api/admin/stats ───────────────────
+// ── D.3 Monitor &mdash; real /api/admin/stats ───────────────────
 
 async function renderMonitor(el) {
   let stats = null;
@@ -215,7 +217,7 @@ async function renderMonitor(el) {
   </div>`;
 }
 
-// ── D.4 Datasets — real CRUD via /api/datasets ────────────
+// ── D.4 Datasets &mdash; real CRUD via /api/datasets ────────────
 
 async function renderDatasets(el) {
   let datasets = [];
@@ -232,7 +234,7 @@ async function renderDatasets(el) {
 
   const rows = datasets.map(d => {
     const badge = d.annotationStatus === 'completed' ? 'badge-green' : d.annotationStatus === 'in_progress' ? 'badge-yellow' : 'badge-red';
-    return `<tr><td>${esc(d.datasetName)}</td><td>${d.totalImages}</td><td><span class="badge ${badge}">${d.annotationStatus}</span></td><td>${d.annotationFormat || '—'}</td><td>
+    return `<tr><td>${esc(d.datasetName)}</td><td>${d.totalImages}</td><td><span class="badge ${badge}">${d.annotationStatus}</span></td><td>${d.annotationFormat || '&mdash;'}</td><td>
       <button class="btn btn-sm btn-outline" data-action="edit-ds" data-dsid="${d.datasetId}" data-name="${escAttr(d.datasetName)}">Edit</button>
       <button class="btn btn-sm btn-outline" style="color:var(--red);" data-action="delete-ds" data-dsid="${d.datasetId}" data-name="${escAttr(d.datasetName)}">Delete</button></td></tr>`;
   }).join('');
@@ -288,7 +290,7 @@ async function renderDatasets(el) {
   };
 }
 
-// ── D.5 Permissions — real users from /api/users ──────────
+// ── D.5 Permissions &mdash; real users from /api/users ──────────
 
 async function renderPermissions(el) {
   let users = [];
@@ -317,7 +319,7 @@ async function renderPermissions(el) {
   </div>`;
 }
 
-// ── D.6 Backup — real /api/admin/backup + /api/admin/backups ──
+// ── D.6 Backup &mdash; real /api/admin/backup + /api/admin/backups ──
 
 async function renderBackup(el) {
   let backups = [];
@@ -333,15 +335,15 @@ async function renderBackup(el) {
     : backups.map(b => {
         const date = new Date(b.created_at).toLocaleDateString('en-GB', { year: 'numeric', month: 'short', day: 'numeric' });
         const sizeMatch = b.details ? b.details.match(/(\d+)MB/) : null;
-        const size = sizeMatch ? sizeMatch[1] + ' MB' : '—';
+        const size = sizeMatch ? sizeMatch[1] + ' MB' : '&mdash;';
         return `<tr><td>${date}</td><td>${size}</td><td><span class="badge badge-green">Complete</span></td>
           <td><button class="btn btn-sm btn-outline restore-btn" data-logid="${b.log_id}" data-details="${escAttr(b.details || '')}">Restore</button></td></tr>`;
       }).join('');
 
   const lastBackup = backups.length > 0
     ? { date: new Date(backups[0].created_at).toLocaleDateString('en-GB', { month: 'short', day: 'numeric' }),
-        size: (backups[0].details || '').match(/(\d+)MB/)?.[1] || '—' }
-    : { date: 'Never', size: '—' };
+        size: (backups[0].details || '').match(/(\d+)MB/)?.[1] || '&mdash;' }
+    : { date: 'Never', size: '&mdash;' };
 
   el.innerHTML = `<div class="card"><h3 style="color:var(--green);">System Backup</h3>
     <div class="card-grid" style="margin-top:1rem;">
@@ -362,7 +364,7 @@ async function renderBackup(el) {
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner"></span> Backing up...';
     const res = await apiPost('/api/admin/backup', {});
-    if (msgEl) msgEl.textContent = res.ok ? `Backup completed — ${res.data.size_mb}MB!` : 'Backup done (mock mode)';
+    if (msgEl) msgEl.textContent = res.ok ? `Backup completed - ${res.data.size_mb}MB!` : 'Backup done (mock mode)';
     setTimeout(() => renderBackup(el), 1200);
   };
 
