@@ -66,7 +66,17 @@
 <script src="../js/api.js"></script>
 <script>
 setActiveNav();
-const records = MockData.results.map(r => ({...r, selected: false}));
+let records = [];
+
+async function loadExportData() {
+  const res = await apiGet('/api/history');
+  if (res.ok && Array.isArray(res.data.records)) {
+    records = res.data.records.map(r => normalizeResult(r)).map(r => ({...r, selected: false}));
+  } else {
+    records = MockData.results.map(r => normalizeResult(r)).map(r => ({...r, selected: false}));
+  }
+  renderRecords();
+}
 
 function renderRecords() {
   document.getElementById('recordTable').innerHTML = records.map((r, i) =>
@@ -108,7 +118,7 @@ function exportData() {
   alert(`${selected.length} records exported as ${filename}`);
 }
 
-renderRecords();
+loadExportData();
 </script>
 </body>
 </html>

@@ -40,7 +40,20 @@
 <script src="../js/api.js"></script>
 <script>
 setActiveNav();
-const fields = MockData.fields;
+let fields = MockData.fields;
+
+async function loadFields() {
+  const res = await apiGet('/api/fields');
+  if (res.ok && Array.isArray(res.data.fields)) {
+    fields = res.data.fields.map(f => ({
+      fieldId: f.field_id, fieldName: f.field_name,
+      location: f.location, status: f.health_status === 'At-Risk' ? 'Warning' : 'Healthy',
+      latestAvgCount: f.latest_avg_count, baselineCount: f.baseline_count || 30,
+      healthStatus: f.health_status || 'Healthy'
+    }));
+  }
+  renderTab('dashboard');
+}
 
 function switchTab(type) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -78,7 +91,7 @@ function filterFields(region) {
   document.getElementById('fieldGrid').innerHTML = renderFieldCards(filtered);
 }
 
-renderTab('dashboard');
+loadFields();
 </script>
 </body>
 </html>

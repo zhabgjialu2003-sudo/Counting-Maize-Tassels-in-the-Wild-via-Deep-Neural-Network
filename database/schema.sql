@@ -24,6 +24,8 @@ CREATE TABLE images (
     image_path VARCHAR(500) NOT NULL,
     upload_time DATETIME DEFAULT CURRENT_TIMESTAMP,
     status VARCHAR(50) DEFAULT 'pending',
+    file_size INT,
+    access_level VARCHAR(50) DEFAULT 'private',
     FOREIGN KEY (user_id) REFERENCES users(user_id)
 );
 
@@ -58,6 +60,19 @@ CREATE TABLE system_logs (
     details TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(user_id)
+);
+
+CREATE TABLE image_files (
+    file_id INT PRIMARY KEY AUTO_INCREMENT,
+    image_id INT NOT NULL,
+    file_type VARCHAR(30) NOT NULL CHECK (file_type IN ('original', 'annotated')),
+    file_name VARCHAR(255) NOT NULL,
+    mime_type VARCHAR(100) NOT NULL,
+    file_size INT NOT NULL,
+    image_data LONGBLOB NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_image_file (image_id, file_type),
+    FOREIGN KEY (image_id) REFERENCES images(image_id) ON DELETE CASCADE
 );
 
 CREATE TABLE datasets (
