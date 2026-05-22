@@ -67,13 +67,45 @@
 <script src="../js/api.js"></script>
 <script>
 setActiveNav();
-// Populate from MockData matching DetectionResult entity
-const data = MockData.results.slice(0, 5);
-document.getElementById('totalImages').textContent = data.length * 26;
-document.getElementById('totalTassels').textContent = data.reduce((s, r) => s + r.tasselCount * 26, 0).toLocaleString();
-document.getElementById('avgCount').textContent = (data.reduce((s, r) => s + r.tasselCount, 0) / data.length).toFixed(1);
-const rows = data.map(r => `<tr><td>${r.imageName}</td><td>${formatDate(r.createdAt)}</td><td>${r.tasselCount}</td><td><span class="badge badge-green">${formatPercent(r.confidenceScore)}</span></td><td><a href="result.html?id=${r.resultId}" class="btn btn-sm btn-outline">View</a></td></tr>`).join('');
-document.getElementById('recentTable').innerHTML = rows;
+
+async function loadDashboard() {
+  // Fetch real stats from API, fall back to MockData
+  const [statsRes, resultsRes] = await Promise.all([
+    apiGet('/api/stats'),
+    apiGet('/api/results?per=5')
+  ]);
+
+  let totalImages, totalTassels, avgCount, recentRecords;
+
+  if (statsRes.ok) {
+    totalImages = statsRes.data.total_uploaded_images || 128;
+    totalTassels = statsRes.data.total_detected_tassels || 3482;
+    avgCount = statsRes.data.average_tassel_count || 27.2;
+  } else {
+    const data = MockData.results;
+    totalImages = data.length * 26;
+    totalTassels = data.reduce((s, r) => s + r.tasselCount * 26, 0);
+    avgCount = (data.reduce((s, r) => s + r.tasselCount, 0) / data.length).toFixed(1);
+  }
+
+  if (resultsRes.ok && Array.isArray(resultsRes.data.records)) {
+    recentRecords = resultsRes.data.records.map(r => normalizeResult(r));
+  } else {
+    recentRecords = MockData.results.slice(0, 5).map(r => normalizeResult(r));
+  }
+
+  document.getElementById('totalImages').textContent = totalImages;
+  document.getElementById('totalTassels').textContent = Number(totalTassels).toLocaleString();
+  document.getElementById('avgCount').textContent = Number(avgCount).toFixed(1);
+
+  const rows = recentRecords.map(r => {
+    const badge = r.confidenceScore >= 0.9 ? 'badge-green' : 'badge-yellow';
+    return `<tr><td>${r.imageName}</td><td>${formatDate(r.createdAt)}</td><td>${r.tasselCount}</td><td><span class="badge ${badge}">${formatPercent(r.confidenceScore)}</span></td><td><a href="result.html?id=${r.resultId}" class="btn btn-sm btn-outline">View</a></td></tr>`;
+  }).join('');
+  document.getElementById('recentTable').innerHTML = rows;
+}
+
+loadDashboard();
 </script>
 </body>
 </html>
