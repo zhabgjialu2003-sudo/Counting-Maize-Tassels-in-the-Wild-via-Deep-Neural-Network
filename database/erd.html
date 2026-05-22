@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Maize Detector - ERD</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  body { font-family: -apple-system, sans-serif; text-align: center; padding: 20px; background: #fff; }
+  h1 { color: #2d6a4f; }
+  .mermaid { display: flex; justify-content: center; }
+</style>
+</head>
+<body>
+<h1>Maize Detector - Entity Relationship Diagram (ERD)</h1>
+<div class="mermaid">
+erDiagram
+    roles ||--o{ users : "role_id"
+    users ||--o{ images : "user_id"
+    users ||--o{ system_logs : "user_id"
+    images ||--o{ detection_results : "image_id"
+    images ||--|{ image_files : "image_id"
+
+    roles {
+        int role_id PK
+        varchar role_name
+    }
+
+    users {
+        int user_id PK
+        varchar name
+        varchar email UK
+        varchar password_hash
+        int role_id FK
+        enum status
+        timestamp created_at
+    }
+
+    images {
+        int image_id PK
+        int user_id FK
+        varchar image_name
+        varchar image_path
+        timestamp upload_time
+        enum status
+        int file_size
+        varchar access_level
+    }
+
+    image_files {
+        int file_id PK
+        int image_id FK
+        varchar file_type
+        varchar file_name
+        varchar mime_type
+        int file_size
+        bytea image_data
+        timestamp created_at
+    }
+
+    detection_results {
+        int result_id PK
+        int image_id FK
+        int tassel_count
+        numeric confidence_score
+        varchar annotated_image_path
+        numeric processing_time
+        jsonb bbox_data
+        timestamp created_at
+    }
+
+    reports {
+        int report_id PK
+        enum report_type
+        date report_date
+        int total_uploads
+        int successful_detections
+        int failed_detections
+        numeric average_tassel_count
+        jsonb chart_data
+        timestamp created_at
+    }
+
+    system_logs {
+        int log_id PK
+        int user_id FK
+        varchar action
+        text details
+        timestamp created_at
+    }
+
+    datasets {
+        int dataset_id PK
+        varchar dataset_name
+        varchar dataset_path
+        int total_images
+        enum annotation_status
+        varchar annotation_format
+        timestamp created_at
+    }
+</div>
+<p style="color:#888;font-size:12px;">FYP-26-S2-7 | Counting Maize Tassels in the Wild via Deep Neural Network</p>
+</body>
+</html>
