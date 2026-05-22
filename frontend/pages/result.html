@@ -83,18 +83,23 @@ async function loadResult() {
   if (stored) {
     try { resultData = normalizeResult(JSON.parse(stored)); } catch (e) { resultData = null; }
   }
+  console.log('loadResult step1 (sessionStorage):', stored ? 'found' : 'none', resultData ? {imageId: resultData.imageId, resultId: resultData.resultId} : 'null');
 
   if (resultId && (!resultData || String(resultData.resultId) !== resultId || !resultData.imagePath)) {
+    console.log('loadResult step2: fetching from API /api/results/' + resultId);
     const response = await apiGet(`/api/results/${resultId}`);
-    if (response.ok) resultData = normalizeResult(response.data);
+    if (response.ok) { resultData = normalizeResult(response.data); console.log('API success, imageId:', resultData.imageId); }
+    else { console.log('API failed, keeping existing data'); }
   }
 
   if (!resultData && resultId) {
+    console.log('loadResult step3: fallback to MockData for id', resultId);
     const found = MockData.results.find(r => r.resultId === parseInt(resultId, 10));
     resultData = found ? normalizeResult(found) : null;
   }
 
-  if (!resultData) resultData = normalizeResult(MockData.results[0]);
+  if (!resultData) { resultData = normalizeResult(MockData.results[0]); console.log('loadResult step4: using first MockData entry'); }
+  console.log('loadResult final:', {imageId: resultData.imageId, resultId: resultData.resultId, imageName: resultData.imageName});
   displayResult(resultData);
 }
 
@@ -106,10 +111,12 @@ function displayResult(data) {
 
   // Prefer serving real images from the database via API
   const imageId = data.imageId;
+  console.log('displayResult:', {imageId, imageName: data.imageName, imagePath: data.imagePath, originalImagePath: data.originalImagePath});
   const dbOriginalUrl = imageId ? `${API_BASE}/api/images/${imageId}/file/original` : null;
   const dbAnnotatedUrl = imageId ? `${API_BASE}/api/images/${imageId}/file/annotated` : null;
   const originalUrl = dbOriginalUrl || resolveAssetUrl(data.originalImagePath || data.imagePath);
   const annotatedUrl = dbAnnotatedUrl || resolveAssetUrl(data.annotatedImagePath) || originalUrl;
+  console.log('Image URLs:', {dbOriginalUrl, dbAnnotatedUrl, originalUrl, annotatedUrl});
   const fallbackAnnotated = createPlaceholderSvg(`Maize Field Image - ${data.tasselCount} Tassels Detected`, '#e8f5e9', '#2d6a4f');
   const fallbackOriginal = createPlaceholderSvg(data.imageName, '#f0f4c3', '#558b2f');
 
