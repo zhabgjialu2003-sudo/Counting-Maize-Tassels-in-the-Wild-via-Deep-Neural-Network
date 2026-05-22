@@ -167,7 +167,14 @@ function resolveAssetUrl(path) {
 
 // === Mock Fallback Helpers ===
 function mockPredict(imageName) {
-  const base = MockData.results[Math.floor(Math.random() * MockData.results.length)];
+  // Try to match an existing result by image name so imageId is correct (for DB image loading)
+  let base = null;
+  if (imageName) {
+    base = MockData.results.find(r => r.imageName === imageName);
+  }
+  if (!base) {
+    base = MockData.results[Math.floor(Math.random() * MockData.results.length)];
+  }
   return normalizeResult({ ...base, resultId: Date.now(), imageName: imageName || base.imageName });
 }
 
