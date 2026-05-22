@@ -27,6 +27,19 @@ CREATE TABLE images (
     FOREIGN KEY (user_id) REFERENCES users(user_id)
 );
 
+CREATE TABLE image_files (
+    file_id INT PRIMARY KEY AUTO_INCREMENT,
+    image_id INT NOT NULL,
+    file_type VARCHAR(30) NOT NULL,
+    file_name VARCHAR(255) NOT NULL,
+    mime_type VARCHAR(100) NOT NULL,
+    file_size INT NOT NULL,
+    image_data LONGBLOB NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_image_files_image_type (image_id, file_type),
+    FOREIGN KEY (image_id) REFERENCES images(image_id) ON DELETE CASCADE
+);
+
 CREATE TABLE detection_results (
     result_id INT PRIMARY KEY AUTO_INCREMENT,
     image_id INT NOT NULL,

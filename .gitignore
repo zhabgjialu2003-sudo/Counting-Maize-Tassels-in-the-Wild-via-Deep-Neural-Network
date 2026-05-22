@@ -21,3 +21,4 @@ Thumbs.db
 backend/uploads/
 backend/backups/
 .playwright-cli/
+output/

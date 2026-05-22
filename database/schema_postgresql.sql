@@ -9,6 +9,7 @@ DROP TABLE IF EXISTS datasets       CASCADE;
 DROP TABLE IF EXISTS system_logs    CASCADE;
 DROP TABLE IF EXISTS reports        CASCADE;
 DROP TABLE IF EXISTS detection_results CASCADE;
+DROP TABLE IF EXISTS image_files    CASCADE;
 DROP TABLE IF EXISTS images         CASCADE;
 DROP TABLE IF EXISTS users          CASCADE;
 DROP TABLE IF EXISTS roles          CASCADE;
@@ -65,6 +66,23 @@ CREATE TABLE images (
 COMMENT ON TABLE images IS 'Uploaded maize field images';
 CREATE INDEX idx_images_user   ON images(user_id);
 CREATE INDEX idx_images_status ON images(status);
+
+-- image_files (D.2 Entity)
+-- Stores selected original/annotated maize images in PostgreSQL for direct API serving.
+CREATE TABLE image_files (
+    file_id    SERIAL PRIMARY KEY,
+    image_id   INTEGER NOT NULL REFERENCES images(image_id) ON DELETE CASCADE,
+    file_type  VARCHAR(30) NOT NULL CHECK (file_type IN ('original', 'annotated')),
+    file_name  VARCHAR(255) NOT NULL,
+    mime_type  VARCHAR(100) NOT NULL,
+    file_size  INTEGER NOT NULL,
+    image_data BYTEA NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (image_id, file_type)
+);
+COMMENT ON TABLE image_files IS 'Binary image storage for selected original/annotated maize images';
+CREATE INDEX idx_image_files_image ON image_files(image_id);
+CREATE INDEX idx_image_files_type  ON image_files(file_type);
 
 -- detection_results (A.2, A.3, A.4, B.1, B.3, C.2 Entity)
 -- Replaces both detection_results and history — queried by created_at for timeline
@@ -181,6 +199,7 @@ INSERT INTO system_logs (user_id, action, details, created_at) VALUES
 SELECT setval(pg_get_serial_sequence('roles', 'role_id'), COALESCE((SELECT MAX(role_id) FROM roles), 1), true);
 SELECT setval(pg_get_serial_sequence('users', 'user_id'), COALESCE((SELECT MAX(user_id) FROM users), 1), true);
 SELECT setval(pg_get_serial_sequence('images', 'image_id'), COALESCE((SELECT MAX(image_id) FROM images), 1), true);
+SELECT setval(pg_get_serial_sequence('image_files', 'file_id'), COALESCE((SELECT MAX(file_id) FROM image_files), 1), true);
 SELECT setval(pg_get_serial_sequence('detection_results', 'result_id'), COALESCE((SELECT MAX(result_id) FROM detection_results), 1), true);
 SELECT setval(pg_get_serial_sequence('reports', 'report_id'), COALESCE((SELECT MAX(report_id) FROM reports), 1), true);
 SELECT setval(pg_get_serial_sequence('datasets', 'dataset_id'), COALESCE((SELECT MAX(dataset_id) FROM datasets), 1), true);
@@ -192,6 +211,7 @@ SELECT setval(pg_get_serial_sequence('system_logs', 'log_id'), COALESCE((SELECT 
 SELECT 'roles'              AS table_name, COUNT(*) AS row_count FROM roles
 UNION ALL SELECT 'users',              COUNT(*) FROM users
 UNION ALL SELECT 'images',             COUNT(*) FROM images
+UNION ALL SELECT 'image_files',        COUNT(*) FROM image_files
 UNION ALL SELECT 'detection_results',  COUNT(*) FROM detection_results
 UNION ALL SELECT 'reports',            COUNT(*) FROM reports
 UNION ALL SELECT 'datasets',           COUNT(*) FROM datasets

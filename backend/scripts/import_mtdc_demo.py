@@ -4,7 +4,6 @@ import argparse
 import json
 import os
 import re
-import shutil
 import zipfile
 from pathlib import Path
 from xml.etree import ElementTree
@@ -15,7 +14,7 @@ from psycopg.rows import dict_row
 
 ROOT = Path(__file__).resolve().parents[1]
 UPLOAD_DIR = ROOT / "uploads" / "mtdc-demo"
-DEFAULT_ZIP = Path(os.getenv("MTDC_UAV_ZIP", r"C:\Users\张嘉璐\Desktop\MTDC-UAV.zip"))
+DEFAULT_ZIP = Path(os.getenv("MTDC_UAV_ZIP", str(Path.home() / "Desktop" / "MTDC-UAV.zip")))
 
 
 def clean_name(name: str) -> str:
@@ -31,6 +30,50 @@ def db_config() -> dict[str, str]:
         "user": os.getenv("PGUSER", "postgres"),
         "password": os.getenv("PGPASSWORD", ""),
     }
+
+
+def image_mime_type(filename: str) -> str:
+    if Path(filename).suffix.lower() == ".png":
+        return "image/png"
+    return "image/jpeg"
+
+
+def ensure_image_files_table(conn) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS image_files (
+                file_id    SERIAL PRIMARY KEY,
+                image_id   INTEGER NOT NULL REFERENCES images(image_id) ON DELETE CASCADE,
+                file_type  VARCHAR(30) NOT NULL CHECK (file_type IN ('original', 'annotated')),
+                file_name  VARCHAR(255) NOT NULL,
+                mime_type  VARCHAR(100) NOT NULL,
+                file_size  INTEGER NOT NULL,
+                image_data BYTEA NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (image_id, file_type)
+            )
+            """
+        )
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_image_files_image ON image_files(image_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_image_files_type ON image_files(file_type)")
+
+
+def upsert_image_file(cur, image_id: int, file_type: str, file_name: str, mime_type: str, image_bytes: bytes) -> None:
+    cur.execute(
+        """
+        INSERT INTO image_files (image_id, file_type, file_name, mime_type, file_size, image_data)
+        VALUES (%s, %s, %s, %s, %s, %s)
+        ON CONFLICT (image_id, file_type)
+        DO UPDATE SET
+            file_name = EXCLUDED.file_name,
+            mime_type = EXCLUDED.mime_type,
+            file_size = EXCLUDED.file_size,
+            image_data = EXCLUDED.image_data,
+            created_at = CURRENT_TIMESTAMP
+        """,
+        (image_id, file_type, file_name, mime_type, len(image_bytes), image_bytes),
+    )
 
 
 def read_detection_label(zip_file: zipfile.ZipFile, label_name: str) -> dict:
@@ -64,7 +107,11 @@ def select_detection_pairs(zip_file: zipfile.ZipFile, limit: int) -> list[tuple[
     names = zip_file.namelist()
     labels = {name.lower(): name for name in names if name.lower().endswith(".xml")}
     pairs = []
-    for image_name in sorted(name for name in names if name.lower().startswith("mtdc-uav/detection/images/") and name.lower().endswith((".jpg", ".jpeg", ".png"))):
+    for image_name in sorted(
+        name
+        for name in names
+        if name.lower().startswith("mtdc-uav/detection/images/") and name.lower().endswith((".jpg", ".jpeg", ".png"))
+    ):
         label_name = re.sub(r"/images/", "/labels/", image_name, flags=re.IGNORECASE)
         label_name = re.sub(r"\.(jpg|jpeg|png)$", ".xml", label_name, flags=re.IGNORECASE)
         label_name = labels.get(label_name.lower())
@@ -79,12 +126,13 @@ def import_pair(conn, zip_file: zipfile.ZipFile, image_name: str, label_name: st
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     dest_name = clean_name("mtdc_" + Path(image_name).name)
     dest_path = UPLOAD_DIR / dest_name
-    with zip_file.open(image_name) as source, dest_path.open("wb") as target:
-        shutil.copyfileobj(source, target)
+    image_bytes = zip_file.read(image_name)
+    dest_path.write_bytes(image_bytes)
 
     bbox_data = read_detection_label(zip_file, label_name)
     tassel_count = len(bbox_data["boxes"])
     relative_path = f"uploads/mtdc-demo/{dest_name}"
+    file_size = len(image_bytes)
 
     with conn.cursor() as cur:
         cur.execute("SELECT image_id FROM images WHERE image_path = %s", (relative_path,))
@@ -97,7 +145,7 @@ def import_pair(conn, zip_file: zipfile.ZipFile, image_name: str, label_name: st
                 SET image_name = %s, status = 'completed', file_size = %s, access_level = 'public'
                 WHERE image_id = %s
                 """,
-                (dest_name, dest_path.stat().st_size, image_id),
+                (dest_name, file_size, image_id),
             )
             cur.execute("DELETE FROM detection_results WHERE image_id = %s", (image_id,))
         else:
@@ -107,9 +155,11 @@ def import_pair(conn, zip_file: zipfile.ZipFile, image_name: str, label_name: st
                 VALUES (1, %s, %s, 'completed', %s, 'public')
                 RETURNING image_id
                 """,
-                (dest_name, relative_path, dest_path.stat().st_size),
+                (dest_name, relative_path, file_size),
             )
             image_id = cur.fetchone()["image_id"]
+
+        upsert_image_file(cur, image_id, "original", dest_name, image_mime_type(dest_name), image_bytes)
 
         cur.execute(
             """
@@ -138,10 +188,13 @@ def upsert_dataset_log(conn, count: int) -> None:
             cur.execute(
                 """
                 UPDATE datasets
-                SET total_images = %s, annotation_status = 'completed', annotation_format = 'Pascal VOC XML'
+                SET dataset_path = %s,
+                    total_images = %s,
+                    annotation_status = 'completed',
+                    annotation_format = 'Pascal VOC XML'
                 WHERE dataset_name = %s
                 """,
-                (count, "MTDC-UAV Demo Detection Set"),
+                ("postgresql:image_files; backend/uploads/mtdc-demo", count, "MTDC-UAV Demo Detection Set"),
             )
         else:
             cur.execute(
@@ -149,7 +202,7 @@ def upsert_dataset_log(conn, count: int) -> None:
                 INSERT INTO datasets (dataset_name, dataset_path, total_images, annotation_status, annotation_format)
                 VALUES (%s, %s, %s, 'completed', 'Pascal VOC XML')
                 """,
-                ("MTDC-UAV Demo Detection Set", "backend/uploads/mtdc-demo", count),
+                ("MTDC-UAV Demo Detection Set", "postgresql:image_files; backend/uploads/mtdc-demo", count),
             )
         cur.execute(
             """
@@ -197,6 +250,7 @@ def main() -> int:
 
         imported = []
         with psycopg.connect(**config, row_factory=dict_row) as conn:
+            ensure_image_files_table(conn)
             for image_name, label_name in pairs:
                 imported.append(import_pair(conn, zip_file, image_name, label_name))
             upsert_dataset_log(conn, len(imported))

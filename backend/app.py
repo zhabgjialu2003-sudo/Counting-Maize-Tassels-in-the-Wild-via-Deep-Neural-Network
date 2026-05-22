@@ -12,7 +12,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, Response, jsonify, request, send_from_directory
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 
@@ -147,6 +147,15 @@ def validate_image_upload(filename: str, content_type: str | None = None) -> str
     return None
 
 
+def image_mime_type(filename: str, content_type: str | None = None) -> str:
+    normalized_type = content_type.split(";", 1)[0].lower() if content_type else None
+    if normalized_type in ALLOWED_IMAGE_MIME_TYPES:
+        return normalized_type
+    if Path(filename).suffix.lower() == ".png":
+        return "image/png"
+    return "image/jpeg"
+
+
 def clean_image_filename(filename: str) -> str:
     suffix = Path(filename).suffix.lower()
     clean_name = secure_filename(filename)
@@ -277,19 +286,23 @@ def find_pg_dump() -> str | None:
 def normalize_detection_row(row: dict[str, Any]) -> dict[str, Any]:
     count = row.get("tassel_count", row.get("count", 0))
     confidence = row.get("confidence_score", row.get("confidence", 0))
-    image_path = row.get("image_path")
+    storage_image_path = row.get("image_path")
+    image_id = row.get("image_id")
+    image_path = f"/api/images/{image_id}/original" if image_id else storage_image_path
+    annotated_image_path = row.get("annotated_image_path") or image_path
     return {
         "result_id": row.get("result_id"),
-        "image_id": row.get("image_id"),
+        "image_id": image_id,
         "image_name": row.get("image_name"),
         "image_path": image_path,
         "original_image_path": image_path,
+        "storage_image_path": storage_image_path,
         "tassel_count": count,
         "count": count,
         "confidence_score": confidence,
         "confidence": confidence,
         "processing_time": row.get("processing_time"),
-        "annotated_image_path": row.get("annotated_image_path"),
+        "annotated_image_path": annotated_image_path,
         "bbox_data": row.get("bbox_data"),
         "created_at": row.get("created_at"),
         "status": "success",
@@ -337,6 +350,55 @@ def create_image_record(conn, image_name: str, file_size: int | None = None, use
             (user_id, image_name, image_path, file_size),
         )
         return cur.fetchone()["image_id"]
+
+
+def store_image_file(conn, image_id: int, file_type: str, file_name: str, mime_type: str, image_bytes: bytes) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO image_files (image_id, file_type, file_name, mime_type, file_size, image_data)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (image_id, file_type)
+            DO UPDATE SET
+                file_name = EXCLUDED.file_name,
+                mime_type = EXCLUDED.mime_type,
+                file_size = EXCLUDED.file_size,
+                image_data = EXCLUDED.image_data,
+                created_at = CURRENT_TIMESTAMP
+            """,
+            (image_id, file_type, file_name, mime_type, len(image_bytes), image_bytes),
+        )
+
+
+def fetch_image_file(conn, image_id: int, file_type: str) -> dict[str, Any] | None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT file_name, mime_type, file_size, image_data
+            FROM image_files
+            WHERE image_id = %s AND file_type = %s
+            LIMIT 1
+            """,
+            (image_id, file_type),
+        )
+        return cur.fetchone()
+
+
+def fetch_image_storage_path(conn, image_id: int) -> str | None:
+    with conn.cursor() as cur:
+        cur.execute("SELECT image_path FROM images WHERE image_id = %s", (image_id,))
+        row = cur.fetchone()
+    return row["image_path"] if row else None
+
+
+def local_upload_filename(image_path: str | None) -> str | None:
+    if not image_path:
+        return None
+    normalized = image_path.replace("\\", "/").lstrip("/")
+    for prefix in ("storage/uploads/", "uploads/"):
+        if normalized.startswith(prefix):
+            return normalized[len(prefix):]
+    return None
 
 
 def create_mock_detection(conn, image_id: int) -> dict[str, Any]:
@@ -415,6 +477,37 @@ def uploaded_file(filename: str):
     return send_from_directory(UPLOAD_DIR, filename)
 
 
+@app.route("/api/images/<int:image_id>/<file_type>", methods=["GET"])
+def image_file(image_id: int, file_type: str):
+    if file_type not in {"original", "annotated"}:
+        return fail("file_type must be original or annotated", 400)
+
+    try:
+        with db_connection() as conn:
+            image_row = fetch_image_file(conn, image_id, file_type)
+            if image_row:
+                file_name = Path(str(image_row["file_name"])).name.replace('"', "")
+                return Response(
+                    bytes(image_row["image_data"]),
+                    mimetype=image_row["mime_type"],
+                    headers={
+                        "Content-Disposition": f'inline; filename="{file_name}"',
+                        "Cache-Control": "public, max-age=3600",
+                        "Content-Length": str(image_row["file_size"]),
+                    },
+                )
+
+            storage_path = fetch_image_storage_path(conn, image_id)
+
+        local_name = local_upload_filename(storage_path)
+        if local_name and (UPLOAD_DIR / local_name).exists():
+            return send_from_directory(UPLOAD_DIR, local_name)
+
+        return fail("Image file not found", 404)
+    except Exception as exc:
+        return db_error_response(exc)
+
+
 @app.route("/api/health", methods=["GET"])
 def health():
     ready, error = db_ready()
@@ -434,6 +527,8 @@ def upload():
     file = request.files.get("image") or request.files.get("file")
     payload = request.get_json(silent=True) or {}
     user_id = request.form.get("user_id") or payload.get("user_id") or 1
+    file_bytes = None
+    mime_type = None
 
     if file:
         original_name = file.filename or "uploaded_maize_image.jpg"
@@ -442,8 +537,10 @@ def upload():
             return fail(validation_error, 400)
 
         image_name = clean_image_filename(original_name)
-        file_size = request.content_length
-        file.save(UPLOAD_DIR / image_name)
+        mime_type = image_mime_type(image_name, file.content_type)
+        file_bytes = file.read()
+        file_size = len(file_bytes)
+        (UPLOAD_DIR / image_name).write_bytes(file_bytes)
     else:
         image_name = payload.get("image_name") or payload.get("imageName") or "uploaded_maize_image.jpg"
         validation_error = validate_image_upload(image_name)
@@ -456,6 +553,8 @@ def upload():
     try:
         with db_connection() as conn:
             image_id = create_image_record(conn, image_name=image_name, file_size=file_size, user_id=int(user_id))
+            if file_bytes is not None:
+                store_image_file(conn, image_id, "original", image_name, mime_type or image_mime_type(image_name), file_bytes)
         return ok(
             {
                 "status": "success",

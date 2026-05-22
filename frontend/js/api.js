@@ -95,6 +95,7 @@ function normalizeBBoxData(raw) {
 function resolveAssetUrl(path) {
   if (!path || path === 'data:image/svg+xml,...') return null;
   if (path.startsWith('data:') || path.startsWith('http://') || path.startsWith('https://')) return path;
+  if (path.startsWith('/api/')) return `${API_BASE}${path}`;
   if (path.startsWith('/storage/uploads/')) return `${API_BASE}${path.replace('/storage', '')}`;
   if (path.startsWith('/uploads/')) return `${API_BASE}${path}`;
   if (path.startsWith('uploads/')) return `${API_BASE}/${path}`;

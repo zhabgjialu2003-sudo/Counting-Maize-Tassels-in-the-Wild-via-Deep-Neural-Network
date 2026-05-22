@@ -28,6 +28,7 @@ http://localhost:5000
 - `POST /api/predict`
 - `GET /api/history`
 - `GET /api/results/<result_id>`
+- `GET /api/images/<image_id>/original` - serves the original image stored in PostgreSQL
 - `GET /api/stats`
 - `GET /api/report/daily`
 - `GET /api/report/weekly`
@@ -52,10 +53,10 @@ Use the importer to extract a small local demo set from `MTDC-UAV.zip` and inser
 
 ```powershell
 $env:PGPASSWORD="your-postgres-password"
-python backend\scripts\import_mtdc_demo.py --zip "C:\Users\张嘉璐\Desktop\MTDC-UAV.zip" --limit 40
+python backend\scripts\import_mtdc_demo.py --zip "$env:USERPROFILE\Desktop\MTDC-UAV.zip" --limit 40
 ```
 
-The importer copies files to `backend/uploads/mtdc-demo/`, stores only relative paths in the database, and keeps the image files out of Git.
+The importer stores selected original images in PostgreSQL `image_files.image_data` (`BYTEA`) and also keeps a local copy under `backend/uploads/mtdc-demo/` as a fallback. Frontend result/history pages use `/api/images/<image_id>/original`, so the displayed maize field image comes from the database through the Flask API.
 
 Useful public dataset sources:
 
