@@ -118,26 +118,50 @@ function displayResult(data) {
   const originalUrl = dbOriginalUrl || resolveAssetUrl(data.originalImagePath || data.imagePath);
   const annotatedUrl = originalUrl;  // always show the real photo with bbox overlay on top
   console.log('Image URLs:', {dbOriginalUrl, originalUrl, annotatedUrl});
-  const fallbackAnnotated = createPlaceholderSvg(`Maize Field Image - ${data.tasselCount} Tassels Detected`, '#e8f5e9', '#2d6a4f');
-  const fallbackOriginal = createPlaceholderSvg(data.imageName, '#f0f4c3', '#558b2f');
+  const fallbackAnnotated = `Maize Field Image - ${data.tasselCount} Tassels Detected`;
+  const fallbackOriginal = data.imageName;
 
   setImageSource(document.getElementById('annotatedImg'), annotatedUrl, fallbackAnnotated);
   setImageSource(document.getElementById('originalImg'), originalUrl, fallbackOriginal, false);
-  renderAnnotationOverlay(data, Boolean(originalUrl));
+  if (originalUrl) {
+    renderAnnotationOverlay(data, true);
+  }
 }
 
-function setImageSource(img, url, fallback, clearOverlay = true) {
+function setImageSource(img, url, fallbackText, clearOverlay = true) {
   if (!img) { console.error('setImageSource: img element is null'); return; }
-  console.log('setImageSource: setting src, url=' + (url || '(null)') + ' fallback=' + (fallback ? fallback.substring(0,50) : '(null)'));
-  img.onload = () => { console.log('Image loaded successfully: ' + img.src.substring(0,80)); };
+  console.log('setImageSource: url=' + (url || '(null)') + ' fallbackText=' + fallbackText);
+  if (!url) {
+    // No URL at all — draw fallback directly in the overlay SVG
+    img.style.display = 'none';
+    drawFallbackOverlay(fallbackText);
+    return;
+  }
+  img.style.display = 'block';
+  img.onload = () => { console.log('Image loaded: ' + img.src.substring(0,80)); };
   img.onerror = () => {
-    console.warn('Image load failed, using fallback. Failed URL: ' + (url || '(null)').substring(0,80));
+    console.warn('Image load failed: ' + (url || '').substring(0,80));
     img.onerror = null;
     img.onload = null;
-    img.src = fallback;
-    if (clearOverlay) document.getElementById('annotationOverlay').innerHTML = '';
+    img.style.display = 'none';
+    drawFallbackOverlay(fallbackText);
+    img.src = '';  // prevent further load attempts
   };
-  img.src = url || fallback;
+  img.src = url;
+}
+
+function drawFallbackOverlay(text) {
+  var svg = document.getElementById('annotationOverlay');
+  if (!svg) return;
+  svg.style.display = 'block';
+  svg.innerHTML =
+    '<rect width="100%" height="100%" fill="#f0f4c3"/>' +
+    '<text x="50%" y="45%" text-anchor="middle" fill="#558b2f" font-size="18" font-family="sans-serif">' +
+      esc(text) +
+    '</text>' +
+    '<text x="50%" y="58%" text-anchor="middle" fill="#888" font-size="13" font-family="sans-serif">' +
+      '[ Image data not available in database ]' +
+    '</text>';
 }
 
 function createPlaceholderSvg(text, background, color) {
@@ -146,7 +170,12 @@ function createPlaceholderSvg(text, background, color) {
     <rect width="600" height="400" fill="${background}"/>
     <text x="300" y="190" text-anchor="middle" fill="${color}" font-size="18">${safeText}</text>
   </svg>`;
-  return 'data:image/svg+xml,' + encodeURIComponent(svg);
+  // Use base64 for maximum browser compatibility with SVG data URIs in img tags
+  try {
+    return 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svg)));
+  } catch (e) {
+    return 'data:image/svg+xml,' + encodeURIComponent(svg);
+  }
 }
 
 function renderAnnotationOverlay(data, hasRealImage) {
