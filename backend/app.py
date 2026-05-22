@@ -234,13 +234,12 @@ def validate_user_payload(payload: dict[str, Any], creating: bool = False) -> st
 
 def db_error_response(exc: Exception, fallback_status: int = 500):
     message = str(exc)
+    app.logger.error("Database error: %s", message)
     if "users_email_key" in message:
         return fail("Email already exists", 409)
     if "duplicate key value" in message:
-        return fail("Duplicate database key", 409, database_error=message)
-    if "PGPASSWORD is not configured" in message:
-        return fail("Database password is not configured", 503, database_error=message)
-    return fail("Database operation failed", fallback_status, database_error=message)
+        return fail("Duplicate database key", 409)
+    return fail("Database operation failed", fallback_status)
 
 
 def backup_file_info(path: Path) -> dict[str, Any]:
@@ -1146,4 +1145,4 @@ def fields():
 if __name__ == "__main__":
     print("Maize Detector API running at http://localhost:5000")
     print("Database: PostgreSQL if PGPASSWORD is set, otherwise mock fallback")
-    app.run(debug=True, port=5000)
+    app.run(debug=os.getenv("FLASK_DEBUG", "0") == "1", port=5000)

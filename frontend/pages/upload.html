@@ -118,7 +118,7 @@ function updatePreview() {
 
 function showError(msg) {
   const el = document.getElementById('errorBox');
-  el.innerHTML += `<div class="alert alert-error">${msg}</div>`;
+  el.innerHTML += `<div class="alert alert-error">${esc(msg)}</div>`;
 }
 
 async function submitUpload() {

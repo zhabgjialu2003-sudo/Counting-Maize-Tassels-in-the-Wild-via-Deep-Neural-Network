@@ -82,7 +82,7 @@ async function loadHistory() {
 function renderTable(records) {
   const rows = records.map(r => {
     const badge = r.confidenceScore >= 0.9 ? 'badge-green' : r.confidenceScore >= 0.75 ? 'badge-yellow' : 'badge-red';
-    return `<tr><td>${r.imageName}</td><td>${formatDate(r.createdAt)}</td><td><strong>${r.tasselCount}</strong></td><td><span class="badge ${badge}">${formatPercent(r.confidenceScore)}</span></td><td><a href="result.html?id=${r.resultId}" onclick="viewResult(${r.resultId});return false;" class="btn btn-sm btn-outline">View</a></td></tr>`;
+    return `<tr><td>${esc(r.imageName)}</td><td>${formatDate(r.createdAt)}</td><td><strong>${r.tasselCount}</strong></td><td><span class="badge ${badge}">${formatPercent(r.confidenceScore)}</span></td><td><a href="result.html?id=${r.resultId}" onclick="viewResult(${r.resultId});return false;" class="btn btn-sm btn-outline">View</a></td></tr>`;
   }).join('');
   document.getElementById('historyTableBody').innerHTML = rows || '<tr><td colspan="5" style="text-align:center;color:var(--gray-500);">No records found</td></tr>';
 }

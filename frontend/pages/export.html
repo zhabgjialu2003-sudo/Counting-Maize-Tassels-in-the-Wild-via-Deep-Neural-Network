@@ -80,7 +80,7 @@ async function loadExportData() {
 
 function renderRecords() {
   document.getElementById('recordTable').innerHTML = records.map((r, i) =>
-    `<tr><td><input type="checkbox" onchange="toggleRecord(${i}, this)"></td><td>${r.imageName}</td><td>${formatDate(r.createdAt)}</td><td>${r.tasselCount}</td><td><span class="badge badge-green">${formatPercent(r.confidenceScore)}</span></td></tr>`
+    `<tr><td><input type="checkbox" onchange="toggleRecord(${i}, this)"></td><td>${esc(r.imageName)}</td><td>${formatDate(r.createdAt)}</td><td>${r.tasselCount}</td><td><span class="badge badge-green">${formatPercent(r.confidenceScore)}</span></td></tr>`
   ).join('');
 }
 
