@@ -174,6 +174,8 @@ function mockPredict(imageName) {
   }
   if (!base) {
     base = MockData.results[Math.floor(Math.random() * MockData.results.length)];
+    // Don't use a wrong imageId when no match — let the frontend fall back to SVG placeholder
+    base = { ...base, imageId: null };
   }
   return normalizeResult({ ...base, resultId: Date.now(), imageName: imageName || base.imageName });
 }

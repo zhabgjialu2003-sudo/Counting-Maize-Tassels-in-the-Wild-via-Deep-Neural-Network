@@ -126,8 +126,13 @@ function displayResult(data) {
 }
 
 function setImageSource(img, url, fallback, clearOverlay = true) {
+  if (!img) { console.error('setImageSource: img element is null'); return; }
+  console.log('setImageSource: setting src, url=' + (url || '(null)') + ' fallback=' + (fallback ? fallback.substring(0,50) : '(null)'));
+  img.onload = () => { console.log('Image loaded successfully: ' + img.src.substring(0,80)); };
   img.onerror = () => {
+    console.warn('Image load failed, using fallback. Failed URL: ' + (url || '(null)').substring(0,80));
     img.onerror = null;
+    img.onload = null;
     img.src = fallback;
     if (clearOverlay) document.getElementById('annotationOverlay').innerHTML = '';
   };
