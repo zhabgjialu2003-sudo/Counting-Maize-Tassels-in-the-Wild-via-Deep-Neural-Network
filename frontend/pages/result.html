@@ -113,16 +113,17 @@ function displayResult(data) {
   const imageId = data.imageId;
   console.log('displayResult:', {imageId, imageName: data.imageName, imagePath: data.imagePath, originalImagePath: data.originalImagePath});
   const dbOriginalUrl = imageId ? `${API_BASE}/api/images/${imageId}/file/original` : null;
-  const dbAnnotatedUrl = imageId ? `${API_BASE}/api/images/${imageId}/file/annotated` : null;
+  // Annotated image = original photo + SVG bbox overlay (drawn by renderAnnotationOverlay)
+  // Only use separate annotated file if it exists; otherwise reuse original
   const originalUrl = dbOriginalUrl || resolveAssetUrl(data.originalImagePath || data.imagePath);
-  const annotatedUrl = dbAnnotatedUrl || resolveAssetUrl(data.annotatedImagePath) || originalUrl;
-  console.log('Image URLs:', {dbOriginalUrl, dbAnnotatedUrl, originalUrl, annotatedUrl});
+  const annotatedUrl = originalUrl;  // always show the real photo with bbox overlay on top
+  console.log('Image URLs:', {dbOriginalUrl, originalUrl, annotatedUrl});
   const fallbackAnnotated = createPlaceholderSvg(`Maize Field Image - ${data.tasselCount} Tassels Detected`, '#e8f5e9', '#2d6a4f');
   const fallbackOriginal = createPlaceholderSvg(data.imageName, '#f0f4c3', '#558b2f');
 
   setImageSource(document.getElementById('annotatedImg'), annotatedUrl, fallbackAnnotated);
   setImageSource(document.getElementById('originalImg'), originalUrl, fallbackOriginal, false);
-  renderAnnotationOverlay(data, Boolean(annotatedUrl));
+  renderAnnotationOverlay(data, Boolean(originalUrl));
 }
 
 function setImageSource(img, url, fallback, clearOverlay = true) {
