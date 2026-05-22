@@ -100,7 +100,7 @@ async function loadDashboard() {
 
   const rows = recentRecords.map(r => {
     const badge = r.confidenceScore >= 0.9 ? 'badge-green' : 'badge-yellow';
-    return `<tr><td>${r.imageName}</td><td>${formatDate(r.createdAt)}</td><td>${r.tasselCount}</td><td><span class="badge ${badge}">${formatPercent(r.confidenceScore)}</span></td><td><a href="result.html?id=${r.resultId}" class="btn btn-sm btn-outline">View</a></td></tr>`;
+    return `<tr><td>${esc(r.imageName)}</td><td>${formatDate(r.createdAt)}</td><td>${r.tasselCount}</td><td><span class="badge ${badge}">${formatPercent(r.confidenceScore)}</span></td><td><a href="result.html?id=${r.resultId}" class="btn btn-sm btn-outline">View</a></td></tr>`;
   }).join('');
   document.getElementById('recentTable').innerHTML = rows;
 }

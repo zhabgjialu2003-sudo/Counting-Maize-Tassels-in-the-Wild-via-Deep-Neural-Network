@@ -110,7 +110,7 @@ function updatePreview() {
     return;
   }
   box.innerHTML = selectedFiles.map((f, i) =>
-    `<div style="margin-bottom:1rem;"><p><strong>${f.name}</strong> (${(f.size/1024).toFixed(1)} KB)</p><img src="${URL.createObjectURL(f)}" alt="${f.name}"></div>`
+    `<div style="margin-bottom:1rem;"><p><strong>${esc(f.name)}</strong> (${(f.size/1024).toFixed(1)} KB)</p><img src="${URL.createObjectURL(f)}" alt="${esc(f.name)}"></div>`
   ).join('');
   info.textContent = `${selectedFiles.length} file(s) selected, ready to analyze`;
   btn.disabled = false;

@@ -42,6 +42,8 @@
 setActiveNav();
 
 // ── Tab switching (explicit this, no implicit event) ──────
+let tabToken = 0;
+
 document.getElementById('tabBar').addEventListener('click', function(e) {
   const btn = e.target.closest('.tab');
   if (!btn) return;
@@ -59,23 +61,33 @@ renderTab('users');
 
 async function renderTab(type) {
   const el = document.getElementById('tabContent');
+  const token = ++tabToken;
   el.innerHTML = '<div class="card" style="text-align:center;padding:3rem;"><span class="spinner"></span> Loading live data...</div>';
 
-  switch (type) {
-    case 'users':     await renderUsers(el);     break;
-    case 'storage':   await renderStorage(el);   break;
-    case 'monitor':   await renderMonitor(el);   break;
-    case 'datasets':  await renderDatasets(el);  break;
-    case 'permissions': await renderPermissions(el); break;
-    case 'backup':    await renderBackup(el);    break;
+  try {
+    switch (type) {
+      case 'users':     await renderUsers(el, token);     break;
+      case 'storage':   await renderStorage(el, token);   break;
+      case 'monitor':   await renderMonitor(el, token);   break;
+      case 'datasets':  await renderDatasets(el, token);  break;
+      case 'permissions': await renderPermissions(el, token); break;
+      case 'backup':    await renderBackup(el, token);    break;
+    }
+  } catch (err) {
+    if (token === tabToken) {
+      el.innerHTML = `<div class="card" style="text-align:center;padding:2rem;color:var(--red);">Error loading tab: ${esc(err.message)}</div>`;
+    }
   }
 }
 
+function isStale(token) { return token !== tabToken; }
+
 // ── D.1 Users &mdash; real CRUD via /api/users ──────────────────
 
-async function renderUsers(el) {
+async function renderUsers(el, token) {
   let users = [];
   const res = await apiGet('/api/users');
+  if (isStale(token)) return;
   if (res.ok) {
     users = res.data.users.map(u => ({
       userId: u.user_id, name: u.name, email: u.email,
@@ -171,7 +183,7 @@ function setMsg(el, text) {
 
 // ── D.2 Storage &mdash; real /api/admin/storage ─────────────────
 
-async function renderStorage(el) {
+async function renderStorage(el, token) {
   let stats = null;
   const res = await apiGet('/api/admin/storage');
   if (res.ok) {
@@ -179,6 +191,7 @@ async function renderStorage(el) {
   } else {
     stats = { total_images: 520, total_size_mb: 1240, encrypted: true };
   }
+  if (isStale(token)) return;
 
   el.innerHTML = `<div class="card"><h3 style="color:var(--green);">Storage Status</h3>
     <div class="card-grid" style="margin-top:1rem;">
@@ -196,7 +209,7 @@ async function renderStorage(el) {
 
 // ── D.3 Monitor &mdash; real /api/admin/stats ───────────────────
 
-async function renderMonitor(el) {
+async function renderMonitor(el, token) {
   let stats = null;
   const res = await apiGet('/api/admin/stats');
   if (res.ok) {
@@ -204,6 +217,7 @@ async function renderMonitor(el) {
   } else {
     stats = { active_users: 6, queue_length: 11, total_detections: 1420, uptime: '99.7%', error_rate: '1.6%' };
   }
+  if (isStale(token)) return;
 
   el.innerHTML = `<div class="card"><h3 style="color:var(--green);">System Monitor</h3>
     <div class="card-grid" style="margin-top:1rem;">
@@ -219,7 +233,7 @@ async function renderMonitor(el) {
 
 // ── D.4 Datasets &mdash; real CRUD via /api/datasets ────────────
 
-async function renderDatasets(el) {
+async function renderDatasets(el, token) {
   let datasets = [];
   const res = await apiGet('/api/datasets');
   if (res.ok) {
@@ -231,6 +245,7 @@ async function renderDatasets(el) {
   } else {
     datasets = [...MockData.datasets];
   }
+  if (isStale(token)) return;
 
   const rows = datasets.map(d => {
     const badge = d.annotationStatus === 'completed' ? 'badge-green' : d.annotationStatus === 'in_progress' ? 'badge-yellow' : 'badge-red';
@@ -292,7 +307,7 @@ async function renderDatasets(el) {
 
 // ── D.5 Permissions &mdash; real users from /api/users ──────────
 
-async function renderPermissions(el) {
+async function renderPermissions(el, token) {
   let users = [];
   const res = await apiGet('/api/users');
   if (res.ok) {
@@ -300,6 +315,7 @@ async function renderPermissions(el) {
   } else {
     users = MockData.users;
   }
+  if (isStale(token)) return;
 
   const opts = users.map(u => `<option>${esc(u.name)} (${esc(u.role)})</option>`).join('');
 
@@ -321,14 +337,15 @@ async function renderPermissions(el) {
 
 // ── D.6 Backup &mdash; real /api/admin/backup + /api/admin/backups ──
 
-async function renderBackup(el) {
+async function renderBackup(el, token) {
   let backups = [];
   const res = await apiGet('/api/admin/backups');
   if (res.ok) {
     backups = res.data.backups;
   } else {
-    backups = MockData.logs.filter(l => l.action === 'backup_created');
+    backups = MockData.logs.filter(l => l.action === 'backup_created').map(l => ({...l, created_at: l.createdAt, log_id: l.logId}));
   }
+  if (isStale(token)) return;
 
   const rows = backups.length === 0
     ? '<tr><td colspan="4" style="text-align:center;color:var(--gray-500);">No backups yet</td></tr>'
@@ -364,7 +381,8 @@ async function renderBackup(el) {
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner"></span> Backing up...';
     const res = await apiPost('/api/admin/backup', {});
-    if (msgEl) msgEl.textContent = res.ok ? `Backup completed - ${res.data.size_mb}MB!` : 'Backup done (mock mode)';
+    const sizeMb = res.ok && res.data.backup ? (res.data.backup.size_bytes / (1024 * 1024)).toFixed(1) : '';
+    if (msgEl) msgEl.textContent = res.ok ? `Backup completed - ${sizeMb}MB!` : 'Backup done (mock mode)';
     setTimeout(() => renderBackup(el), 1200);
   };
 

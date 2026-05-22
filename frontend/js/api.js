@@ -190,6 +190,9 @@ function setActiveNav() {
   });
 }
 
+// === XSS Protection ===
+function esc(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
+
 // === Formatting ===
 function formatDate(d) { return new Date(d).toLocaleDateString('en-GB', { year: 'numeric', month: 'short', day: 'numeric' }); }
 function formatPercent(v) { return (v * 100).toFixed(0) + '%'; }
