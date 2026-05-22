@@ -83,23 +83,18 @@ async function loadResult() {
   if (stored) {
     try { resultData = normalizeResult(JSON.parse(stored)); } catch (e) { resultData = null; }
   }
-  console.log('loadResult step1 (sessionStorage):', stored ? 'found' : 'none', resultData ? {imageId: resultData.imageId, resultId: resultData.resultId} : 'null');
 
   if (resultId && (!resultData || String(resultData.resultId) !== resultId || !resultData.imagePath)) {
-    console.log('loadResult step2: fetching from API /api/results/' + resultId);
     const response = await apiGet(`/api/results/${resultId}`);
-    if (response.ok) { resultData = normalizeResult(response.data); console.log('API success, imageId:', resultData.imageId); }
-    else { console.log('API failed, keeping existing data'); }
+    if (response.ok) resultData = normalizeResult(response.data);
   }
 
   if (!resultData && resultId) {
-    console.log('loadResult step3: fallback to MockData for id', resultId);
     const found = MockData.results.find(r => r.resultId === parseInt(resultId, 10));
     resultData = found ? normalizeResult(found) : null;
   }
 
-  if (!resultData) { resultData = normalizeResult(MockData.results[0]); console.log('loadResult step4: using first MockData entry'); }
-  console.log('loadResult final:', {imageId: resultData.imageId, resultId: resultData.resultId, imageName: resultData.imageName});
+  if (!resultData) resultData = normalizeResult(MockData.results[0]);
   displayResult(resultData);
 }
 
@@ -109,73 +104,56 @@ function displayResult(data) {
   document.getElementById('confidenceDisplay').textContent = formatPercent(data.confidenceScore);
   document.getElementById('timeDisplay').textContent = Number(data.processingTime || 0).toFixed(1) + 's';
 
-  // Prefer serving real images from the database via API
-  const imageId = data.imageId;
-  console.log('displayResult:', {imageId, imageName: data.imageName, imagePath: data.imagePath, originalImagePath: data.originalImagePath});
-  const dbOriginalUrl = imageId ? `${API_BASE}/api/images/${imageId}/file/original` : null;
-  // Annotated image = original photo + SVG bbox overlay (drawn by renderAnnotationOverlay)
-  // Only use separate annotated file if it exists; otherwise reuse original
-  const originalUrl = dbOriginalUrl || resolveAssetUrl(data.originalImagePath || data.imagePath);
-  const annotatedUrl = originalUrl;  // always show the real photo with bbox overlay on top
-  console.log('Image URLs:', {dbOriginalUrl, originalUrl, annotatedUrl});
-  const fallbackAnnotated = `Maize Field Image - ${data.tasselCount} Tassels Detected`;
-  const fallbackOriginal = data.imageName;
+  var imageId = data.imageId;
+  var dbUrl = imageId ? API_BASE + '/api/images/' + imageId + '/file/original' : null;
+  var fileUrl = resolveAssetUrl(data.originalImagePath || data.imagePath);
+  var imgUrl = dbUrl || fileUrl;
+  var fallbackMsg = 'Maize Field Image - ' + data.tasselCount + ' Tassels Detected';
 
-  setImageSource(document.getElementById('annotatedImg'), annotatedUrl, fallbackAnnotated);
-  setImageSource(document.getElementById('originalImg'), originalUrl, fallbackOriginal, false);
-  if (originalUrl) {
-    renderAnnotationOverlay(data, true);
+  // Reset state
+  var annImg = document.getElementById('annotatedImg');
+  var oriImg = document.getElementById('originalImg');
+  var overlay = document.getElementById('annotationOverlay');
+  annImg.style.display = 'block';
+  oriImg.style.display = 'block';
+  overlay.innerHTML = '';
+
+  if (imgUrl) {
+    // Show fallback in overlay while image loads
+    overlay.innerHTML =
+      '<rect width="100%" height="100%" fill="#f0f4c3"/>' +
+      '<text x="50%" y="50%" text-anchor="middle" fill="#888" font-size="14" font-family="sans-serif">Loading image...</text>';
+
+    annImg.onload = function() {
+      overlay.innerHTML = '';
+      if (data.bboxData) renderAnnotationOverlay(data, true);
+      console.log('Image loaded: ' + imgUrl.substring(0,80));
+    };
+    annImg.onerror = function() {
+      annImg.onerror = null;
+      annImg.style.display = 'none';
+      overlay.innerHTML =
+        '<rect width="100%" height="100%" fill="#f0f4c3"/>' +
+        '<text x="50%" y="45%" text-anchor="middle" fill="#558b2f" font-size="18" font-family="sans-serif">' + esc(fallbackMsg) + '</text>' +
+        '<text x="50%" y="58%" text-anchor="middle" fill="#888" font-size="13" font-family="sans-serif">[ Image data not available in database ]</text>';
+      console.warn('Image failed: ' + imgUrl.substring(0,80));
+    };
+    annImg.src = imgUrl;
+    oriImg.src = imgUrl;
+  } else {
+    // No image URL at all
+    annImg.style.display = 'none';
+    oriImg.style.display = 'none';
+    overlay.innerHTML =
+      '<rect width="100%" height="100%" fill="#f0f4c3"/>' +
+      '<text x="50%" y="45%" text-anchor="middle" fill="#558b2f" font-size="18" font-family="sans-serif">' + esc(fallbackMsg) + '</text>' +
+      '<text x="50%" y="58%" text-anchor="middle" fill="#888" font-size="13" font-family="sans-serif">[ Result data unavailable ]</text>';
   }
-}
 
-function setImageSource(img, url, fallbackText, clearOverlay = true) {
-  if (!img) { console.error('setImageSource: img element is null'); return; }
-  console.log('setImageSource: url=' + (url || '(null)') + ' fallbackText=' + fallbackText);
-  if (!url) {
-    // No URL at all — draw fallback directly in the overlay SVG
-    img.style.display = 'none';
-    drawFallbackOverlay(fallbackText);
-    return;
-  }
-  img.style.display = 'block';
-  img.onload = () => { console.log('Image loaded: ' + img.src.substring(0,80)); };
-  img.onerror = () => {
-    console.warn('Image load failed: ' + (url || '').substring(0,80));
-    img.onerror = null;
-    img.onload = null;
-    img.style.display = 'none';
-    drawFallbackOverlay(fallbackText);
-    img.src = '';  // prevent further load attempts
-  };
-  img.src = url;
-}
-
-function drawFallbackOverlay(text) {
-  var svg = document.getElementById('annotationOverlay');
-  if (!svg) return;
-  svg.style.display = 'block';
-  svg.innerHTML =
-    '<rect width="100%" height="100%" fill="#f0f4c3"/>' +
-    '<text x="50%" y="45%" text-anchor="middle" fill="#558b2f" font-size="18" font-family="sans-serif">' +
-      esc(text) +
-    '</text>' +
-    '<text x="50%" y="58%" text-anchor="middle" fill="#888" font-size="13" font-family="sans-serif">' +
-      '[ Image data not available in database ]' +
-    '</text>';
-}
-
-function createPlaceholderSvg(text, background, color) {
-  const safeText = String(text).replace(/[<>&]/g, '');
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400">
-    <rect width="600" height="400" fill="${background}"/>
-    <text x="300" y="190" text-anchor="middle" fill="${color}" font-size="18">${safeText}</text>
-  </svg>`;
-  // Use base64 for maximum browser compatibility with SVG data URIs in img tags
-  try {
-    return 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svg)));
-  } catch (e) {
-    return 'data:image/svg+xml,' + encodeURIComponent(svg);
-  }
+  // Always show both images (compare mode shows side-by-side)
+  document.getElementById('originalPanel').style.display = 'none';
+  document.getElementById('imageContainer').style.gridTemplateColumns = '1fr';
+  document.getElementById('compareToggle').checked = false;
 }
 
 function renderAnnotationOverlay(data, hasRealImage) {
