@@ -23,7 +23,7 @@ CREATE TABLE images (
     image_name VARCHAR(255) NOT NULL,
     image_path VARCHAR(500) NOT NULL,
     upload_time DATETIME DEFAULT CURRENT_TIMESTAMP,
-    status VARCHAR(50) DEFAULT 'pending',
+    status ENUM('pending','processing','completed','failed') DEFAULT 'pending',
     file_size INT,
     access_level VARCHAR(50) DEFAULT 'private',
     FOREIGN KEY (user_id) REFERENCES users(user_id)

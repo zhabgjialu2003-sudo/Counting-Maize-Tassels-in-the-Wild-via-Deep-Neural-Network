@@ -61,9 +61,9 @@ async function renderReport(type) {
   if (reportCache[type]) {
     d = reportCache[type];
   } else {
-    const res = await apiGet(`/api/reports/${type}`);
-    if (res.ok && res.data.report) {
-      d = res.data.report;
+    const res = await apiGet(`/api/report/${type}`);
+    if (res.ok && res.data.total_uploads !== undefined) {
+      d = res.data;
       reportCache[type] = d;
     } else {
       d = fallbackData[type];
