@@ -12,7 +12,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 
@@ -277,10 +277,13 @@ def find_pg_dump() -> str | None:
 def normalize_detection_row(row: dict[str, Any]) -> dict[str, Any]:
     count = row.get("tassel_count", row.get("count", 0))
     confidence = row.get("confidence_score", row.get("confidence", 0))
+    image_path = row.get("image_path")
     return {
         "result_id": row.get("result_id"),
         "image_id": row.get("image_id"),
         "image_name": row.get("image_name"),
+        "image_path": image_path,
+        "original_image_path": image_path,
         "tassel_count": count,
         "count": count,
         "confidence_score": confidence,
@@ -302,6 +305,7 @@ def latest_detection_for_image(conn, image_id: int) -> dict[str, Any] | None:
                 dr.result_id,
                 dr.image_id,
                 i.image_name,
+                i.image_path,
                 dr.tassel_count,
                 dr.confidence_score,
                 dr.processing_time,
@@ -378,6 +382,37 @@ def create_mock_detection(conn, image_id: int) -> dict[str, Any]:
     result = latest_detection_for_image(conn, image_id)
     result["result_id"] = result_id
     return result
+
+
+def detection_for_result(conn, result_id: int) -> dict[str, Any] | None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                dr.result_id,
+                dr.image_id,
+                i.image_name,
+                i.image_path,
+                dr.tassel_count,
+                dr.confidence_score,
+                dr.processing_time,
+                dr.annotated_image_path,
+                dr.bbox_data,
+                dr.created_at
+            FROM detection_results dr
+            JOIN images i ON i.image_id = dr.image_id
+            WHERE dr.result_id = %s
+            LIMIT 1
+            """,
+            (result_id,),
+        )
+        row = cur.fetchone()
+    return normalize_detection_row(row) if row else None
+
+
+@app.route("/uploads/<path:filename>", methods=["GET"])
+def uploaded_file(filename: str):
+    return send_from_directory(UPLOAD_DIR, filename)
 
 
 @app.route("/api/health", methods=["GET"])
@@ -479,6 +514,7 @@ def history():
                         dr.result_id,
                         dr.image_id,
                         i.image_name,
+                        i.image_path,
                         dr.tassel_count,
                         dr.confidence_score,
                         dr.processing_time,
@@ -496,6 +532,18 @@ def history():
         return ok({"records": records, "total": len(records), "source": "database"})
     except Exception as exc:
         return ok({"records": MOCK_HISTORY[:limit], "total": len(MOCK_HISTORY[:limit]), "source": "mock", "database_error": str(exc)})
+
+
+@app.route("/api/results/<int:result_id>", methods=["GET"])
+def result_detail(result_id: int):
+    try:
+        with db_connection() as conn:
+            result = detection_for_result(conn, result_id)
+        if not result:
+            return fail("Detection result not found", 404)
+        return ok(result)
+    except Exception as exc:
+        return db_error_response(exc)
 
 
 @app.route("/api/stats", methods=["GET"])

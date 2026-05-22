@@ -71,12 +71,26 @@
 setActiveNav();
 let allRecords = [...MockData.results].reverse();
 
+async function loadHistory() {
+  const response = await apiGet('/api/history?limit=100');
+  if (response.ok && Array.isArray(response.data.records)) {
+    allRecords = response.data.records.map(record => normalizeResult(record));
+  }
+  applyFilters();
+}
+
 function renderTable(records) {
   const rows = records.map(r => {
     const badge = r.confidenceScore >= 0.9 ? 'badge-green' : r.confidenceScore >= 0.75 ? 'badge-yellow' : 'badge-red';
-    return `<tr><td>${r.imageName}</td><td>${formatDate(r.createdAt)}</td><td><strong>${r.tasselCount}</strong></td><td><span class="badge ${badge}">${formatPercent(r.confidenceScore)}</span></td><td><a href="result.html?id=${r.resultId}" class="btn btn-sm btn-outline">View</a></td></tr>`;
+    return `<tr><td>${r.imageName}</td><td>${formatDate(r.createdAt)}</td><td><strong>${r.tasselCount}</strong></td><td><span class="badge ${badge}">${formatPercent(r.confidenceScore)}</span></td><td><a href="result.html?id=${r.resultId}" onclick="viewResult(${r.resultId});return false;" class="btn btn-sm btn-outline">View</a></td></tr>`;
   }).join('');
   document.getElementById('historyTableBody').innerHTML = rows || '<tr><td colspan="5" style="text-align:center;color:var(--gray-500);">No records found</td></tr>';
+}
+
+function viewResult(resultId) {
+  const record = allRecords.find(r => r.resultId === resultId);
+  if (record) sessionStorage.setItem('lastResult', JSON.stringify(record));
+  location.href = `result.html?id=${resultId}`;
 }
 
 function applyFilters() {
@@ -118,7 +132,7 @@ function resetFilters() {
   applyFilters();
 }
 
-applyFilters();
+loadHistory();
 </script>
 </body>
 </html>

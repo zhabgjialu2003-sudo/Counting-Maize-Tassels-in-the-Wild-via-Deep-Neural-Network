@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Maize Detector — Detection Result</title>
+<title>Maize Detector - Detection Result</title>
 <link rel="stylesheet" href="../css/style.css">
 </head>
 <body>
@@ -23,27 +23,24 @@
 
 <div class="container">
   <h2 class="page-title">Detection Result</h2>
-  <p class="page-subtitle" id="imageNameLabel">Image: —</p>
+  <p class="page-subtitle" id="imageNameLabel">Image: -</p>
 
-  <!-- Count Display (A.3 BCE: displayCount) -->
   <div class="card" style="text-align:center;">
-    <div style="font-size:4rem;font-weight:800;color:var(--green);" id="countDisplay">—</div>
+    <div style="font-size:4rem;font-weight:800;color:var(--green);" id="countDisplay">-</div>
     <div style="font-size:1rem;color:var(--gray-500);">Detected Tassels</div>
   </div>
 
-  <!-- Metrics (A.3 BCE: displayConfidence + showProcessingTime) -->
   <div class="card-grid" style="margin-top:1rem;">
     <div class="stat-card">
-      <div class="value" id="confidenceDisplay">—</div>
+      <div class="value" id="confidenceDisplay">-</div>
       <div class="label">Confidence Score</div>
     </div>
     <div class="stat-card">
-      <div class="value" id="timeDisplay">—</div>
+      <div class="value" id="timeDisplay">-</div>
       <div class="label">Processing Time (seconds)</div>
     </div>
   </div>
 
-  <!-- Image Compare (A.4 BCE: showOriginalImage + showAnnotatedImage + toggleCompare) -->
   <div class="card" style="margin-top:1rem;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
       <h3 style="color:var(--green);">Image View</h3>
@@ -51,19 +48,21 @@
         <input type="checkbox" id="compareToggle"> Compare Original vs Annotated
       </label>
     </div>
-    <div id="imageContainer" class="compare" style="display:grid;grid-template-columns:1fr;">
+    <div id="imageContainer" class="compare" style="display:grid;grid-template-columns:1fr;gap:1rem;">
       <div>
         <p style="text-align:center;font-weight:600;margin-bottom:0.5rem;">Annotated Image (with bounding boxes)</p>
-        <img id="annotatedImg" src="" alt="Annotated" style="width:100%;border-radius:6px;border:1px solid var(--gray-300);min-height:200px;">
+        <div style="position:relative;border-radius:6px;border:1px solid var(--gray-300);overflow:hidden;background:#f8faf8;">
+          <img id="annotatedImg" src="" alt="Annotated maize field" style="display:block;width:100%;min-height:200px;">
+          <svg id="annotationOverlay" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;"></svg>
+        </div>
       </div>
       <div id="originalPanel" style="display:none;">
         <p style="text-align:center;font-weight:600;margin-bottom:0.5rem;">Original Image</p>
-        <img id="originalImg" src="" alt="Original" style="width:100%;border-radius:6px;border:1px solid var(--gray-300);min-height:200px;">
+        <img id="originalImg" src="" alt="Original maize field" style="width:100%;border-radius:6px;border:1px solid var(--gray-300);min-height:200px;">
       </div>
     </div>
   </div>
 
-  <!-- Actions -->
   <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-top:1rem;">
     <button class="btn btn-primary" onclick="saveResult()">Save Result</button>
     <a href="export.html" class="btn btn-outline">Export Result</a>
@@ -75,41 +74,93 @@
 <script>
 setActiveNav();
 
-// Load result from session, URL param, or mock — normalize all sources
 let resultData = null;
 const stored = sessionStorage.getItem('lastResult');
 const params = new URLSearchParams(location.search);
 const resultId = params.get('id');
 
-if (stored) {
-  resultData = normalizeResult(JSON.parse(stored));
-} else if (resultId) {
-  const found = MockData.results.find(r => r.resultId === parseInt(resultId));
-  resultData = found ? normalizeResult(found) : null;
+async function loadResult() {
+  if (stored) {
+    try { resultData = normalizeResult(JSON.parse(stored)); } catch (e) { resultData = null; }
+  }
+
+  if (resultId && (!resultData || String(resultData.resultId) !== resultId || !resultData.imagePath)) {
+    const response = await apiGet(`/api/results/${resultId}`);
+    if (response.ok) resultData = normalizeResult(response.data);
+  }
+
+  if (!resultData && resultId) {
+    const found = MockData.results.find(r => r.resultId === parseInt(resultId, 10));
+    resultData = found ? normalizeResult(found) : null;
+  }
+
+  if (!resultData) resultData = normalizeResult(MockData.results[0]);
+  displayResult(resultData);
 }
-if (!resultData) resultData = normalizeResult(MockData.results[0]);
 
-// Populate UI — BCE A.3 ResultPage: displayCount + displayConfidence + showProcessingTime
-document.getElementById('imageNameLabel').textContent = 'Image: ' + resultData.imageName;
-document.getElementById('countDisplay').textContent = resultData.tasselCount;
-document.getElementById('confidenceDisplay').textContent = formatPercent(resultData.confidenceScore);
-document.getElementById('timeDisplay').textContent = resultData.processingTime.toFixed(1) + 's';
+function displayResult(data) {
+  document.getElementById('imageNameLabel').textContent = 'Image: ' + data.imageName;
+  document.getElementById('countDisplay').textContent = data.tasselCount;
+  document.getElementById('confidenceDisplay').textContent = formatPercent(data.confidenceScore);
+  document.getElementById('timeDisplay').textContent = Number(data.processingTime || 0).toFixed(1) + 's';
 
-// BCE A.4 ResultPage: showAnnotatedImage — bounding boxes via SVG placeholder
-const svgAnnotated = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400">
-  <rect width="600" height="400" fill="#e8f5e9"/>
-  <text x="300" y="180" text-anchor="middle" fill="#2d6a4f" font-size="18">Maize Field Image — ${resultData.tasselCount} Tassels Detected</text>
-  ${[ [100,60],[250,120],[400,80],[150,220],[350,200] ].map(([x,y]) => `<rect x="${x}" y="${y}" width="80" height="80" fill="none" stroke="#e76f51" stroke-width="2" rx="4"/>`).join('')}
-</svg>`;
-document.getElementById('annotatedImg').src = 'data:image/svg+xml,' + encodeURIComponent(svgAnnotated);
+  const originalUrl = resolveAssetUrl(data.originalImagePath || data.imagePath);
+  const annotatedUrl = resolveAssetUrl(data.annotatedImagePath) || originalUrl;
+  const fallbackAnnotated = createPlaceholderSvg(`Maize Field Image - ${data.tasselCount} Tassels Detected`, '#e8f5e9', '#2d6a4f');
+  const fallbackOriginal = createPlaceholderSvg(data.imageName, '#f0f4c3', '#558b2f');
 
-// BCE A.4 ResultPage: showOriginalImage — plain field photo placeholder
-const svgOriginal = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400">
-  <rect width="600" height="400" fill="#f0f4c3"/>
-  <text x="300" y="190" text-anchor="middle" fill="#558b2f" font-size="18">Original Maize Field Photo</text>
-  <text x="300" y="220" text-anchor="middle" fill="#888" font-size="12">${resultData.imageName}</text>
-</svg>`;
-document.getElementById('originalImg').src = 'data:image/svg+xml,' + encodeURIComponent(svgOriginal);
+  setImageSource(document.getElementById('annotatedImg'), annotatedUrl, fallbackAnnotated);
+  setImageSource(document.getElementById('originalImg'), originalUrl, fallbackOriginal, false);
+  renderAnnotationOverlay(data, Boolean(annotatedUrl));
+}
+
+function setImageSource(img, url, fallback, clearOverlay = true) {
+  img.onerror = () => {
+    img.onerror = null;
+    img.src = fallback;
+    if (clearOverlay) document.getElementById('annotationOverlay').innerHTML = '';
+  };
+  img.src = url || fallback;
+}
+
+function createPlaceholderSvg(text, background, color) {
+  const safeText = String(text).replace(/[<>&]/g, '');
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400">
+    <rect width="600" height="400" fill="${background}"/>
+    <text x="300" y="190" text-anchor="middle" fill="${color}" font-size="18">${safeText}</text>
+  </svg>`;
+  return 'data:image/svg+xml,' + encodeURIComponent(svg);
+}
+
+function renderAnnotationOverlay(data, hasRealImage) {
+  const overlay = document.getElementById('annotationOverlay');
+  const bbox = data.bboxData;
+  if (!hasRealImage || !bbox) {
+    overlay.innerHTML = '';
+    return;
+  }
+
+  const width = bbox.image_width || bbox.imageWidth || 600;
+  const height = bbox.image_height || bbox.imageHeight || 400;
+  overlay.setAttribute('viewBox', `0 0 ${width} ${height}`);
+
+  const boxes = Array.isArray(bbox.boxes) ? bbox.boxes : [];
+  const points = Array.isArray(bbox.points) ? bbox.points : [];
+  const boxMarkup = boxes.slice(0, 250).map(box => {
+    const x = box.x ?? box.xmin ?? 0;
+    const y = box.y ?? box.ymin ?? 0;
+    const w = box.width ?? ((box.xmax ?? x) - x) ?? 20;
+    const h = box.height ?? ((box.ymax ?? y) - y) ?? 20;
+    return `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="none" stroke="#e76f51" stroke-width="4" rx="4"/>`;
+  }).join('');
+  const pointMarkup = points.slice(0, 300).map(point => {
+    const x = point.x ?? point.cx ?? 0;
+    const y = point.y ?? point.cy ?? 0;
+    return `<circle cx="${x}" cy="${y}" r="12" fill="none" stroke="#e76f51" stroke-width="4"/>`;
+  }).join('');
+
+  overlay.innerHTML = boxMarkup + pointMarkup;
+}
 
 function toggleCompare() {
   const checked = document.getElementById('compareToggle').checked;
@@ -121,6 +172,8 @@ function saveResult() {
   alert('Result saved to history!');
   location.href = 'history.html';
 }
+
+loadResult();
 </script>
 </body>
 </html>
