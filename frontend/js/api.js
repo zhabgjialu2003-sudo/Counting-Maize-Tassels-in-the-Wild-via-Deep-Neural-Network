@@ -131,15 +131,38 @@ async function apiDelete(endpoint) {
 
 // === Field Normalization (snake_case API → camelCase frontend) ===
 function normalizeResult(raw) {
+  const bboxData = normalizeBBoxData(raw.bbox_data ?? raw.bboxData ?? null);
+  const imagePath = raw.image_path ?? raw.imagePath ?? raw.original_image_path ?? raw.originalImagePath ?? null;
   return {
     resultId:   raw.result_id   ?? raw.resultId   ?? Date.now(),
+    imageId:    raw.image_id    ?? raw.imageId    ?? null,
     imageName:  raw.image_name  ?? raw.imageName  ?? 'maize_sample.jpg',
     tasselCount:raw.count       ?? raw.tassel_count ?? raw.tasselCount ?? 0,
     confidenceScore: raw.confidence ?? raw.confidence_score ?? raw.confidenceScore ?? 0.85,
     processingTime: raw.processing_time ?? raw.processingTime ?? raw.time ?? 2.0,
     createdAt:  raw.created_at  ?? raw.createdAt  ?? new Date().toISOString().slice(0,10),
+    imagePath,
+    originalImagePath: raw.original_image_path ?? raw.originalImagePath ?? imagePath,
     annotatedImagePath: raw.annotated_image_path ?? raw.annotatedImagePath ?? null,
+    bboxData,
   };
+}
+
+function normalizeBBoxData(raw) {
+  if (!raw) return null;
+  if (typeof raw === 'string') {
+    try { return JSON.parse(raw); } catch (e) { return null; }
+  }
+  return raw;
+}
+
+function resolveAssetUrl(path) {
+  if (!path || path === 'data:image/svg+xml,...') return null;
+  if (path.startsWith('data:') || path.startsWith('http://') || path.startsWith('https://')) return path;
+  if (path.startsWith('/storage/uploads/')) return `${API_BASE}${path.replace('/storage', '')}`;
+  if (path.startsWith('/uploads/')) return `${API_BASE}${path}`;
+  if (path.startsWith('uploads/')) return `${API_BASE}/${path}`;
+  return path;
 }
 
 // === Mock Fallback Helpers ===

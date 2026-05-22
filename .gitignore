@@ -18,3 +18,6 @@ Thumbs.db
 # Temp
 *.tmp
 *.log
+backend/uploads/
+backend/backups/
+.playwright-cli/
