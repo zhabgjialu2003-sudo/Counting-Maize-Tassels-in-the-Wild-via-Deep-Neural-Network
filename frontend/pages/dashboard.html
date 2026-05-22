@@ -72,7 +72,7 @@ async function loadDashboard() {
   // Fetch real stats from API, fall back to MockData
   const [statsRes, resultsRes] = await Promise.all([
     apiGet('/api/stats'),
-    apiGet('/api/results?per=5')
+    apiGet('/api/history'),
   ]);
 
   let totalImages, totalTassels, avgCount, recentRecords;

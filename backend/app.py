@@ -507,7 +507,7 @@ def predict():
 
 @app.route("/api/history", methods=["GET"])
 def history():
-    limit = min(int(request.args.get("limit", 20)), 100)
+    limit = min(int(request.args.get("limit", 100)), 200)
     try:
         with db_connection() as conn:
             with conn.cursor() as cur:
