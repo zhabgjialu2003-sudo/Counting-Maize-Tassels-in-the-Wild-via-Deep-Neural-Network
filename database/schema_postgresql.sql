@@ -111,6 +111,23 @@ CREATE INDEX idx_logs_user ON system_logs(user_id);
 CREATE INDEX idx_logs_date ON system_logs(created_at);
 CREATE INDEX idx_logs_action ON system_logs(action);
 
+-- image_files (stores actual binary image data as bytea)
+-- One image can have 0-2 file records: one 'original' + one 'annotated'
+CREATE TABLE image_files (
+    file_id    SERIAL PRIMARY KEY,
+    image_id   INTEGER      NOT NULL REFERENCES images(image_id) ON DELETE CASCADE,
+    file_type  VARCHAR(30)  NOT NULL CHECK (file_type IN ('original', 'annotated')),
+    file_name  VARCHAR(255) NOT NULL,
+    mime_type  VARCHAR(100) NOT NULL,
+    file_size  INTEGER      NOT NULL,
+    image_data BYTEA        NOT NULL,
+    created_at TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (image_id, file_type)
+);
+COMMENT ON TABLE image_files IS 'Binary image storage: original uploads and AI-annotated outputs';
+CREATE INDEX idx_image_files_image ON image_files(image_id);
+CREATE INDEX idx_image_files_type   ON image_files(file_type);
+
 -- datasets (B.5, D.4 Entity)
 CREATE TABLE datasets (
     dataset_id        SERIAL PRIMARY KEY,

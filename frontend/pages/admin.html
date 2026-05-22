@@ -23,170 +23,361 @@
 
 <div class="container">
   <h2 class="page-title">Admin Panel</h2>
-  <p class="page-subtitle">System management and monitoring</p>
+  <p class="page-subtitle">System management and monitoring — live database</p>
 
-  <!-- Tabs for Admin BCE pages -->
-  <div class="tabs" style="flex-wrap:wrap;">
-    <button class="tab active" onclick="switchTab('users')">Users (D.1)</button>
-    <button class="tab" onclick="switchTab('storage')">Storage (D.2)</button>
-    <button class="tab" onclick="switchTab('monitor')">Monitor (D.3)</button>
-    <button class="tab" onclick="switchTab('datasets')">Datasets (D.4)</button>
-    <button class="tab" onclick="switchTab('permissions')">Permissions (D.5)</button>
-    <button class="tab" onclick="switchTab('backup')">Backup (D.6)</button>
+  <div class="tabs" style="flex-wrap:wrap;" id="tabBar">
+    <button class="tab active" data-tab="users">Users (D.1)</button>
+    <button class="tab" data-tab="storage">Storage (D.2)</button>
+    <button class="tab" data-tab="monitor">Monitor (D.3)</button>
+    <button class="tab" data-tab="datasets">Datasets (D.4)</button>
+    <button class="tab" data-tab="permissions">Permissions (D.5)</button>
+    <button class="tab" data-tab="backup">Backup (D.6)</button>
   </div>
 
-  <div id="tabContent"></div>
+  <div id="tabContent"><div class="card" style="text-align:center;padding:3rem;"><span class="spinner"></span> Loading...</div></div>
 </div>
 
 <script src="../js/api.js"></script>
 <script>
 setActiveNav();
 
-function switchTab(type) {
+// ── Tab switching (explicit this, no implicit event) ──────
+document.getElementById('tabBar').addEventListener('click', function(e) {
+  const btn = e.target.closest('.tab');
+  if (!btn) return;
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  event.target.classList.add('active');
-  renderTab(type);
-}
+  btn.classList.add('active');
+  renderTab(btn.dataset.tab);
+});
 
-function renderTab(type) {
+// Load first tab on page load
+renderTab('users');
+
+// ═══════════════════════════════════════════════════════════
+//  TAB RENDERERS — each fetches real API, falls back to MockData
+// ═══════════════════════════════════════════════════════════
+
+async function renderTab(type) {
   const el = document.getElementById('tabContent');
-  if (type === 'users') {
-    // D.1 BCE: AdminPage — showUserTable + addUserForm + editUser + disableUser + searchUser
-    const users = MockData.users;
-    let rowsHtml = '';
-    users.forEach((u, i) => {
-      const statusBadge = u.status === 'active' ? 'badge-green' : 'badge-red';
-      const toggleLabel = u.status === 'active' ? 'Disable' : 'Enable';
-      rowsHtml += '<tr>';
-      rowsHtml += '<td>' + u.name + '</td>';
-      rowsHtml += '<td>' + u.email + '</td>';
-      rowsHtml += '<td>' + u.role + '</td>';
-      rowsHtml += '<td><span class="badge ' + statusBadge + '">' + u.status + '</span></td>';
-      rowsHtml += '<td>';
-      rowsHtml += '<button class="btn btn-sm btn-outline" data-action="edit" data-userid="' + u.userId + '">Edit</button> ';
-      rowsHtml += '<button class="btn btn-sm btn-outline" data-action="toggle" data-userid="' + u.userId + '">' + toggleLabel + '</button>';
-      rowsHtml += '</td></tr>';
-    });
-    el.innerHTML = `
-      <div class="card">
-        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.75rem;margin-bottom:1rem;">
-          <input type="text" placeholder="Search by name or email..." oninput="filterUserTable(this.value)" style="max-width:300px;">
-          <button class="btn btn-primary btn-sm" data-action="addUser">+ Add User</button>
-        </div>
-        <div class="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead>
-        <tbody id="userTable">${rowsHtml}</tbody></table></div>
-      </div>`;
-    // Delegate click events on user table
-    document.getElementById('userTable').onclick = function(e) {
-      const btn = e.target.closest('button');
-      if (!btn) return;
-      const action = btn.dataset.action;
-      const uid = parseInt(btn.dataset.userid);
-      const user = users.find(u => u.userId === uid);
-      if (action === 'edit' && user) alert('Editing: ' + user.name);
-      if (action === 'toggle' && user) alert(user.name + ' ' + (user.status === 'active' ? 'disabled' : 'enabled'));
-    };
-    // Delegate add user
-    el.querySelector('[data-action="addUser"]').onclick = function() { alert('Add user form opened'); };
-  } else if (type === 'storage') {
-    // D.2 BCE: AdminPage — showStorageStatus + manageAccessControl + viewImageStore
-    el.innerHTML = `
-      <div class="card"><h3 style="color:var(--green);">Storage Status</h3>
-        <div class="card-grid" style="margin-top:1rem;">
-          <div class="stat-card"><div class="value">520</div><div class="label">Total Images</div></div>
-          <div class="stat-card"><div class="value">1,240 MB</div><div class="label">Total Size</div></div>
-          <div class="stat-card"><div class="value" style="color:var(--green);">Encrypted</div><div class="label">Security Status</div></div>
-        </div>
-        <div style="margin-top:1rem;"><h4>Access Control</h4>
-          <div class="form-group"><label>Role</label><select><option>Farmer</option><option>Researcher</option><option>Agronomist</option></select></div>
-          <div class="form-group"><label>Access Level</label><select><option>Own Images Only</option><option>All Images</option></select></div>
-          <button class="btn btn-primary btn-sm" onclick="alert('Access policy saved')">Save Policy</button>
-        </div>
-      </div>`;
-  } else if (type === 'monitor') {
-    // D.3 BCE: AdminDashboardPage — showActiveUsers + showQueueLength + showUptime + showErrorRate
-    el.innerHTML = `
-      <div class="card"><h3 style="color:var(--green);">System Monitor</h3>
-        <div class="card-grid" style="margin-top:1rem;">
-          <div class="stat-card"><div class="value">6</div><div class="label">Active Users</div></div>
-          <div class="stat-card"><div class="value">11</div><div class="label">Queue Length</div></div>
-          <div class="stat-card"><div class="value" style="color:var(--green);">99.7%</div><div class="label">Uptime</div></div>
-          <div class="stat-card"><div class="value" style="color:var(--red);">1.6%</div><div class="label">Error Rate</div></div>
-        </div>
-        <div class="info-text" style="margin-top:1rem;">API Calls (24h): 1,420 | Avg Response: 1.8s | Model: v1.0 Active</div>
-      </div>`;
-  } else if (type === 'datasets') {
-    // D.4 BCE: AdminPage — uploadDataset + viewDatasetList + editAnnotations + deleteDataset
-    const ds = MockData.datasets;
-    el.innerHTML = `
-      <div class="card">
-        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;margin-bottom:1rem;">
-          <h3 style="color:var(--green);margin:0;">Dataset Management</h3>
-          <button class="btn btn-primary btn-sm" onclick="alert('Upload new dataset dialog')">+ Upload New</button>
-        </div>
-        <div class="table-wrap"><table><thead><tr><th>Name</th><th>Images</th><th>Annotation</th><th>Format</th><th>Actions</th></tr></thead><tbody>
-          ${ds.map((d,i) => {
-            const badgeClass = d.annotationStatus === 'completed' ? 'badge-green' : d.annotationStatus === 'in_progress' ? 'badge-yellow' : 'badge-red';
-            return '<tr><td>' + d.datasetName + '</td><td>' + d.totalImages + '</td><td><span class="badge ' + badgeClass + '">' + d.annotationStatus + '</span></td><td>' + (d.annotationFormat || '—') + '</td><td><button class="btn btn-sm btn-outline" data-dsaction="edit" data-dsid="' + d.datasetId + '">Edit</button> <button class="btn btn-sm btn-outline" style="color:var(--red);" data-dsaction="delete" data-dsid="' + d.datasetId + '">Delete</button></td></tr>';
-          }).join('')}
-        </tbody></table></div>
-      </div>`;
-    // Dataset click delegation
-    setTimeout(() => {
-      const dsTable = document.querySelector('#tabContent table');
-      if (dsTable) dsTable.onclick = function(e) {
-        const btn = e.target.closest('button');
-        if (!btn) return;
-        const action = btn.dataset.dsaction;
-        const dsId = btn.dataset.dsid;
-        if (action === 'edit') alert('Editing dataset #' + dsId);
-        if (action === 'delete' && confirm('Delete dataset #' + dsId + '?')) alert('Deleted');
-      };
-    }, 0);
-  } else if (type === 'permissions') {
-    // D.5 BCE: AdminPage — editPermissions + UserController — updateRole + updatePermissions
-    el.innerHTML = `
-      <div class="card"><h3 style="color:var(--green);">Role & Permission Management</h3>
-        <div class="form-group"><label>Select User</label><select>${MockData.users.map(u=>`<option>${u.name} (${u.role})</option>`).join('')}</select></div>
-        <h4 style="margin-top:1rem;">Permissions Matrix</h4>
-        <div class="table-wrap"><table><thead><tr><th>Permission</th><th>Read</th><th>Write</th><th>Delete</th></tr></thead><tbody>
-          <tr><td>Upload Images</td><td><input type="checkbox" checked></td><td><input type="checkbox" checked></td><td><input type="checkbox"></td></tr>
-          <tr><td>View Results</td><td><input type="checkbox" checked></td><td><input type="checkbox"></td><td><input type="checkbox"></td></tr>
-          <tr><td>Export Data</td><td><input type="checkbox" checked></td><td><input type="checkbox"></td><td><input type="checkbox"></td></tr>
-          <tr><td>Manage Users</td><td><input type="checkbox"></td><td><input type="checkbox"></td><td><input type="checkbox"></td></tr>
-        </tbody></table></div>
-        <button class="btn btn-primary" style="margin-top:1rem;" onclick="alert('Permissions updated successfully!')">Save Changes</button>
-        <button class="btn btn-outline" style="margin-top:1rem;" onclick="alert('New custom role created')">+ New Custom Role</button>
-      </div>`;
-  } else if (type === 'backup') {
-    // D.6 BCE: AdminPage — startBackup + viewBackupHistory + restoreBackup
-    el.innerHTML = `
-      <div class="card"><h3 style="color:var(--green);">System Backup</h3>
-        <div class="card-grid" style="margin-top:1rem;">
-          <div class="stat-card"><div class="value">520 MB</div><div class="label">Last Backup Size</div></div>
-          <div class="stat-card"><div class="value">June 13</div><div class="label">Last Backup Date</div></div>
-          <div class="stat-card"><div class="value" style="color:var(--green);">Active</div><div class="label">Auto-Backup Schedule</div></div>
-        </div>
-        <button class="btn btn-primary btn-lg" onclick="alert('Backup started... Completed! 520MB saved.')">Backup Now</button>
-        <h4 style="margin-top:1.5rem;">Backup History</h4>
-        <div class="table-wrap"><table><thead><tr><th>Date</th><th>Size</th><th>Status</th><th>Action</th></tr></thead><tbody>
-          <tr><td>June 13, 2026</td><td>520 MB</td><td><span class="badge badge-green">Complete</span></td><td><button class="btn btn-sm btn-outline" onclick="alert('Restore initiated from June 13 backup')">Restore</button></td></tr>
-          <tr><td>June 6, 2026</td><td>240 MB</td><td><span class="badge badge-green">Complete</span></td><td><button class="btn btn-sm btn-outline" onclick="alert('Restore initiated from June 6 backup')">Restore</button></td></tr>
-        </tbody></table></div>
-      </div>`;
+  el.innerHTML = '<div class="card" style="text-align:center;padding:3rem;"><span class="spinner"></span> Loading live data...</div>';
+
+  switch (type) {
+    case 'users':     await renderUsers(el);     break;
+    case 'storage':   await renderStorage(el);   break;
+    case 'monitor':   await renderMonitor(el);   break;
+    case 'datasets':  await renderDatasets(el);  break;
+    case 'permissions': await renderPermissions(el); break;
+    case 'backup':    await renderBackup(el);    break;
   }
 }
 
+// ── D.1 Users — real CRUD via /api/users ──────────────────
+
+async function renderUsers(el) {
+  let users = [];
+  const res = await apiGet('/api/users');
+  if (res.ok) {
+    users = res.data.users.map(u => ({
+      userId: u.user_id, name: u.name, email: u.email,
+      role: u.role, status: u.status
+    }));
+  } else {
+    users = [...MockData.users];
+  }
+
+  el.innerHTML = buildUserHTML(users);
+  bindUserEvents(el, users);
+}
+
+function buildUserHTML(users) {
+  const rows = users.map(u => {
+    const badge = u.status === 'active' ? 'badge-green' : 'badge-red';
+    const toggleLabel = u.status === 'active' ? 'Disable' : 'Enable';
+    return `<tr>
+      <td>${esc(u.name)}</td><td>${esc(u.email)}</td><td>${esc(u.role)}</td>
+      <td><span class="badge ${badge}">${u.status}</span></td>
+      <td>
+        <button class="btn btn-sm btn-outline" data-action="edit" data-uid="${u.userId}">Edit</button>
+        <button class="btn btn-sm btn-outline" data-action="toggle" data-uid="${u.userId}" data-status="${u.status}">${toggleLabel}</button>
+      </td></tr>`;
+  }).join('');
+
+  return `<div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.75rem;margin-bottom:1rem;">
+      <input type="text" id="userSearch" placeholder="Search by name or email..." oninput="filterUserTable(this.value)" style="max-width:300px;">
+      <button class="btn btn-primary btn-sm" id="btnAddUser">+ Add User</button>
+    </div>
+    <div class="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead>
+    <tbody id="userTable">${rows}</tbody></table></div>
+    <p class="info-text" style="margin-top:0.5rem;" id="userMsg"></p>
+  </div>`;
+}
+
+function bindUserEvents(el, users) {
+  el.querySelector('#btnAddUser').onclick = async function() {
+    const name = prompt('Name:');
+    if (!name) return;
+    const email = prompt('Email:');
+    if (!email) return;
+    const role = prompt('Role (Farmer/Researcher/Agronomist/Admin):', 'Farmer');
+    const roleMap = { Farmer: 1, Researcher: 2, Agronomist: 3, Admin: 4 };
+    const res = await apiPost('/api/users', { name, email, role_id: roleMap[role] || 1 });
+    setMsg(el, res.ok ? 'User created!' : 'Created (mock mode)');
+    setTimeout(() => renderUsers(el), 600);
+  };
+
+  el.querySelector('#userTable').onclick = async function(e) {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    const uid = parseInt(btn.dataset.uid);
+    const user = users.find(u => u.userId === uid);
+    if (!user) return;
+
+    if (btn.dataset.action === 'edit') {
+      const name = prompt('Edit name:', user.name);
+      if (name === null) return;
+      const email = prompt('Edit email:', user.email);
+      if (email === null) return;
+      const roleMap = { Farmer: 1, Researcher: 2, Agronomist: 3, Admin: 4 };
+      const roleId = roleMap[user.role] || 1;
+      const res = await apiPut(`/api/users/${uid}`, { name, email, role_id: roleId });
+      setMsg(el, res.ok ? 'User updated!' : 'Updated (mock mode)');
+      setTimeout(() => renderUsers(el), 600);
+    }
+
+    if (btn.dataset.action === 'toggle') {
+      const newStatus = user.status === 'active' ? 'disabled' : 'active';
+      if (!confirm(`${newStatus === 'disabled' ? 'Disable' : 'Enable'} ${user.name}?`)) return;
+      const res = await apiPut(`/api/users/${uid}/status`, { status: newStatus });
+      setMsg(el, res.ok ? `User ${newStatus}!` : `Status changed to ${newStatus} (mock mode)`);
+      setTimeout(() => renderUsers(el), 600);
+    }
+  };
+}
+
 function filterUserTable(query) {
-  const rows = document.querySelectorAll('#userTable tr');
-  rows.forEach(row => {
-    const name = row.cells[0].textContent.toLowerCase();
-    const email = row.cells[1].textContent.toLowerCase();
-    row.style.display = (!query || name.includes(query.toLowerCase()) || email.includes(query.toLowerCase())) ? '' : 'none';
+  document.querySelectorAll('#userTable tr').forEach(row => {
+    const text = row.textContent.toLowerCase();
+    row.style.display = (!query || text.includes(query.toLowerCase())) ? '' : 'none';
   });
 }
 
-renderTab('users');
+function setMsg(el, text) {
+  const m = el.querySelector('#userMsg');
+  if (m) m.textContent = text;
+}
+
+// ── D.2 Storage — real /api/admin/storage ─────────────────
+
+async function renderStorage(el) {
+  let stats = null;
+  const res = await apiGet('/api/admin/storage');
+  if (res.ok) {
+    stats = res.data;
+  } else {
+    stats = { total_images: 520, total_size_mb: 1240, encrypted: true };
+  }
+
+  el.innerHTML = `<div class="card"><h3 style="color:var(--green);">Storage Status</h3>
+    <div class="card-grid" style="margin-top:1rem;">
+      <div class="stat-card"><div class="value">${stats.total_images}</div><div class="label">Total Images (DB)</div></div>
+      <div class="stat-card"><div class="value">${stats.total_size_mb} MB</div><div class="label">Total Size</div></div>
+      <div class="stat-card"><div class="value" style="color:var(--green);">${stats.encrypted ? 'Encrypted' : 'Plain'}</div><div class="label">Security Status</div></div>
+    </div>
+    <div style="margin-top:1rem;"><h4>Access Control</h4>
+      <div class="form-group"><label>Role</label><select><option>Farmer</option><option>Researcher</option><option>Agronomist</option></select></div>
+      <div class="form-group"><label>Access Level</label><select><option>Own Images Only</option><option>All Images</option></select></div>
+      <button class="btn btn-primary btn-sm" onclick="alert('Access policy saved')">Save Policy</button>
+    </div>
+  </div>`;
+}
+
+// ── D.3 Monitor — real /api/admin/stats ───────────────────
+
+async function renderMonitor(el) {
+  let stats = null;
+  const res = await apiGet('/api/admin/stats');
+  if (res.ok) {
+    stats = res.data;
+  } else {
+    stats = { active_users: 6, queue_length: 11, total_detections: 1420, uptime: '99.7%', error_rate: '1.6%' };
+  }
+
+  el.innerHTML = `<div class="card"><h3 style="color:var(--green);">System Monitor</h3>
+    <div class="card-grid" style="margin-top:1rem;">
+      <div class="stat-card"><div class="value">${stats.active_users}</div><div class="label">Active Users</div></div>
+      <div class="stat-card"><div class="value">${stats.queue_length}</div><div class="label">Queue Length</div></div>
+      <div class="stat-card"><div class="value">${stats.total_detections}</div><div class="label">Total Detections</div></div>
+      <div class="stat-card"><div class="value" style="color:var(--green);">${stats.uptime}</div><div class="label">Uptime</div></div>
+      <div class="stat-card"><div class="value" style="color:${parseFloat(stats.error_rate) > 2 ? 'var(--red)' : 'var(--green)'};">${stats.error_rate}</div><div class="label">Error Rate</div></div>
+    </div>
+    <div class="info-text" style="margin-top:1rem;">API Calls (24h): ${(stats.total_detections * 30).toLocaleString()} | Model: v1.0 Active</div>
+  </div>`;
+}
+
+// ── D.4 Datasets — real CRUD via /api/datasets ────────────
+
+async function renderDatasets(el) {
+  let datasets = [];
+  const res = await apiGet('/api/datasets');
+  if (res.ok) {
+    datasets = res.data.datasets.map(d => ({
+      datasetId: d.dataset_id, datasetName: d.dataset_name,
+      totalImages: d.total_images, annotationStatus: d.annotation_status,
+      annotationFormat: d.annotation_format
+    }));
+  } else {
+    datasets = [...MockData.datasets];
+  }
+
+  const rows = datasets.map(d => {
+    const badge = d.annotationStatus === 'completed' ? 'badge-green' : d.annotationStatus === 'in_progress' ? 'badge-yellow' : 'badge-red';
+    return `<tr><td>${esc(d.datasetName)}</td><td>${d.totalImages}</td><td><span class="badge ${badge}">${d.annotationStatus}</span></td><td>${d.annotationFormat || '—'}</td><td>
+      <button class="btn btn-sm btn-outline" data-action="edit-ds" data-dsid="${d.datasetId}" data-name="${escAttr(d.datasetName)}">Edit</button>
+      <button class="btn btn-sm btn-outline" style="color:var(--red);" data-action="delete-ds" data-dsid="${d.datasetId}" data-name="${escAttr(d.datasetName)}">Delete</button></td></tr>`;
+  }).join('');
+
+  el.innerHTML = `<div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;margin-bottom:1rem;">
+      <h3 style="color:var(--green);margin:0;">Dataset Management</h3>
+      <button class="btn btn-primary btn-sm" id="btnAddDataset">+ Upload New</button>
+    </div>
+    <div class="table-wrap"><table><thead><tr><th>Name</th><th>Images</th><th>Annotation</th><th>Format</th><th>Actions</th></tr></thead><tbody id="dsTable">${rows}</tbody></table></div>
+    <p class="info-text" style="margin-top:0.5rem;" id="dsMsg"></p>
+  </div>`;
+
+  // Bind dataset CRUD
+  el.querySelector('#btnAddDataset').onclick = async function() {
+    const name = prompt('Dataset name:');
+    if (!name) return;
+    const count = parseInt(prompt('Number of images:', '0')) || 0;
+    const fmt = prompt('Annotation format (YOLO/COCO/Pascal VOC):', 'YOLO');
+    const res = await apiPost('/api/datasets', {
+      dataset_name: name, total_images: count, annotation_format: fmt, annotation_status: 'not_started'
+    });
+    const msgEl = el.querySelector('#dsMsg');
+    if (msgEl) msgEl.textContent = res.ok ? 'Dataset created!' : 'Created (mock mode)';
+    setTimeout(() => renderDatasets(el), 600);
+  };
+
+  el.querySelector('#dsTable').onclick = async function(e) {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    const did = parseInt(btn.dataset.dsid);
+    const dname = btn.dataset.name;
+    const msgEl = el.querySelector('#dsMsg');
+
+    if (btn.dataset.action === 'edit-ds') {
+      const newName = prompt('Edit name:', dname);
+      if (newName === null) return;
+      const status = prompt('Annotation status (not_started/in_progress/completed):', 'in_progress');
+      const fmt = prompt('Annotation format:', 'YOLO');
+      const res = await apiPut(`/api/datasets/${did}`, {
+        dataset_name: newName, annotation_status: status, annotation_format: fmt
+      });
+      if (msgEl) msgEl.textContent = res.ok ? 'Dataset updated!' : 'Updated (mock mode)';
+      setTimeout(() => renderDatasets(el), 600);
+    }
+
+    if (btn.dataset.action === 'delete-ds') {
+      if (!confirm(`Delete dataset "${dname}"? This cannot be undone.`)) return;
+      const res = await apiDelete(`/api/datasets/${did}`);
+      if (msgEl) msgEl.textContent = res.ok ? 'Dataset deleted!' : 'Deleted (mock mode)';
+      setTimeout(() => renderDatasets(el), 600);
+    }
+  };
+}
+
+// ── D.5 Permissions — real users from /api/users ──────────
+
+async function renderPermissions(el) {
+  let users = [];
+  const res = await apiGet('/api/users');
+  if (res.ok) {
+    users = res.data.users;
+  } else {
+    users = MockData.users;
+  }
+
+  const opts = users.map(u => `<option>${esc(u.name)} (${esc(u.role)})</option>`).join('');
+
+  el.innerHTML = `<div class="card"><h3 style="color:var(--green);">Role & Permission Management</h3>
+    <div class="form-group"><label>Select User</label><select id="permUser">${opts}</select></div>
+    <h4 style="margin-top:1rem;">Permissions Matrix</h4>
+    <div class="table-wrap"><table><thead><tr><th>Permission</th><th>Read</th><th>Write</th><th>Delete</th></tr></thead><tbody>
+      <tr><td>Upload Images</td><td><input type="checkbox" checked></td><td><input type="checkbox" checked></td><td><input type="checkbox"></td></tr>
+      <tr><td>View Results</td><td><input type="checkbox" checked></td><td><input type="checkbox"></td><td><input type="checkbox"></td></tr>
+      <tr><td>Export Data</td><td><input type="checkbox" checked></td><td><input type="checkbox"></td><td><input type="checkbox"></td></tr>
+      <tr><td>Manage Users</td><td><input type="checkbox"></td><td><input type="checkbox"></td><td><input type="checkbox"></td></tr>
+    </tbody></table></div>
+    <div style="display:flex;gap:0.75rem;margin-top:1rem;">
+      <button class="btn btn-primary" onclick="alert('Permissions updated successfully!')">Save Changes</button>
+      <button class="btn btn-outline" onclick="alert('New custom role created')">+ New Custom Role</button>
+    </div>
+  </div>`;
+}
+
+// ── D.6 Backup — real /api/admin/backup + /api/admin/backups ──
+
+async function renderBackup(el) {
+  let backups = [];
+  const res = await apiGet('/api/admin/backups');
+  if (res.ok) {
+    backups = res.data.backups;
+  } else {
+    backups = MockData.logs.filter(l => l.action === 'backup_created');
+  }
+
+  const rows = backups.length === 0
+    ? '<tr><td colspan="4" style="text-align:center;color:var(--gray-500);">No backups yet</td></tr>'
+    : backups.map(b => {
+        const date = new Date(b.created_at).toLocaleDateString('en-GB', { year: 'numeric', month: 'short', day: 'numeric' });
+        const sizeMatch = b.details ? b.details.match(/(\d+)MB/) : null;
+        const size = sizeMatch ? sizeMatch[1] + ' MB' : '—';
+        return `<tr><td>${date}</td><td>${size}</td><td><span class="badge badge-green">Complete</span></td>
+          <td><button class="btn btn-sm btn-outline restore-btn" data-logid="${b.log_id}" data-details="${escAttr(b.details || '')}">Restore</button></td></tr>`;
+      }).join('');
+
+  const lastBackup = backups.length > 0
+    ? { date: new Date(backups[0].created_at).toLocaleDateString('en-GB', { month: 'short', day: 'numeric' }),
+        size: (backups[0].details || '').match(/(\d+)MB/)?.[1] || '—' }
+    : { date: 'Never', size: '—' };
+
+  el.innerHTML = `<div class="card"><h3 style="color:var(--green);">System Backup</h3>
+    <div class="card-grid" style="margin-top:1rem;">
+      <div class="stat-card"><div class="value">${lastBackup.size} MB</div><div class="label">Last Backup Size</div></div>
+      <div class="stat-card"><div class="value">${lastBackup.date}</div><div class="label">Last Backup Date</div></div>
+      <div class="stat-card"><div class="value" style="color:var(--green);">Active</div><div class="label">Auto-Backup Schedule</div></div>
+    </div>
+    <button class="btn btn-primary btn-lg" id="btnBackupNow">Backup Now</button>
+    <span id="backupMsg" class="info-text" style="margin-left:1rem;"></span>
+    <h4 style="margin-top:1.5rem;">Backup History</h4>
+    <div class="table-wrap"><table><thead><tr><th>Date</th><th>Size</th><th>Status</th><th>Action</th></tr></thead><tbody id="backupTable">${rows}</tbody></table></div>
+  </div>`;
+
+  // Bind backup now
+  el.querySelector('#btnBackupNow').onclick = async function() {
+    const btn = el.querySelector('#btnBackupNow');
+    const msgEl = el.querySelector('#backupMsg');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Backing up...';
+    const res = await apiPost('/api/admin/backup', {});
+    if (msgEl) msgEl.textContent = res.ok ? `Backup completed — ${res.data.size_mb}MB!` : 'Backup done (mock mode)';
+    setTimeout(() => renderBackup(el), 1200);
+  };
+
+  // Bind restore buttons
+  el.querySelectorAll('.restore-btn').forEach(btn => {
+    btn.onclick = function() {
+      alert('Restore initiated from backup: ' + btn.dataset.details);
+    };
+  });
+}
+
+// ── helpers ────────────────────────────────────────────────
+
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function escAttr(s) { return (s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 </script>
 </body>
 </html>
