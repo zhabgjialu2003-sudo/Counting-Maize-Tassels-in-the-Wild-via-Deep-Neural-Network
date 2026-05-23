@@ -1,25 +1,25 @@
-// Maize Detector — Role-based Auth (Week 10)
-// Works within existing BCE: A.7 access, D.1 user management, D.5 permissions
+// Maize Detector - Role-based Auth (Week 10 prototype)
+// Maps the fixed FYP roles to their own workspaces without changing user stories.
 
 const AUTH_KEY = 'maize_user';
 
-// BCE-defined role → page mapping (A Farmer, B Researcher, C Agronomist, D Admin)
 var ROLE_PAGES = {
-  Farmer:     ['dashboard.html', 'upload.html', 'result.html'],
-  Researcher: ['history.html', 'report.html', 'export.html'],
+  Farmer: ['dashboard.html', 'upload.html', 'result.html'],
+  Researcher: ['researcher.html', 'history.html', 'report.html', 'export.html'],
   Agronomist: ['agronomist.html'],
-  Admin:      ['admin.html'],
+  Admin: ['admin.html'],
 };
 
-// Shared pages everyone can see
-var SHARED_PAGES = [];
-
 function getSession() {
-  try { return JSON.parse(sessionStorage.getItem(AUTH_KEY)); } catch(e) { return null; }
+  try {
+    return JSON.parse(sessionStorage.getItem(AUTH_KEY));
+  } catch (e) {
+    return null;
+  }
 }
 
 function setSession(user) {
-  sessionStorage.setItem(AUTH_KEY, JSON.stringify(user));
+  sessionStorage.setItem(AUTH_KEY, JSON.stringify(normalizeSessionUser(user)));
 }
 
 function clearSession() {
@@ -31,56 +31,79 @@ function isLoggedIn() {
 }
 
 function currentRole() {
-  var s = getSession();
-  return s ? s.role : null;
+  var session = getSession();
+  return session ? session.role : null;
 }
 
 function currentUser() {
   return getSession();
 }
 
-// Redirect if not logged in or wrong role
+function defaultPageForRole(role) {
+  var pages = ROLE_PAGES[role] || [];
+  return pages[0] || 'login.html';
+}
+
+function normalizeSessionUser(user) {
+  user = user || {};
+  return {
+    user_id: user.user_id || user.userId || user.id,
+    name: user.name || user.full_name || user.email || 'Demo User',
+    email: user.email || '',
+    role: user.role || user.role_name || user.roleName || 'Farmer',
+    status: user.status || 'active',
+  };
+}
+
 function requireRole(allowedRoles) {
-  var s = getSession();
-  if (!s) { location.href = 'login.html'; return false; }
-  if (allowedRoles && allowedRoles.indexOf(s.role) === -1) {
+  var session = getSession();
+  if (!session) {
     location.href = 'login.html';
+    return false;
+  }
+  if (allowedRoles && allowedRoles.indexOf(session.role) === -1) {
+    location.href = defaultPageForRole(session.role);
     return false;
   }
   return true;
 }
 
-// Build filtered navigation based on user role
 function buildNav() {
-  var s = getSession();
-  if (!s) return '<a href="login.html">Login</a>';
+  var session = getSession();
+  if (!session) return '<a href="login.html">Login</a>';
 
-  var role = s.role;
+  var role = session.role;
   var pages = ROLE_PAGES[role] || [];
-  var links = '';
-
-  // Build nav links for current role only
   var navMap = {
-    'dashboard.html':  'Home',
-    'upload.html':     'Upload',
-    'result.html':     'Result',
-    'history.html':    'History',
-    'report.html':     'Report',
-    'export.html':     'Export',
+    'dashboard.html': 'Home',
+    'researcher.html': 'Dashboard',
+    'upload.html': 'Upload',
+    'result.html': 'Result',
+    'history.html': 'History',
+    'report.html': 'Report',
+    'export.html': 'Export',
     'agronomist.html': 'Agronomist',
-    'admin.html':      'Admin',
+    'admin.html': 'Admin',
   };
 
-  links = pages.map(function(p) {
-    var label = navMap[p] || p;
-    return '<a href="' + p + '">' + label + '</a>';
+  var links = pages.map(function(page) {
+    var label = navMap[page] || page;
+    return '<a href="' + page + '">' + label + '</a>';
   }).join('\n        ');
 
-  return '<a class="nav-brand" href="' + (pages[0] || '#') + '">Maize Detector</a>\n' +
+  return '<a class="nav-brand" href="' + defaultPageForRole(role) + '">Maize Detector</a>\n' +
     '      <div class="nav-links">\n' +
     '        ' + links + '\n' +
-    '        <a href="#" onclick="logout()" style="opacity:0.7;">Logout (' + esc(s.name) + ')</a>\n' +
+    '        <a href="#" onclick="logout()" style="opacity:0.75;">Logout (' + esc(session.name) + ' - ' + esc(role) + ')</a>\n' +
     '      </div>';
+}
+
+function initNav() {
+  var navEl = document.getElementById('mainNav');
+  if (navEl) {
+    navEl.innerHTML = buildNav();
+    if (typeof setActiveNav === 'function') setActiveNav();
+  }
 }
 
 function logout() {
@@ -88,29 +111,43 @@ function logout() {
   location.href = 'login.html';
 }
 
-// Auto-insert navigation bar into current page
-function initNav() {
-  var navEl = document.getElementById('mainNav');
-  if (navEl) {
-    navEl.innerHTML = buildNav();
-  }
+function fallbackLogin(email) {
+  var normalized = String(email || '').trim().toLowerCase();
+  var user = MockData.users.find(function(candidate) {
+    return String(candidate.email || '').toLowerCase() === normalized;
+  });
+
+  if (!user) return { ok: false, error: 'Invalid email or password' };
+  if (user.status === 'disabled') return { ok: false, error: 'Account is disabled. Contact administrator.' };
+
+  var sessionUser = {
+    user_id: user.userId,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+  };
+  setSession(sessionUser);
+  return { ok: true, user: sessionUser, source: 'mock' };
 }
 
 async function doLogin(email, password) {
   try {
-    var res = await fetch(API_BASE + '/api/auth/login', {
+    var response = await fetch(API_BASE + '/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: email, password: password }),
     });
-    if (!res.ok) throw new Error(res.statusText);
-    var data = await res.json();
-    if (data.status === 'success') {
-      setSession(data.user);
-      return { ok: true, user: data.user };
+    var data = await response.json().catch(function() { return {}; });
+
+    if (response.ok && data.status === 'success') {
+      var sessionUser = normalizeSessionUser(data.user);
+      setSession(sessionUser);
+      return { ok: true, user: sessionUser, source: data.source || 'api' };
     }
-    return { ok: false, error: data.message || 'Login failed' };
+
+    var fallback = fallbackLogin(email);
+    return fallback.ok ? fallback : { ok: false, error: data.message || 'Login failed' };
   } catch (e) {
-    return { ok: false, error: 'Cannot connect to server. Is the backend running?' };
+    return fallbackLogin(email);
   }
 }

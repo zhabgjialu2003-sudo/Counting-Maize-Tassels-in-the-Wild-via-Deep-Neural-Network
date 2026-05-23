@@ -65,6 +65,20 @@ MOCK_HISTORY = [
     for i, r in enumerate(MOCK_RESULTS)
 ]
 
+MOCK_USERS = [
+    {"user_id": 1, "name": "John Smith", "email": "john@farm.com", "role": "Farmer", "status": "active"},
+    {"user_id": 2, "name": "Dr. Li Wei", "email": "liwei@research.org", "role": "Researcher", "status": "active"},
+    {"user_id": 3, "name": "Maria Garcia", "email": "maria@agro.com", "role": "Agronomist", "status": "active"},
+    {"user_id": 4, "name": "Admin User", "email": "admin@system.com", "role": "Admin", "status": "active"},
+]
+
+MOCK_DATASETS = [
+    {"dataset_id": 1, "dataset_name": "Maize Tassel Train v1", "dataset_path": "datasets/train-v1", "total_images": 200, "annotation_status": "completed", "annotation_format": "YOLO"},
+    {"dataset_id": 2, "dataset_name": "Maize Tassel Train v2", "dataset_path": "datasets/train-v2", "total_images": 500, "annotation_status": "in_progress", "annotation_format": "COCO"},
+    {"dataset_id": 3, "dataset_name": "Batch 3 - North Fields", "dataset_path": "datasets/north-fields", "total_images": 320, "annotation_status": "not_started", "annotation_format": None},
+    {"dataset_id": 4, "dataset_name": "MTDC-UAV Demo Detection Set", "dataset_path": "datasets/mtdc-demo", "total_images": 40, "annotation_status": "completed", "annotation_format": "Pascal VOC XML"},
+]
+
 
 def db_config() -> dict[str, str]:
     return {
@@ -132,6 +146,24 @@ def pick_mock_result(image_name: str | None = None) -> dict[str, Any]:
     if image_name:
         result["image_name"] = image_name
     return {**result, "status": "success", "source": "mock"}
+
+
+def mock_auth_user(email: str) -> dict[str, Any] | None:
+    normalized_email = email.strip().lower()
+    for user in MOCK_USERS:
+        if user["email"].lower() == normalized_email and user["status"] == "active":
+            return {
+                "user_id": user["user_id"],
+                "name": user["name"],
+                "email": user["email"],
+                "role": user["role"],
+            }
+    return None
+
+
+def mock_user_by_id(user_id: int) -> dict[str, Any]:
+    existing = next((user.copy() for user in MOCK_USERS if user["user_id"] == user_id), None)
+    return existing or {"user_id": user_id, "name": "Demo User", "email": f"user{user_id}@example.com", "role": "Farmer", "status": "active"}
 
 
 def allowed_image_filename(filename: str) -> bool:
@@ -483,7 +515,19 @@ def auth_login():
             }
         )
     except Exception as exc:
-        return db_error_response(exc)
+        mock_user = mock_auth_user(email)
+        if mock_user:
+            return ok(
+                {
+                    "status": "success",
+                    "message": "Login successful in mock mode",
+                    "user": mock_user,
+                    "source": "mock",
+                    "database_error": str(exc),
+                },
+                202,
+            )
+        return fail("Invalid email or password", 401, source="mock", database_error=str(exc))
 
 
 @app.route("/api/upload", methods=["POST"])
@@ -778,7 +822,17 @@ def users():
         except ValueError as exc:
             return fail(str(exc), 400)
         except Exception as exc:
-            return db_error_response(exc)
+            role_map = {1: "Farmer", 2: "Researcher", 3: "Agronomist", 4: "Admin"}
+            role_id = int(payload.get("role_id") or payload.get("roleId") or 1)
+            user = {
+                "user_id": random.randint(100, 999),
+                "name": str(payload["name"]).strip(),
+                "email": str(payload["email"]).strip(),
+                "role_id": role_id,
+                "role": role_map.get(role_id, "Farmer"),
+                "status": payload.get("status", "active"),
+            }
+            return ok({"status": "success", "message": "User created in mock mode", "user": user, "source": "mock", "database_error": str(exc)}, 202)
 
     try:
         with db_connection() as conn:
@@ -794,7 +848,7 @@ def users():
                 rows = [normalize_user_row(row) for row in cur.fetchall()]
         return ok({"users": rows, "total": len(rows), "source": "database"})
     except Exception as exc:
-        return ok({"users": [], "total": 0, "source": "mock", "database_error": str(exc)})
+        return ok({"users": MOCK_USERS, "total": len(MOCK_USERS), "source": "mock", "database_error": str(exc)})
 
 
 @app.route("/api/users/<int:user_id>", methods=["GET", "PUT", "DELETE"])
@@ -863,7 +917,19 @@ def user_detail(user_id: int):
         except ValueError as exc:
             return fail(str(exc), 400)
         except Exception as exc:
-            return db_error_response(exc)
+            role_map = {1: "Farmer", 2: "Researcher", 3: "Agronomist", 4: "Admin"}
+            user = mock_user_by_id(user_id)
+            if "name" in payload and payload.get("name"):
+                user["name"] = str(payload["name"]).strip()
+            if "email" in payload and payload.get("email"):
+                user["email"] = str(payload["email"]).strip()
+            role_id = payload.get("role_id") or payload.get("roleId")
+            if role_id:
+                user["role_id"] = int(role_id)
+                user["role"] = role_map.get(int(role_id), user["role"])
+            if "status" in payload:
+                user["status"] = payload["status"]
+            return ok({"status": "success", "message": "User updated in mock mode", "user": user, "source": "mock", "database_error": str(exc)}, 202)
 
     try:
         with db_connection() as conn:
@@ -885,7 +951,9 @@ def user_detail(user_id: int):
             }
         )
     except Exception as exc:
-        return db_error_response(exc)
+        user = mock_user_by_id(user_id)
+        user["status"] = "disabled"
+        return ok({"status": "success", "message": "User disabled in mock mode", "delete_mode": "soft", "user": user, "source": "mock", "database_error": str(exc)}, 202)
 
 
 @app.route("/api/users/<int:user_id>/status", methods=["PUT"])
@@ -906,7 +974,9 @@ def user_status(user_id: int):
             user = fetch_user(conn, user_id)
         return ok({"status": "success", "message": f"User {new_status}", "user": user, "source": "database"})
     except Exception as exc:
-        return db_error_response(exc)
+        user = mock_user_by_id(user_id)
+        user["status"] = new_status
+        return ok({"status": "success", "message": f"User {new_status} in mock mode", "user": user, "source": "mock", "database_error": str(exc)}, 202)
 
 
 @app.route("/api/datasets", methods=["GET", "POST"])
@@ -934,7 +1004,15 @@ def datasets():
                     ds = cur.fetchone()
             return ok({"status": "success", "message": "Dataset created", "dataset": ds, "source": "database"}, 201)
         except Exception as exc:
-            return db_error_response(exc)
+            ds = {
+                "dataset_id": random.randint(100, 999),
+                "dataset_name": str(name).strip(),
+                "dataset_path": payload.get("dataset_path", ""),
+                "total_images": int(payload.get("total_images", 0)),
+                "annotation_status": payload.get("annotation_status", "not_started"),
+                "annotation_format": payload.get("annotation_format"),
+            }
+            return ok({"status": "success", "message": "Dataset created in mock mode", "dataset": ds, "source": "mock", "database_error": str(exc)}, 202)
 
     try:
         with db_connection() as conn:
@@ -943,7 +1021,7 @@ def datasets():
                 rows = cur.fetchall()
         return ok({"datasets": rows, "total": len(rows), "source": "database"})
     except Exception as exc:
-        return ok({"datasets": [], "total": 0, "source": "mock", "database_error": str(exc)})
+        return ok({"datasets": MOCK_DATASETS, "total": len(MOCK_DATASETS), "source": "mock", "database_error": str(exc)})
 
 
 @app.route("/api/datasets/<int:dataset_id>", methods=["PUT", "DELETE"])
@@ -955,7 +1033,7 @@ def dataset_detail(dataset_id: int):
                     cur.execute("DELETE FROM datasets WHERE dataset_id = %s", (dataset_id,))
             return ok({"status": "success", "message": "Dataset deleted", "source": "database"})
         except Exception as exc:
-            return db_error_response(exc)
+            return ok({"status": "success", "message": "Dataset deleted in mock mode", "source": "mock", "database_error": str(exc)}, 202)
 
     payload = request.get_json(silent=True) or {}
     try:
@@ -978,7 +1056,9 @@ def dataset_detail(dataset_id: int):
                 ds = cur.fetchone()
         return ok({"status": "success", "message": "Dataset updated", "dataset": ds, "source": "database"})
     except Exception as exc:
-        return db_error_response(exc)
+        ds = next((item.copy() for item in MOCK_DATASETS if item["dataset_id"] == dataset_id), {"dataset_id": dataset_id})
+        ds.update({key: value for key, value in payload.items() if key in {"dataset_name", "annotation_status", "annotation_format", "total_images"}})
+        return ok({"status": "success", "message": "Dataset updated in mock mode", "dataset": ds, "source": "mock", "database_error": str(exc)}, 202)
 
 
 @app.route("/api/admin/stats")

@@ -121,7 +121,8 @@ function fileToDataUrl(file) {
 }
 
 async function uploadAndPredict(file) {
-  const uploadRes = await apiUpload(file);
+  const sessionUser = currentUser();
+  const uploadRes = await apiUpload(file, sessionUser ? sessionUser.user_id : 1);
   const imageId = uploadRes.ok ? uploadRes.data.image_id : null;
   const imageName = uploadRes.ok ? uploadRes.data.image_name : file.name;
   const predictRes = await apiPost('/api/predict', {

@@ -52,12 +52,7 @@
     </div>
   </div>
 
-  <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-top:1rem;">
-    <button class="btn btn-primary" onclick="saveResult()">Save Result</button>
-    <a href="export.html" class="btn btn-outline">Export Result</a>
-    <a href="history.html" class="btn btn-outline">View History</a>
-    <a href="upload.html" class="btn btn-outline">Upload Another</a>
-  </div>
+  <div id="resultActions" style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-top:1rem;"></div>
 </div>
 
 <script src="../js/api.js"></script>
@@ -93,6 +88,7 @@ async function loadResult() {
 
   if (!resultData) resultData = normalizeResult(MockData.results[0]);
   displayResult(resultData);
+  renderResultActions();
 }
 
 function displayResult(data) {
@@ -195,7 +191,23 @@ function toggleCompare() {
 
 function saveResult() {
   alert('Result saved to history!');
-  location.href = 'history.html';
+  location.href = currentRole() === 'Researcher' ? 'history.html' : 'dashboard.html';
+}
+
+function renderResultActions() {
+  const role = currentRole();
+  const el = document.getElementById('resultActions');
+  if (role === 'Researcher') {
+    el.innerHTML =
+      '<a href="history.html" class="btn btn-primary">View History</a>' +
+      '<a href="export.html" class="btn btn-outline">Export Result</a>' +
+      '<a href="researcher.html" class="btn btn-outline">Researcher Dashboard</a>';
+    return;
+  }
+  el.innerHTML =
+    '<button class="btn btn-primary" onclick="saveResult()">Save Result</button>' +
+    '<a href="upload.html" class="btn btn-outline">Upload Another</a>' +
+    '<a href="dashboard.html" class="btn btn-outline">Farmer Dashboard</a>';
 }
 
 loadResult();

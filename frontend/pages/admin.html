@@ -110,6 +110,7 @@ function buildUserHTML(users) {
       <td>
         <button class="btn btn-sm btn-outline" data-action="edit" data-uid="${u.userId}">Edit</button>
         <button class="btn btn-sm btn-outline" data-action="toggle" data-uid="${u.userId}" data-status="${u.status}">${toggleLabel}</button>
+        <button class="btn btn-sm btn-outline" style="color:var(--red);" data-action="delete" data-uid="${u.userId}">Delete</button>
       </td></tr>`;
   }).join('');
 
@@ -134,7 +135,8 @@ function bindUserEvents(el, users) {
     if (!password || password.length < 6) { alert('Password must be at least 6 characters'); return; }
     const role = prompt('Role (Farmer/Researcher/Agronomist/Admin):', 'Farmer');
     const roleMap = { Farmer: 1, Researcher: 2, Agronomist: 3, Admin: 4 };
-    const res = await apiPost('/api/users', { name, email, password, role_id: roleMap[role] || 1 });
+    if (!roleMap[role]) { alert('Invalid role'); return; }
+    const res = await apiPost('/api/users', { name, email, password, role_id: roleMap[role] });
     setMsg(el, res.ok ? 'User created!' : 'Created (mock mode)');
     refreshCurrentTab('users');
   };
@@ -151,8 +153,11 @@ function bindUserEvents(el, users) {
       if (name === null) return;
       const email = prompt('Edit email:', user.email);
       if (email === null) return;
+      const role = prompt('Edit role (Farmer/Researcher/Agronomist/Admin):', user.role);
+      if (role === null) return;
       const roleMap = { Farmer: 1, Researcher: 2, Agronomist: 3, Admin: 4 };
-      const roleId = roleMap[user.role] || 1;
+      if (!roleMap[role]) { alert('Invalid role'); return; }
+      const roleId = roleMap[role];
       const res = await apiPut(`/api/users/${uid}`, { name, email, role_id: roleId });
       setMsg(el, res.ok ? 'User updated!' : 'Updated (mock mode)');
       refreshCurrentTab('users');
@@ -163,6 +168,13 @@ function bindUserEvents(el, users) {
       if (!confirm(`${newStatus === 'disabled' ? 'Disable' : 'Enable'} ${user.name}?`)) return;
       const res = await apiPut(`/api/users/${uid}/status`, { status: newStatus });
       setMsg(el, res.ok ? `User ${newStatus}!` : `Status changed to ${newStatus} (mock mode)`);
+      refreshCurrentTab('users');
+    }
+
+    if (btn.dataset.action === 'delete') {
+      if (!confirm(`Delete ${user.name}? The prototype API performs a safe soft delete.`)) return;
+      const res = await apiDelete(`/api/users/${uid}`);
+      setMsg(el, res.ok ? 'User deleted!' : 'Deleted (mock mode)');
       refreshCurrentTab('users');
     }
   };
