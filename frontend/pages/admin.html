@@ -44,6 +44,10 @@ setActiveNav();
 // ── Tab switching (explicit this, no implicit event) ──────
 let tabToken = 0;
 
+function refreshCurrentTab(type, delay = 600) {
+  setTimeout(() => renderTab(type), delay);
+}
+
 document.getElementById('tabBar').addEventListener('click', function(e) {
   const btn = e.target.closest('.tab');
   if (!btn) return;
@@ -137,7 +141,7 @@ function bindUserEvents(el, users) {
     const roleMap = { Farmer: 1, Researcher: 2, Agronomist: 3, Admin: 4 };
     const res = await apiPost('/api/users', { name, email, password, role_id: roleMap[role] || 1 });
     setMsg(el, res.ok ? 'User created!' : 'Created (mock mode)');
-    setTimeout(() => renderUsers(el), 600);
+    refreshCurrentTab('users');
   };
 
   el.querySelector('#userTable').onclick = async function(e) {
@@ -156,7 +160,7 @@ function bindUserEvents(el, users) {
       const roleId = roleMap[user.role] || 1;
       const res = await apiPut(`/api/users/${uid}`, { name, email, role_id: roleId });
       setMsg(el, res.ok ? 'User updated!' : 'Updated (mock mode)');
-      setTimeout(() => renderUsers(el), 600);
+      refreshCurrentTab('users');
     }
 
     if (btn.dataset.action === 'toggle') {
@@ -164,7 +168,7 @@ function bindUserEvents(el, users) {
       if (!confirm(`${newStatus === 'disabled' ? 'Disable' : 'Enable'} ${user.name}?`)) return;
       const res = await apiPut(`/api/users/${uid}/status`, { status: newStatus });
       setMsg(el, res.ok ? `User ${newStatus}!` : `Status changed to ${newStatus} (mock mode)`);
-      setTimeout(() => renderUsers(el), 600);
+      refreshCurrentTab('users');
     }
   };
 }
@@ -274,7 +278,7 @@ async function renderDatasets(el, token) {
     });
     const msgEl = el.querySelector('#dsMsg');
     if (msgEl) msgEl.textContent = res.ok ? 'Dataset created!' : 'Created (mock mode)';
-    setTimeout(() => renderDatasets(el), 600);
+    refreshCurrentTab('datasets');
   };
 
   el.querySelector('#dsTable').onclick = async function(e) {
@@ -293,14 +297,14 @@ async function renderDatasets(el, token) {
         dataset_name: newName, annotation_status: status, annotation_format: fmt
       });
       if (msgEl) msgEl.textContent = res.ok ? 'Dataset updated!' : 'Updated (mock mode)';
-      setTimeout(() => renderDatasets(el), 600);
+      refreshCurrentTab('datasets');
     }
 
     if (btn.dataset.action === 'delete-ds') {
       if (!confirm(`Delete dataset "${dname}"? This cannot be undone.`)) return;
       const res = await apiDelete(`/api/datasets/${did}`);
       if (msgEl) msgEl.textContent = res.ok ? 'Dataset deleted!' : 'Deleted (mock mode)';
-      setTimeout(() => renderDatasets(el), 600);
+      refreshCurrentTab('datasets');
     }
   };
 }
@@ -352,14 +356,19 @@ async function renderBackup(el, token) {
     : backups.map(b => {
         const date = new Date(b.created_at).toLocaleDateString('en-GB', { year: 'numeric', month: 'short', day: 'numeric' });
         const sizeMatch = b.details ? b.details.match(/(\d+)MB/) : null;
-        const size = sizeMatch ? sizeMatch[1] + ' MB' : '&mdash;';
+        const size = b.size_bytes
+          ? (b.size_bytes / (1024 * 1024)).toFixed(1) + ' MB'
+          : sizeMatch ? sizeMatch[1] + ' MB' : '&mdash;';
+        const restoreDetails = b.path || b.file_name || b.details || '';
         return `<tr><td>${date}</td><td>${size}</td><td><span class="badge badge-green">Complete</span></td>
-          <td><button class="btn btn-sm btn-outline restore-btn" data-logid="${b.log_id}" data-details="${escAttr(b.details || '')}">Restore</button></td></tr>`;
+          <td><button class="btn btn-sm btn-outline restore-btn" data-logid="${b.log_id || ''}" data-details="${escAttr(restoreDetails)}">Restore</button></td></tr>`;
       }).join('');
 
   const lastBackup = backups.length > 0
     ? { date: new Date(backups[0].created_at).toLocaleDateString('en-GB', { month: 'short', day: 'numeric' }),
-        size: (backups[0].details || '').match(/(\d+)MB/)?.[1] || '&mdash;' }
+        size: backups[0].size_bytes
+          ? (backups[0].size_bytes / (1024 * 1024)).toFixed(1)
+          : (backups[0].details || '').match(/(\d+)MB/)?.[1] || '&mdash;' }
     : { date: 'Never', size: '&mdash;' };
 
   el.innerHTML = `<div class="card"><h3 style="color:var(--green);">System Backup</h3>
@@ -383,7 +392,7 @@ async function renderBackup(el, token) {
     const res = await apiPost('/api/admin/backup', {});
     const sizeMb = res.ok && res.data.backup ? (res.data.backup.size_bytes / (1024 * 1024)).toFixed(1) : '';
     if (msgEl) msgEl.textContent = res.ok ? `Backup completed - ${sizeMb}MB!` : 'Backup done (mock mode)';
-    setTimeout(() => renderBackup(el), 1200);
+    refreshCurrentTab('backup', 1200);
   };
 
   // Bind restore buttons

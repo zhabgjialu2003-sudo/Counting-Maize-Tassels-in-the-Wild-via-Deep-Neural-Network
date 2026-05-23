@@ -1,12 +1,16 @@
-# Maize Detector -- Entity Relationship Diagram (ERD)
+# Maize Detector -- Week 10 Entity Relationship Diagram (ERD)
+
+This ERD follows the revised Week 10 checklist's seven main database tables:
+`users`, `roles`, `images`, `detection_results`, `reports`, `system_logs`, and `datasets`.
 
 ```mermaid
 erDiagram
-    roles ||--o{ users : "role_id"
-    users ||--o{ images : "user_id"
-    users ||--o{ system_logs : "user_id"
-    images ||--o{ detection_results : "image_id"
-    images ||--|{ image_files : "image_id"
+    roles ||--o{ users : assigns
+    users ||--o{ images : uploads
+    images ||--o{ detection_results : produces
+    detection_results }o--o{ reports : summarized_in
+    users ||--o{ system_logs : creates
+    users }o--o{ datasets : manages_or_accesses
 
     roles {
         int role_id PK
@@ -19,7 +23,7 @@ erDiagram
         varchar email UK
         varchar password_hash
         int role_id FK
-        enum status "active|disabled"
+        enum status
         timestamp created_at
     }
 
@@ -29,20 +33,9 @@ erDiagram
         varchar image_name
         varchar image_path
         timestamp upload_time
-        enum status "pending|processing|completed|failed"
+        enum status
         int file_size
         varchar access_level
-    }
-
-    image_files {
-        int file_id PK
-        int image_id FK_UK "UNIQUE(image_id,file_type)"
-        varchar file_type "original|annotated"
-        varchar file_name
-        varchar mime_type
-        int file_size
-        bytea image_data
-        timestamp created_at
     }
 
     detection_results {
@@ -58,7 +51,7 @@ erDiagram
 
     reports {
         int report_id PK
-        enum report_type "daily|weekly|monthly"
+        enum report_type
         date report_date
         int total_uploads
         int successful_detections
@@ -81,8 +74,15 @@ erDiagram
         varchar dataset_name
         varchar dataset_path
         int total_images
-        enum annotation_status "not_started|in_progress|completed"
+        enum annotation_status
         varchar annotation_format
         timestamp created_at
     }
 ```
+
+Notes:
+- `users.status`: active / disabled
+- `images.status`: pending / processing / completed / failed
+- `reports.report_type`: daily / weekly / monthly
+- `datasets.annotation_status`: not_started / in_progress / completed
+- The `reports` and `datasets` links show project-level business relationships. The Week 10 SQL schema keeps these tables independent without explicit foreign keys.

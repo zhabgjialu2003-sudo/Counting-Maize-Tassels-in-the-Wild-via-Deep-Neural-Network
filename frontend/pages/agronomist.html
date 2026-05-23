@@ -27,11 +27,11 @@
 
   <!-- Tabs for different BCE AgronomistPage functions -->
   <div class="tabs">
-    <button class="tab active" onclick="switchTab('dashboard')">Multi-Field (C.4)</button>
-    <button class="tab" onclick="switchTab('health')">Health (C.1)</button>
-    <button class="tab" onclick="switchTab('growth')">Growth (C.2)</button>
-    <button class="tab" onclick="switchTab('alerts')">Alerts (C.3)</button>
-    <button class="tab" onclick="switchTab('insights')">Insights (C.5)</button>
+    <button class="tab active" onclick="switchTab(this, 'dashboard')">Multi-Field (C.4)</button>
+    <button class="tab" onclick="switchTab(this, 'health')">Health (C.1)</button>
+    <button class="tab" onclick="switchTab(this, 'growth')">Growth (C.2)</button>
+    <button class="tab" onclick="switchTab(this, 'alerts')">Alerts (C.3)</button>
+    <button class="tab" onclick="switchTab(this, 'insights')">Insights (C.5)</button>
   </div>
 
   <div id="tabContent"></div>
@@ -55,9 +55,9 @@ async function loadFields() {
   renderTab('dashboard');
 }
 
-function switchTab(type) {
+function switchTab(tab, type) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  event.target.classList.add('active');
+  tab.classList.add('active');
   renderTab(type);
 }
 

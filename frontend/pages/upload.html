@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Maize Detector — Upload</title>
+<title>Maize Detector - Upload</title>
 <link rel="stylesheet" href="../css/style.css">
 </head>
 <body>
@@ -25,34 +25,29 @@
   <h2 class="page-title">Upload Maize Image</h2>
   <p class="page-subtitle">Select maize field images for tassel detection (JPG / PNG only)</p>
 
-  <!-- Batch toggle (A.5 BCE: selectMultipleFiles) -->
   <div class="card" style="margin-bottom:1rem;">
     <label class="toggle">
       <input type="checkbox" id="batchMode" onchange="toggleBatch()">
-      <strong>Batch Upload</strong> — select multiple images at once
+      <strong>Batch Upload</strong> - select multiple images at once
     </label>
   </div>
 
-  <!-- Upload Area (A.1 BCE: selectFile + previewImage) -->
   <div class="card">
     <div class="form-group">
-      <label>Select Image<small id="batchHint" style="display:none;"> — hold Ctrl/Cmd to select multiple</small></label>
+      <label>Select Image<small id="batchHint" style="display:none;"> - hold Ctrl/Cmd to select multiple</small></label>
       <input type="file" id="fileInput" accept="image/jpeg,image/png" onchange="handleFiles(this.files)" style="padding:0.5rem;">
     </div>
 
-    <!-- Preview (A.1 BCE: previewImage) -->
     <div class="preview-box" id="previewBox">
       <p style="color:var(--gray-500);">Preview will appear here after selecting an image</p>
     </div>
     <div id="fileInfo" class="info-text" style="margin-bottom:0.5rem;"></div>
 
-    <!-- Batch progress (A.5 BCE: showBatchProgress) -->
     <div id="batchProgress" style="display:none;margin:1rem 0;">
       <div style="display:flex;justify-content:space-between;margin-bottom:0.3rem;"><span>Uploading...</span><span id="progressText">0/0</span></div>
       <div class="progress-bar"><div class="fill" id="progressFill" style="width:0%;"></div></div>
     </div>
 
-    <!-- Error display (A.1 BCE: showError) -->
     <div id="errorBox"></div>
 
     <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-top:1rem;">
@@ -83,7 +78,7 @@ function handleFiles(files) {
   selectedFiles = [];
   document.getElementById('errorBox').innerHTML = '';
   const validTypes = ['image/jpeg', 'image/png'];
-  const maxSize = 10 * 1024 * 1024; // 10MB
+  const maxSize = 10 * 1024 * 1024;
 
   for (let f of files) {
     if (!validTypes.includes(f.type)) {
@@ -109,7 +104,7 @@ function updatePreview() {
     btn.disabled = true;
     return;
   }
-  box.innerHTML = selectedFiles.map((f, i) =>
+  box.innerHTML = selectedFiles.map((f) =>
     `<div style="margin-bottom:1rem;"><p><strong>${esc(f.name)}</strong> (${(f.size/1024).toFixed(1)} KB)</p><img src="${URL.createObjectURL(f)}" alt="${esc(f.name)}"></div>`
   ).join('');
   info.textContent = `${selectedFiles.length} file(s) selected, ready to analyze`;
@@ -121,6 +116,27 @@ function showError(msg) {
   el.innerHTML += `<div class="alert alert-error">${esc(msg)}</div>`;
 }
 
+function fileToDataUrl(file) {
+  return new Promise(resolve => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => resolve(null);
+    reader.readAsDataURL(file);
+  });
+}
+
+async function uploadAndPredict(file) {
+  const uploadRes = await apiUpload(file);
+  const imageId = uploadRes.ok ? uploadRes.data.image_id : null;
+  const imageName = uploadRes.ok ? uploadRes.data.image_name : file.name;
+  const predictRes = await apiPost('/api/predict', {
+    image_id: imageId,
+    image_name: imageName,
+    file_size: file.size,
+  });
+  return predictRes.ok ? normalizeResult(predictRes.data) : mockPredict(file.name);
+}
+
 async function submitUpload() {
   if (selectedFiles.length === 0) return;
   const btn = document.getElementById('analyzeBtn');
@@ -128,37 +144,31 @@ async function submitUpload() {
   btn.innerHTML = '<span class="spinner"></span> Analyzing...';
 
   if (selectedFiles.length > 1) {
-    // Batch mode (A.5 BCE: showBatchProgress + showBatchResult)
     const progDiv = document.getElementById('batchProgress');
     progDiv.style.display = 'block';
-    let success = 0, failed = 0;
+    let success = 0;
+    let lastResult = null;
     for (let i = 0; i < selectedFiles.length; i++) {
-      document.getElementById('progressText').textContent = `${i+1}/${selectedFiles.length}`;
-      document.getElementById('progressFill').style.width = ((i+1)/selectedFiles.length*100)+'%';
-      await new Promise(r => setTimeout(r, 600 + Math.random()*400));
-      // API call with mock fallback
-      const res = await apiPost('/api/predict', { image_name: selectedFiles[i].name });
-      if (res.ok) { success++; }
-      else { success++; } // mock fallback: treat as success
+      document.getElementById('progressText').textContent = `${i + 1}/${selectedFiles.length}`;
+      document.getElementById('progressFill').style.width = ((i + 1) / selectedFiles.length * 100) + '%';
+      await new Promise(r => setTimeout(r, 600 + Math.random() * 400));
+      lastResult = await uploadAndPredict(selectedFiles[i]);
+      success++;
     }
     document.getElementById('batchProgress').style.display = 'none';
-    const lastResult = mockPredict(selectedFiles[selectedFiles.length-1].name);
+    const lastFile = selectedFiles[selectedFiles.length - 1];
     sessionStorage.setItem('lastResult', JSON.stringify(lastResult));
-    document.getElementById('errorBox').innerHTML = `<div class="alert alert-success"><strong>Batch complete:</strong> ${success}/${selectedFiles.length} processed (mock mode)</div>`;
+    const previewUrl = await fileToDataUrl(lastFile);
+    if (previewUrl) sessionStorage.setItem('lastImageDataUrl', previewUrl);
+    document.getElementById('errorBox').innerHTML = `<div class="alert alert-success"><strong>Batch complete:</strong> ${success}/${selectedFiles.length} processed. Redirecting to result...</div>`;
     setTimeout(() => location.href = 'result.html', 1500);
   } else {
-    // Single upload (A.1 BCE: submitUpload)
-    await new Promise(r => setTimeout(r, 800 + Math.random()*500));
-    const res = await apiPost('/api/predict', { image_name: selectedFiles[0].name });
-    let result;
-    if (res.ok) {
-      result = normalizeResult(res.data);
-    } else {
-      // Mock fallback when API unavailable
-      result = mockPredict(selectedFiles[0].name);
-    }
+    await new Promise(r => setTimeout(r, 800 + Math.random() * 500));
+    const result = await uploadAndPredict(selectedFiles[0]);
     sessionStorage.setItem('lastResult', JSON.stringify(result));
-    document.getElementById('errorBox').innerHTML = `<div class="alert ${res.ok ? 'alert-success' : 'alert-warning'}">${res.ok ? 'Upload successful!' : 'API offline — using mock data.'} Redirecting to result...</div>`;
+    const previewUrl = await fileToDataUrl(selectedFiles[0]);
+    if (previewUrl) sessionStorage.setItem('lastImageDataUrl', previewUrl);
+    document.getElementById('errorBox').innerHTML = '<div class="alert alert-success">Upload successful! Redirecting to result...</div>';
     setTimeout(() => location.href = 'result.html', 1000);
   }
   btn.disabled = false;
@@ -170,6 +180,7 @@ function resetUpload() {
   document.getElementById('fileInput').value = '';
   document.getElementById('errorBox').innerHTML = '';
   document.getElementById('batchProgress').style.display = 'none';
+  sessionStorage.removeItem('lastImageDataUrl');
   updatePreview();
 }
 </script>

@@ -66,6 +66,7 @@
   <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-top:1rem;">
     <button class="btn btn-primary" onclick="saveResult()">Save Result</button>
     <a href="export.html" class="btn btn-outline">Export Result</a>
+    <a href="history.html" class="btn btn-outline">View History</a>
     <a href="upload.html" class="btn btn-outline">Upload Another</a>
   </div>
 </div>
@@ -76,6 +77,7 @@ setActiveNav();
 
 let resultData = null;
 const stored = sessionStorage.getItem('lastResult');
+const uploadedImageDataUrl = sessionStorage.getItem('lastImageDataUrl');
 const params = new URLSearchParams(location.search);
 const resultId = params.get('id');
 
@@ -99,6 +101,7 @@ async function loadResult() {
 }
 
 function displayResult(data) {
+  if (!data.bboxData && typeof mockBboxData === 'function') data.bboxData = mockBboxData();
   document.getElementById('imageNameLabel').textContent = 'Image: ' + data.imageName;
   document.getElementById('countDisplay').textContent = data.tasselCount;
   document.getElementById('confidenceDisplay').textContent = formatPercent(data.confidenceScore);
@@ -106,7 +109,7 @@ function displayResult(data) {
 
   var imageId = data.imageId;
   var dbUrl = imageId ? API_BASE + '/api/images/' + imageId + '/file/original' : null;
-  var fileUrl = resolveAssetUrl(data.originalImagePath || data.imagePath);
+  var fileUrl = (!resultId && uploadedImageDataUrl) || resolveAssetUrl(data.originalImagePath || data.imagePath);
   var imgUrl = dbUrl || fileUrl;
   var fallbackMsg = 'Maize Field Image - ' + data.tasselCount + ' Tassels Detected';
 

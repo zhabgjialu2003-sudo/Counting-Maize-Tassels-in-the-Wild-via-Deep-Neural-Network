@@ -103,6 +103,23 @@ async function apiPost(endpoint, body) {
   }
 }
 
+async function apiUpload(file, userId = 1) {
+  try {
+    const form = new FormData();
+    form.append('image', file);
+    form.append('user_id', userId);
+    const res = await fetch(`${API_BASE}/api/upload`, {
+      method: 'POST',
+      body: form,
+    });
+    if (!res.ok) throw new Error(res.statusText);
+    return { ok: true, data: await res.json() };
+  } catch (e) {
+    console.warn('Upload API failed, using mock:', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
 async function apiPut(endpoint, body) {
   try {
     const res = await fetch(`${API_BASE}${endpoint}`, {
@@ -166,6 +183,21 @@ function resolveAssetUrl(path) {
 }
 
 // === Mock Fallback Helpers ===
+function mockBboxData() {
+  return {
+    image_width: 600,
+    image_height: 400,
+    boxes: [
+      { x: 80, y: 58, width: 70, height: 58, confidence: 0.91 },
+      { x: 205, y: 92, width: 76, height: 64, confidence: 0.88 },
+      { x: 348, y: 72, width: 82, height: 70, confidence: 0.93 },
+      { x: 456, y: 138, width: 68, height: 62, confidence: 0.86 },
+      { x: 132, y: 218, width: 74, height: 66, confidence: 0.89 },
+      { x: 312, y: 244, width: 80, height: 72, confidence: 0.9 },
+    ],
+  };
+}
+
 function mockPredict(imageName) {
   // Try to match an existing result by image name so imageId is correct (for DB image loading)
   let base = null;
@@ -177,7 +209,12 @@ function mockPredict(imageName) {
     // Don't use a wrong imageId when no match — let the frontend fall back to SVG placeholder
     base = { ...base, imageId: null };
   }
-  return normalizeResult({ ...base, resultId: Date.now(), imageName: imageName || base.imageName });
+  return normalizeResult({
+    ...base,
+    resultId: Date.now(),
+    imageName: imageName || base.imageName,
+    bbox_data: mockBboxData(),
+  });
 }
 
 function mockHistory() {

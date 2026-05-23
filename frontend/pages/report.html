@@ -27,9 +27,9 @@
 
   <!-- Tabs (B.5 BCE: ReportPage navigation) -->
   <div class="tabs">
-    <button class="tab active" onclick="switchTab('daily')">Daily</button>
-    <button class="tab" onclick="switchTab('weekly')">Weekly</button>
-    <button class="tab" onclick="switchTab('monthly')">Monthly</button>
+    <button class="tab active" onclick="switchTab(this, 'daily')">Daily</button>
+    <button class="tab" onclick="switchTab(this, 'weekly')">Weekly</button>
+    <button class="tab" onclick="switchTab(this, 'monthly')">Monthly</button>
   </div>
 
   <div id="reportContent"></div>
@@ -98,9 +98,9 @@ async function renderReport(type) {
   </div>`;
 }
 
-function switchTab(type) {
+function switchTab(tab, type) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  event.target.classList.add('active');
+  tab.classList.add('active');
   renderReport(type);
 }
 
