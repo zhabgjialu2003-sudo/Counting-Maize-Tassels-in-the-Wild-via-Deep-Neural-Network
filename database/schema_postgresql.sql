@@ -1,5 +1,5 @@
 -- ============================================================
--- Maize Detector App — PostgreSQL Schema (pgAdmin4)
+-- Maize Detector App �?PostgreSQL Schema (pgAdmin4)
 -- FYP-26-S2-7 | Week 10
 -- Run this entire file in pgAdmin4 Query Tool
 -- ============================================================
@@ -67,7 +67,7 @@ CREATE INDEX idx_images_user   ON images(user_id);
 CREATE INDEX idx_images_status ON images(status);
 
 -- detection_results (A.2, A.3, A.4, B.1, B.3, C.2 Entity)
--- Replaces both detection_results and history — queried by created_at for timeline
+-- Replaces both detection_results and history �?queried by created_at for timeline
 CREATE TABLE detection_results (
     result_id             SERIAL PRIMARY KEY,
     image_id              INTEGER NOT NULL REFERENCES images(image_id),
@@ -78,7 +78,7 @@ CREATE TABLE detection_results (
     bbox_data             JSONB,              -- bounding boxes array
     created_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-COMMENT ON TABLE detection_results IS 'AI detection output — also serves as history via created_at';
+COMMENT ON TABLE detection_results IS 'AI detection output �?also serves as history via created_at';
 CREATE INDEX idx_detection_image  ON detection_results(image_id);
 CREATE INDEX idx_detection_date   ON detection_results(created_at);
 CREATE INDEX idx_detection_count  ON detection_results(tassel_count);
@@ -138,7 +138,7 @@ CREATE TABLE datasets (
     annotation_format VARCHAR(50),          -- YOLO, COCO, Pascal VOC
     created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-COMMENT ON TABLE datasets IS 'AI training datasets — managed by Admin (D.4), accessed by Researcher (B.5)';
+COMMENT ON TABLE datasets IS 'AI training datasets �?managed by Admin (D.4), accessed by Researcher (B.5)';
 
 -- ============================================================
 -- 4. Sample Data (matches Frontend MockData in js/api.js)
@@ -155,11 +155,11 @@ INSERT INTO roles (role_name) VALUES
 -- The first five accounts are fixed demo logins. The generated rows bring
 -- the table to exactly 100 stable accounts for Admin user-management demos.
 INSERT INTO users (name, email, password_hash, role_id, status) VALUES
-    ('John Smith',    'john@farm.com',        '$2b$12$hash_placeholder_01', 1, 'active'),
-    ('Dr. Li Wei',    'liwei@research.org',   '$2b$12$hash_placeholder_02', 2, 'active'),
-    ('Maria Garcia',  'maria@agro.com',       '$2b$12$hash_placeholder_03', 3, 'active'),
-    ('Admin User',    'admin@system.com',     '$2b$12$hash_placeholder_04', 4, 'active'),
-    ('Bob Brown',     'bob@farm.com',         '$2b$12$hash_placeholder_05', 1, 'disabled');
+    ('John Smith',    'john@farm.com',        'sha256$8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 1, 'active'),
+    ('Dr. Li Wei',    'liwei@research.org',   'sha256$8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 2, 'active'),
+    ('Maria Garcia',  'maria@agro.com',       'sha256$8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 3, 'active'),
+    ('Admin User',    'admin@system.com',     'sha256$8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 4, 'active'),
+    ('Bob Brown',     'bob@farm.com',         'sha256$8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 1, 'disabled');
 
 INSERT INTO users (name, email, password_hash, role_id, status)
 SELECT
@@ -187,7 +187,7 @@ SELECT
         WHEN 3 THEN 'farm.com'
         ELSE 'farm.com'
     END AS email,
-    '$2b$12$hash_placeholder_demo_' || LPAD(n::TEXT, 3, '0') AS password_hash,
+    'sha256$8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92' AS password_hash,
     CASE ((n - 1) % 5)
         WHEN 0 THEN 1
         WHEN 1 THEN 2
@@ -231,7 +231,7 @@ INSERT INTO system_logs (user_id, action, details, created_at) VALUES
     (4, 'create_user',      'Created user: John Smith (role: Farmer)',  '2026-06-01 08:00:00'),
     (4, 'backup_created',   'Backup completed: 520MB',                  '2026-06-13 23:00:00'),
     (4, 'access_policy',    'Updated Farmer access level: own_images',  '2026-06-10 12:00:00'),
-    (4, 'role_changed',     'User Bob Brown: Farmer → Researcher',      '2026-06-08 15:30:00');
+    (4, 'role_changed',     'User Bob Brown: Farmer �?Researcher',      '2026-06-08 15:30:00');
 
 -- Keep SERIAL sequences aligned after explicit sample IDs.
 SELECT setval(pg_get_serial_sequence('roles', 'role_id'), COALESCE((SELECT MAX(role_id) FROM roles), 1), true);
@@ -267,9 +267,9 @@ ORDER BY d.created_at DESC;
 
 -- ============================================================
 -- pgAdmin4 使用说明:
--- 1. 打开 pgAdmin4，连接到你的 PostgreSQL 服务器
--- 2. 右键 Databases → Create → Database，命名为 maize_detector
--- 3. 右键 maize_detector → Query Tool
+-- 1. 打开 pgAdmin4，连接到你的 PostgreSQL 服务�?
+-- 2. 右键 Databases �?Create �?Database，命名为 maize_detector
+-- 3. 右键 maize_detector �?Query Tool
 -- 4. 打开此文件，点击 Execute (F5) 运行全部
--- 5. 运行后刷新 Schemas → public → Tables 即可看到 7 张表
+-- 5. 运行后刷�?Schemas �?public �?Tables 即可看到 7 张表
 -- ============================================================

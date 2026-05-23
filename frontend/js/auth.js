@@ -111,13 +111,14 @@ function logout() {
   location.href = 'login.html';
 }
 
-function fallbackLogin(email) {
+function fallbackLogin(email, password) {
   var normalized = String(email || '').trim().toLowerCase();
   var user = MockData.users.find(function(candidate) {
     return String(candidate.email || '').toLowerCase() === normalized;
   });
 
   if (!user) return { ok: false, error: 'Invalid email or password' };
+  if (password !== '123456') return { ok: false, error: 'Invalid email or password' };
   if (user.status === 'disabled') return { ok: false, error: 'Account is disabled. Contact administrator.' };
 
   var sessionUser = {
@@ -145,10 +146,10 @@ async function doLogin(email, password) {
       return { ok: true, user: sessionUser, source: data.source || 'api' };
     }
 
-    var fallback = fallbackLogin(email);
+    var fallback = fallbackLogin(email, password);
     return fallback.ok ? fallback : { ok: false, error: data.message || 'Login failed' };
   } catch (e) {
-    return fallbackLogin(email);
+    return fallbackLogin(email, password);
   }
 }
 

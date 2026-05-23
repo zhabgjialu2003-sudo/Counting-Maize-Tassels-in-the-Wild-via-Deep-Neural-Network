@@ -169,7 +169,9 @@ def pick_mock_result(image_name: str | None = None) -> dict[str, Any]:
     return {**result, "status": "success", "source": "mock"}
 
 
-def mock_auth_user(email: str) -> dict[str, Any] | None:
+def mock_auth_user(email: str, password: str = "") -> dict[str, Any] | None:
+    if password != "123456":
+        return None
     normalized_email = email.strip().lower()
     for user in MOCK_USERS:
         if user["email"].lower() == normalized_email and user["status"] == "active":
@@ -510,7 +512,7 @@ def auth_login():
                 user = cur.fetchone()
 
         if not user:
-            mock_user = mock_auth_user(email)
+            mock_user = mock_auth_user(email, password)
             if mock_user:
                 return ok(
                     {
@@ -547,7 +549,7 @@ def auth_login():
             }
         )
     except Exception as exc:
-        mock_user = mock_auth_user(email)
+        mock_user = mock_auth_user(email, password)
         if mock_user:
             return ok(
                 {
