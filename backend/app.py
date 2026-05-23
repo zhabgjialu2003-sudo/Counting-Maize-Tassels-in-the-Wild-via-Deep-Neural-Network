@@ -598,25 +598,12 @@ def auth_register():
             user = fetch_user(conn, user_id)
         return ok({"status": "success", "message": "Account created", "user": user, "source": "database"}, 201)
     except Exception as exc:
+        msg = str(exc).lower()
+        if "users_email_key" in msg or "duplicate key" in msg or "unique" in msg:
+            return fail("Email already exists", 409)
         if any(user["email"].lower() == email for user in MOCK_USERS):
-            return fail("Email already exists", 409, source="mock", database_error=str(exc))
-        user = {
-            "user_id": random.randint(1000, 9999),
-            "name": name,
-            "email": email,
-            "role": "Farmer",
-            "status": "active",
-        }
-        return ok(
-            {
-                "status": "success",
-                "message": "Account created in mock mode",
-                "user": user,
-                "source": "mock",
-                "database_error": str(exc),
-            },
-            202,
-        )
+            return fail("Email already exists", 409, source="mock")
+        return db_error_response(exc)
 
 
 @app.route("/api/upload", methods=["POST"])
