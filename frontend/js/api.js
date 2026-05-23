@@ -32,15 +32,30 @@ const MockData = {
   })(),
 
   // Users — 7 rows matching DB
-  users: [
-    { userId: 1, name: 'John Smith',   email: 'john@farm.com',      role: 'Farmer',     status: 'active' },
-    { userId: 2, name: 'Dr. Li Wei',   email: 'liwei@research.org', role: 'Researcher', status: 'active' },
-    { userId: 3, name: 'Maria Garcia', email: 'maria@agro.com',     role: 'Agronomist', status: 'active' },
-    { userId: 4, name: 'Admin User',   email: 'admin@system.com',   role: 'Admin',      status: 'active' },
-    { userId: 5, name: 'Bob Brown',    email: 'bob@farm.com',       role: 'Farmer',     status: 'disabled' },
-    { userId: 7, name: 'Test Farmer Updated', email: 'test@farm.com',    role: 'Farmer', status: 'disabled' },
-    { userId: 9, name: 'Audit Test',   email: 'audit@test.com',     role: 'Farmer',     status: 'active' },
-  ],
+  users: (() => {
+    const baseUsers = [
+      { userId: 1, name: 'John Smith',   email: 'john@farm.com',      role: 'Farmer',     status: 'active' },
+      { userId: 2, name: 'Dr. Li Wei',   email: 'liwei@research.org', role: 'Researcher', status: 'active' },
+      { userId: 3, name: 'Maria Garcia', email: 'maria@agro.com',     role: 'Agronomist', status: 'active' },
+      { userId: 4, name: 'Admin User',   email: 'admin@system.com',   role: 'Admin',      status: 'active' },
+      { userId: 5, name: 'Bob Brown',    email: 'bob@farm.com',       role: 'Farmer',     status: 'disabled' },
+    ];
+    const roles = ['Farmer', 'Researcher', 'Agronomist', 'Farmer', 'Farmer'];
+    const domains = { Farmer: 'farm.com', Researcher: 'research.org', Agronomist: 'agro.com', Admin: 'system.com' };
+    const generated = Array.from({ length: 95 }, (_, i) => {
+      const number = i + 1;
+      const role = roles[i % roles.length];
+      const padded = String(number).padStart(3, '0');
+      return {
+        userId: number + 5,
+        name: `Demo ${role} ${padded}`,
+        email: `${role.toLowerCase()}${padded}@${domains[role]}`,
+        role,
+        status: number % 17 === 0 ? 'disabled' : 'active',
+      };
+    });
+    return baseUsers.concat(generated);
+  })(),
 
   // Fields — 10 key MTDC fields from DB images 11-50
   fields: [

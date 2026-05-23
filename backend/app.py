@@ -65,11 +65,32 @@ MOCK_HISTORY = [
     for i, r in enumerate(MOCK_RESULTS)
 ]
 
-MOCK_USERS = [
+BASE_MOCK_USERS = [
     {"user_id": 1, "name": "John Smith", "email": "john@farm.com", "role": "Farmer", "status": "active"},
     {"user_id": 2, "name": "Dr. Li Wei", "email": "liwei@research.org", "role": "Researcher", "status": "active"},
     {"user_id": 3, "name": "Maria Garcia", "email": "maria@agro.com", "role": "Agronomist", "status": "active"},
     {"user_id": 4, "name": "Admin User", "email": "admin@system.com", "role": "Admin", "status": "active"},
+    {"user_id": 5, "name": "Bob Brown", "email": "bob@farm.com", "role": "Farmer", "status": "disabled"},
+]
+
+MOCK_ROLE_EMAIL_DOMAINS = {
+    "Farmer": "farm.com",
+    "Researcher": "research.org",
+    "Agronomist": "agro.com",
+    "Admin": "system.com",
+}
+
+MOCK_ROLE_SEQUENCE = ("Farmer", "Researcher", "Agronomist", "Farmer", "Farmer")
+
+MOCK_USERS = BASE_MOCK_USERS + [
+    {
+        "user_id": index + 5,
+        "name": f"Demo {MOCK_ROLE_SEQUENCE[(index - 1) % len(MOCK_ROLE_SEQUENCE)]} {index:03d}",
+        "email": f"{MOCK_ROLE_SEQUENCE[(index - 1) % len(MOCK_ROLE_SEQUENCE)].lower()}{index:03d}@{MOCK_ROLE_EMAIL_DOMAINS[MOCK_ROLE_SEQUENCE[(index - 1) % len(MOCK_ROLE_SEQUENCE)]]}",
+        "role": MOCK_ROLE_SEQUENCE[(index - 1) % len(MOCK_ROLE_SEQUENCE)],
+        "status": "disabled" if index % 17 == 0 else "active",
+    }
+    for index in range(1, 96)
 ]
 
 MOCK_DATASETS = [
@@ -489,6 +510,17 @@ def auth_login():
                 user = cur.fetchone()
 
         if not user:
+            mock_user = mock_auth_user(email)
+            if mock_user:
+                return ok(
+                    {
+                        "status": "success",
+                        "message": "Login successful in demo seed mode",
+                        "user": mock_user,
+                        "source": "mock",
+                    },
+                    202,
+                )
             return fail("Invalid email or password", 401)
 
         if user["status"] == "disabled":
@@ -528,6 +560,61 @@ def auth_login():
                 202,
             )
         return fail("Invalid email or password", 401, source="mock", database_error=str(exc))
+
+
+@app.route("/api/auth/register", methods=["POST"])
+def auth_register():
+    """Public account creation for the prototype. New sign-ups become Farmers."""
+    payload = request.get_json(silent=True) or {}
+    name = str(payload.get("name") or "").strip()
+    email = str(payload.get("email") or "").strip().lower()
+    password = str(payload.get("password") or "")
+
+    if not name:
+        return fail("Name is required", 400)
+    if "@" not in email or "." not in email.rsplit("@", 1)[-1]:
+        return fail("A valid email address is required", 400)
+    if len(password) < 6:
+        return fail("Password must be at least 6 characters", 400)
+
+    try:
+        with db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT role_id FROM roles WHERE role_name = %s", ("Farmer",))
+                role = cur.fetchone()
+                if not role:
+                    return fail("Farmer role is not configured", 500)
+                cur.execute(
+                    """
+                    INSERT INTO users (name, email, password_hash, role_id, status)
+                    VALUES (%s, %s, %s, %s, 'active')
+                    RETURNING user_id
+                    """,
+                    (name, email, hash_password(password), role["role_id"]),
+                )
+                user_id = cur.fetchone()["user_id"]
+            user = fetch_user(conn, user_id)
+        return ok({"status": "success", "message": "Account created", "user": user, "source": "database"}, 201)
+    except Exception as exc:
+        if any(user["email"].lower() == email for user in MOCK_USERS):
+            return fail("Email already exists", 409, source="mock", database_error=str(exc))
+        user = {
+            "user_id": random.randint(1000, 9999),
+            "name": name,
+            "email": email,
+            "role": "Farmer",
+            "status": "active",
+        }
+        return ok(
+            {
+                "status": "success",
+                "message": "Account created in mock mode",
+                "user": user,
+                "source": "mock",
+                "database_error": str(exc),
+            },
+            202,
+        )
 
 
 @app.route("/api/upload", methods=["POST"])

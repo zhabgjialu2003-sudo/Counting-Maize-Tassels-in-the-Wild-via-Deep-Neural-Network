@@ -151,3 +151,40 @@ async function doLogin(email, password) {
     return fallbackLogin(email);
   }
 }
+
+async function createAccount(name, email, password) {
+  try {
+    var response = await fetch(API_BASE + '/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name, email: email, password: password }),
+    });
+    var data = await response.json().catch(function() { return {}; });
+
+    if (response.ok && data.status === 'success') {
+      var sessionUser = normalizeSessionUser(data.user);
+      setSession(sessionUser);
+      return { ok: true, user: sessionUser, source: data.source || 'api' };
+    }
+
+    if (response.status === 409) {
+      return { ok: false, error: 'This email already exists. Please sign in instead.' };
+    }
+    return { ok: false, error: data.message || 'Account creation failed' };
+  } catch (e) {
+    var existing = MockData.users.find(function(user) {
+      return String(user.email || '').toLowerCase() === String(email || '').toLowerCase();
+    });
+    if (existing) return { ok: false, error: 'This email already exists. Please sign in instead.' };
+
+    var sessionUser = {
+      user_id: Date.now(),
+      name: name,
+      email: email,
+      role: 'Farmer',
+      status: 'active',
+    };
+    setSession(sessionUser);
+    return { ok: true, user: sessionUser, source: 'mock' };
+  }
+}

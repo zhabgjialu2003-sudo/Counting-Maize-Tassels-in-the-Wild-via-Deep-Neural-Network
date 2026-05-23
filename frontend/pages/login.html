@@ -14,6 +14,10 @@
   .demo-hint strong { display:block; margin-bottom:0.25rem; }
   .demo-grid { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:0.5rem; margin-top:0.75rem; }
   .demo-grid button { min-height:38px; }
+  .auth-tabs { display:grid; grid-template-columns:1fr 1fr; gap:0.5rem; margin-bottom:1rem; }
+  .auth-tabs button { min-height:40px; }
+  .auth-tabs button.active { background:var(--green); color:#fff; border-color:var(--green); }
+  #createForm { display:none; }
   @media (max-width:520px) {
     .login-card { margin:32px auto; }
     .demo-grid { grid-template-columns:1fr; }
@@ -29,17 +33,42 @@
 
     <div id="errorBox"></div>
 
-    <div class="form-group">
-      <label>Email</label>
-      <input type="email" id="email" placeholder="your@email.com" autocomplete="email">
+    <div class="auth-tabs">
+      <button class="btn btn-outline active" type="button" id="tabSignIn" onclick="setAuthMode('signin')">Sign In</button>
+      <button class="btn btn-outline" type="button" id="tabCreate" onclick="setAuthMode('create')">Create Account</button>
     </div>
-    <div class="form-group">
-      <label>Password</label>
-      <input type="password" id="password" placeholder="Enter password" autocomplete="current-password">
+
+    <div id="signInForm">
+      <div class="form-group">
+        <label>Email</label>
+        <input type="email" id="email" placeholder="your@email.com" autocomplete="email">
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <input type="password" id="password" placeholder="Enter password" autocomplete="current-password">
+      </div>
+      <button class="btn btn-primary btn-lg" id="loginBtn" style="width:100%;" onclick="handleLogin()">
+        Sign In
+      </button>
     </div>
-    <button class="btn btn-primary btn-lg" id="loginBtn" style="width:100%;" onclick="handleLogin()">
-      Sign In
-    </button>
+
+    <div id="createForm">
+      <div class="form-group">
+        <label>Name</label>
+        <input type="text" id="newName" placeholder="Your name" autocomplete="name">
+      </div>
+      <div class="form-group">
+        <label>Email</label>
+        <input type="email" id="newEmail" placeholder="your@email.com" autocomplete="email">
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <input type="password" id="newPassword" placeholder="At least 6 characters" autocomplete="new-password">
+      </div>
+      <button class="btn btn-primary btn-lg" id="createBtn" style="width:100%;" onclick="handleCreateAccount()">
+        Create Farmer Account
+      </button>
+    </div>
 
     <div class="demo-hint">
       <strong>Demo Accounts</strong>
@@ -62,8 +91,18 @@ if (isLoggedIn()) {
 }
 
 function fillDemo(email) {
+  setAuthMode('signin');
   document.getElementById('email').value = email;
   document.getElementById('password').value = 'demo123';
+}
+
+function setAuthMode(mode) {
+  var isCreate = mode === 'create';
+  document.getElementById('signInForm').style.display = isCreate ? 'none' : 'block';
+  document.getElementById('createForm').style.display = isCreate ? 'block' : 'none';
+  document.getElementById('tabSignIn').classList.toggle('active', !isCreate);
+  document.getElementById('tabCreate').classList.toggle('active', isCreate);
+  document.getElementById('errorBox').innerHTML = '';
 }
 
 async function handleLogin() {
@@ -92,8 +131,39 @@ async function handleLogin() {
   }
 }
 
+async function handleCreateAccount() {
+  var name = document.getElementById('newName').value.trim();
+  var email = document.getElementById('newEmail').value.trim();
+  var password = document.getElementById('newPassword').value;
+  var btn = document.getElementById('createBtn');
+  var errBox = document.getElementById('errorBox');
+
+  if (!name || !email || password.length < 6) {
+    errBox.innerHTML = '<div class="alert alert-error">Please enter name, valid email, and a password with at least 6 characters.</div>';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Creating...';
+  errBox.innerHTML = '';
+
+  var result = await createAccount(name, email, password);
+
+  if (result.ok) {
+    location.href = defaultPageForRole(result.user.role);
+  } else {
+    btn.disabled = false;
+    btn.textContent = 'Create Farmer Account';
+    errBox.innerHTML = '<div class="alert alert-error">' + esc(result.error) + '</div>';
+  }
+}
+
 document.getElementById('password').addEventListener('keydown', function(e) {
   if (e.key === 'Enter') handleLogin();
+});
+
+document.getElementById('newPassword').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') handleCreateAccount();
 });
 </script>
 </body>

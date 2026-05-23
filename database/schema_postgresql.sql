@@ -152,12 +152,51 @@ INSERT INTO roles (role_name) VALUES
     ('Admin');
 
 -- Users
+-- The first five accounts are fixed demo logins. The generated rows bring
+-- the table to exactly 100 stable accounts for Admin user-management demos.
 INSERT INTO users (name, email, password_hash, role_id, status) VALUES
     ('John Smith',    'john@farm.com',        '$2b$12$hash_placeholder_01', 1, 'active'),
     ('Dr. Li Wei',    'liwei@research.org',   '$2b$12$hash_placeholder_02', 2, 'active'),
     ('Maria Garcia',  'maria@agro.com',       '$2b$12$hash_placeholder_03', 3, 'active'),
     ('Admin User',    'admin@system.com',     '$2b$12$hash_placeholder_04', 4, 'active'),
     ('Bob Brown',     'bob@farm.com',         '$2b$12$hash_placeholder_05', 1, 'disabled');
+
+INSERT INTO users (name, email, password_hash, role_id, status)
+SELECT
+    'Demo ' ||
+    CASE ((n - 1) % 5)
+        WHEN 0 THEN 'Farmer'
+        WHEN 1 THEN 'Researcher'
+        WHEN 2 THEN 'Agronomist'
+        WHEN 3 THEN 'Farmer'
+        ELSE 'Farmer'
+    END || ' ' || LPAD(n::TEXT, 3, '0') AS name,
+    LOWER(
+        CASE ((n - 1) % 5)
+            WHEN 0 THEN 'farmer'
+            WHEN 1 THEN 'researcher'
+            WHEN 2 THEN 'agronomist'
+            WHEN 3 THEN 'farmer'
+            ELSE 'farmer'
+        END
+    ) || LPAD(n::TEXT, 3, '0') || '@' ||
+    CASE ((n - 1) % 5)
+        WHEN 0 THEN 'farm.com'
+        WHEN 1 THEN 'research.org'
+        WHEN 2 THEN 'agro.com'
+        WHEN 3 THEN 'farm.com'
+        ELSE 'farm.com'
+    END AS email,
+    '$2b$12$hash_placeholder_demo_' || LPAD(n::TEXT, 3, '0') AS password_hash,
+    CASE ((n - 1) % 5)
+        WHEN 0 THEN 1
+        WHEN 1 THEN 2
+        WHEN 2 THEN 3
+        WHEN 3 THEN 1
+        ELSE 1
+    END AS role_id,
+    CASE WHEN n % 17 = 0 THEN 'disabled'::user_status ELSE 'active'::user_status END AS status
+FROM generate_series(1, 95) AS n;
 
 -- Images (sample uploads)
 INSERT INTO images (image_id, user_id, image_name, image_path, status, file_size) VALUES
