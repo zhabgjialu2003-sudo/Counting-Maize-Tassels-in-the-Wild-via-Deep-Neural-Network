@@ -431,6 +431,61 @@ def health():
     )
 
 
+@app.route("/api/auth/login", methods=["POST"])
+def auth_login():
+    """Authenticate user and return role info. BCE A.7 (access), D.1 (user mgmt)."""
+    payload = request.get_json(silent=True) or {}
+    email = (payload.get("email") or "").strip()
+    password = (payload.get("password") or "").strip()
+
+    if not email or not password:
+        return fail("Email and password are required", 400)
+
+    try:
+        with db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT u.user_id, u.name, u.email, u.password_hash, u.status,
+                           r.role_name AS role
+                    FROM users u
+                    JOIN roles r ON r.role_id = u.role_id
+                    WHERE u.email = %s
+                    """,
+                    (email,),
+                )
+                user = cur.fetchone()
+
+        if not user:
+            return fail("Invalid email or password", 401)
+
+        if user["status"] == "disabled":
+            return fail("Account is disabled. Contact administrator.", 403)
+
+        # Prototype: accept any password or verify hash
+        stored_hash = user["password_hash"]
+        if stored_hash and not stored_hash.startswith("$2b$"):
+            # SHA-256 hash (prototype)
+            expected = hash_password(password)
+            if expected != stored_hash:
+                return fail("Invalid email or password", 401)
+
+        return ok(
+            {
+                "status": "success",
+                "message": "Login successful",
+                "user": {
+                    "user_id": user["user_id"],
+                    "name": user["name"],
+                    "email": user["email"],
+                    "role": user["role"],
+                },
+            }
+        )
+    except Exception as exc:
+        return db_error_response(exc)
+
+
 @app.route("/api/upload", methods=["POST"])
 def upload():
     file = request.files.get("image") or request.files.get("file")

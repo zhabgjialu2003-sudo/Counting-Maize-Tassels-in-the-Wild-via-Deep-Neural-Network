@@ -8,18 +8,7 @@
 </head>
 <body>
 
-<nav class="nav">
-  <a class="nav-brand" href="#">Maize Detector</a>
-  <div class="nav-links">
-    <a href="dashboard.html">Home</a>
-    <a href="upload.html">Upload</a>
-    <a href="history.html">History</a>
-    <a href="report.html">Report</a>
-    <a href="export.html">Export</a>
-    <a href="agronomist.html">Agronomist</a>
-    <a href="admin.html">Admin</a>
-  </div>
-</nav>
+<nav class="nav" id="mainNav"></nav>
 
 <div class="container">
   <h2 class="page-title">Welcome to Maize Detector</h2>
@@ -65,8 +54,14 @@
 </div>
 
 <script src="../js/api.js"></script>
+<script src="../js/auth.js"></script>
 <script>
 setActiveNav();
+
+if (!requireRole(["Farmer"])) throw new Error('Access denied');
+initNav();
+
+
 
 async function loadDashboard() {
   // Fetch real stats from API, fall back to MockData
