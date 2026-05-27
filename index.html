@@ -158,8 +158,10 @@
 
     <nav>
         <a href="#about">Project Overview</a>
+        <a href="#problem">Problem</a>
+        <a href="#solution">Solution</a>
         <a href="#team">Who is Who</a>
-        <a href="#docs">Project Documentation</a>
+        <a href="#docs">Documents</a>
         <a href="https://github.com/zhabgjialu2003-sudo/Counting-Maize-Tassels-in-the-Wild-via-Deep-Neural-Network" target="_blank" rel="noopener">GitHub</a>
         <a href="frontend/pages/login.html" style="background:#4CAF50;">Live Prototype</a>
     </nav>
@@ -179,7 +181,32 @@
             </ul>
         </section>
 
-        <!-- Section 2: Who is Who -->
+        <!-- Section 2: Problem -->
+        <section id="problem">
+            <h2>The Problem</h2>
+            <p>Traditional maize tassel counting relies on <strong>manual field inspection</strong>, which presents significant challenges:</p>
+            <ul>
+                <li><strong>Time-consuming:</strong> A single field can take hours to survey manually, limiting the number of fields that can be assessed per day.</li>
+                <li><strong>Labour-intensive:</strong> Requires trained personnel to walk through fields, visually identify tassels, and record counts — a repetitive and exhausting process.</li>
+                <li><strong>Inconsistent:</strong> Manual counts vary between observers and even between surveys by the same observer, reducing data reliability.</li>
+                <li><strong>Limited coverage:</strong> Farmers and agronomists cannot feasibly monitor every section of every field, leaving blind spots in crop health assessment.</li>
+            </ul>
+            <p>An <strong>automated detection system</strong> is needed to reduce manual effort, improve counting accuracy, and provide consistent, scalable field monitoring.</p>
+        </section>
+
+        <!-- Section 3: Solution -->
+        <section id="solution">
+            <h2>Our Solution</h2>
+            <p>The Maize Tassel Detection System uses <strong>deep neural networks (YOLOv8)</strong> to analyse UAV and ground-level maize field images automatically:</p>
+            <ol>
+                <li><strong>Upload:</strong> Farmers and researchers upload maize field images through a simple web interface or batch upload tool.</li>
+                <li><strong>Detect:</strong> The AI model processes each image, identifies individual maize tassels, and draws bounding boxes around each detection.</li>
+                <li><strong>Count & Report:</strong> The system returns the total tassel count per image, confidence scores, annotated images with highlighted tassels, and aggregated reports over time.</li>
+            </ol>
+            <p>This approach transforms a manual, error-prone task into a <strong>fast, consistent, and scalable</strong> digital workflow — supporting better crop management decisions for farmers, researchers, and agronomists.</p>
+        </section>
+
+        <!-- Section 4: Who is Who -->
         <section id="team">
             <h2>Team Members (Who is Who)</h2>
             <p><strong>Supervisor:</strong> Mr. Singgo Jappit &nbsp;&nbsp;|&nbsp;&nbsp; <strong>Assessor:</strong> Mr. Tian Sion Hui</p>
@@ -222,51 +249,47 @@
             </div>
         </section>
 
-        <!-- Section 3: Project Documentations -->
+        <!-- Section 5: Project Documentations -->
         <section id="docs">
-            <h2>Project Documentation (Works in Progress)</h2>
-            <p>This section outlines the current status of all project-related documentation for internal team communication.</p>
-            
+            <h2>Project Documentation</h2>
+            <p>Key documents for the Week 10 submission:</p>
+
             <ul class="docs-list">
                 <li>
                     <div>
-                        <strong>Project Briefing Notes</strong><br>
-                        Overview of initial Week 1 requirements.
+                        <strong>PRD / Design Specification</strong><br>
+                        System requirements, WBS, Gantt Chart, architecture, UI mockups, and design specifications.
                     </div>
-                    <span class="status-badge completed">Completed (Week 1)</span>
+                    <a class="status-badge completed" href="docs/other/FYP-26-S2-7_Week10_Task_Checklist_Revised.md" target="_blank" rel="noopener" style="text-decoration:none;">View</a>
                 </li>
                 <li>
                     <div>
-                        <strong>Literature Review & Research findings</strong><br>
-                        Research on Big Data analysis and YOLO deep learning object detection for agronomy.
+                        <strong>Week 10 Task Checklist</strong><br>
+                        Detailed task breakdown, checking criteria, and submission requirements.
                     </div>
-                    <span class="status-badge completed">Completed (Week 3)</span>
+                    <a class="status-badge completed" href="docs/other/FYP-26-S2-7_Week10_Task_Checklist_Revised.md" target="_blank" rel="noopener" style="text-decoration:none;">View</a>
                 </li>
                 <li>
                     <div>
-                        <strong>System Requirements Specification (SRS/PRD)</strong><br>
-                        Includes specific functional/non-functional requirements, WBS, Gantt Chart, System Architecture diagram, and UI Mockups.
+                        <strong>BCE & Sequence Diagrams</strong><br>
+                        30 BCE diagrams (A.1-E.5) and 30 sequence diagrams (F.1-J.5).
                     </div>
-                    <span class="status-badge completed">Completed (Week 4-5)</span>
-                </li>
-                 <li>
-                    <div>
-                        <strong>Design Specifications</strong><br>
-                        Includes system flowchart, UI, security database tables, and API architectures.
-                    </div>
-                    <span class="status-badge completed">Completed (Week 4-5)</span>
+                    <a class="status-badge completed" href="docs/diagrams/" target="_blank" rel="noopener" style="text-decoration:none;">Browse</a>
                 </li>
                 <li>
                     <div>
-                        <strong>Working Prototype codebase (Sprint 1)</strong><br>
-                        Initial React/Flask integration and basic YOLO inference capability.
+                        <strong>Database Schema & ERD</strong><br>
+                        PostgreSQL schema file and draw.io ERD diagram.
                     </div>
-                    <span class="status-badge progress">In Progress</span>
+                    <span style="display:flex;gap:0.5rem;">
+                        <a class="status-badge completed" href="database/schema_postgresql.sql" target="_blank" rel="noopener" style="text-decoration:none;">Schema</a>
+                        <a class="status-badge completed" href="database/erd.drawio" target="_blank" rel="noopener" style="text-decoration:none;">ERD</a>
+                    </span>
                 </li>
                 <li>
                     <div>
                         <strong>GitHub Repository</strong><br>
-                        Source code, frontend prototype, backend mock API, database schema, and ERD artifacts.
+                        Source code, frontend prototype, backend mock API, and all project artifacts.
                     </div>
                     <a class="status-badge completed" href="https://github.com/zhabgjialu2003-sudo/Counting-Maize-Tassels-in-the-Wild-via-Deep-Neural-Network" target="_blank" rel="noopener" style="text-decoration:none;">Open Link</a>
                 </li>
