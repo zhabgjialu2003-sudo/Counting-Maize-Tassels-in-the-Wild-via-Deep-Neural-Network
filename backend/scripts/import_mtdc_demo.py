@@ -15,7 +15,7 @@ from psycopg.rows import dict_row
 
 ROOT = Path(__file__).resolve().parents[1]
 UPLOAD_DIR = ROOT / "uploads" / "mtdc-demo"
-DEFAULT_ZIP = Path(os.getenv("MTDC_UAV_ZIP", r"C:\Users\张嘉璐\Desktop\MTDC-UAV.zip"))
+DEFAULT_ZIP = Path(os.getenv("MTDC_UAV_ZIP", str(ROOT.parent / "datasets" / "MTDC-UAV.zip")))
 
 
 def clean_name(name: str) -> str:

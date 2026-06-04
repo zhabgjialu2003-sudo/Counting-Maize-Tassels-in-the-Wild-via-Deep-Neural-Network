@@ -5,11 +5,11 @@ import psycopg2.extras
 import os
 
 DB_CONFIG = {
-    "host": os.getenv("DB_HOST", "localhost"),
-    "port": int(os.getenv("DB_PORT", "5432")),
-    "dbname": os.getenv("DB_NAME", "maize_detector"),
-    "user": os.getenv("DB_USER", "postgres"),
-    "password": os.getenv("DB_PASSWORD", "123456"),
+    "host": os.getenv("PGHOST", "localhost"),
+    "port": int(os.getenv("PGPORT", "5432")),
+    "dbname": os.getenv("PGDATABASE", "maize_detector"),
+    "user": os.getenv("PGUSER", "postgres"),
+    "password": os.getenv("PGPASSWORD", "123456"),
 }
 
 

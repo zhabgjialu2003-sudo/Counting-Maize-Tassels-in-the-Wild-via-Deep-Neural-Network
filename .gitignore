@@ -20,4 +20,5 @@ Thumbs.db
 *.log
 backend/uploads/
 backend/backups/
+datasets/*.zip
 .playwright-cli/
