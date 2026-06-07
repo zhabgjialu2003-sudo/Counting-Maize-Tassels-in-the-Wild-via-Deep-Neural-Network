@@ -1427,4 +1427,16 @@ def fields():
 if __name__ == "__main__":
     print("Maize Detector API running at http://localhost:5000")
     print("Database: PostgreSQL if PGPASSWORD is set, otherwise mock fallback")
+    # Report AI inference availability at startup
+    if get_predictor is not None:
+        try:
+            pred = get_predictor()
+            if pred.available:
+                print("AI Inference: YOLO model loaded — real detection enabled")
+            else:
+                print("AI Inference: model weights not found in backend/models/ — mock fallback active")
+        except Exception as e:
+            print(f"AI Inference: unavailable ({e}) — mock fallback active")
+    else:
+        print("AI Inference: inference.py not found — mock fallback active")
     app.run(debug=os.getenv("FLASK_DEBUG", "0") == "1", port=5000)
