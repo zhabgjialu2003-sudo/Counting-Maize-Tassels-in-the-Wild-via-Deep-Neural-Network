@@ -21,4 +21,7 @@ Thumbs.db
 backend/uploads/
 backend/backups/
 datasets/*.zip
+package.json
+package-lock.json
+.claude/
 .playwright-cli/
