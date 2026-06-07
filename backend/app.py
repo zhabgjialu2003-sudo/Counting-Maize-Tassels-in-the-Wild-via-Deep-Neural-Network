@@ -26,6 +26,11 @@ except ImportError:  # Allows the prototype to run before dependencies are insta
     psycopg = None
     dict_row = None
 
+try:
+    from inference import get_predictor
+except ImportError:
+    get_predictor = None
+
 
 app = Flask(__name__)
 CORS(app)
@@ -663,6 +668,72 @@ def predict():
     image_id = payload.get("image_id") or payload.get("imageId")
     image_name = payload.get("image_name") or payload.get("imageName") or "maize_sample.jpg"
 
+    # ── 1. Try real YOLO inference if model is available ──
+    predictor = None
+    if get_predictor is not None:
+        try:
+            predictor = get_predictor()
+        except Exception:
+            pass
+
+    if predictor is not None and predictor.available and image_name:
+        # Resolve image path from database or uploads directory
+        image_path = UPLOAD_DIR / image_name
+        if not image_path.exists():
+            image_path = UPLOAD_DIR / Path(image_name).name
+
+        if image_path.exists():
+            try:
+                ai_result = predictor.detect(str(image_path))
+                # Save detection to database
+                try:
+                    with db_connection() as conn:
+                        if not image_id:
+                            image_id = create_image_record(
+                                conn,
+                                image_name=image_name,
+                                file_size=payload.get("file_size"),
+                            )
+                        bbox_json = json.dumps(ai_result["bbox_data"], ensure_ascii=False)
+                        with conn.cursor() as cur:
+                            cur.execute("UPDATE images SET status = 'completed' WHERE image_id = %s", (image_id,))
+                            cur.execute(
+                                """
+                                INSERT INTO detection_results
+                                    (image_id, tassel_count, confidence_score, processing_time, bbox_data, annotated_image_path)
+                                VALUES (%s, %s, %s, %s, %s::jsonb, %s)
+                                RETURNING result_id
+                                """,
+                                (
+                                    image_id,
+                                    ai_result["tassel_count"],
+                                    ai_result["confidence_score"],
+                                    ai_result["processing_time"],
+                                    bbox_json,
+                                    f"uploads/annotated_{image_id}.jpg",
+                                ),
+                            )
+                            ai_result["result_id"] = cur.fetchone()["result_id"]
+                        conn.commit()
+                except Exception as db_err:
+                    app.logger.warning("Real inference succeeded but DB save failed: %s", db_err)
+
+                return ok({
+                    "image_id": image_id,
+                    "image_name": image_name,
+                    "tassel_count": ai_result["tassel_count"],
+                    "count": ai_result["tassel_count"],
+                    "confidence_score": ai_result["confidence_score"],
+                    "confidence": ai_result["confidence_score"],
+                    "processing_time": ai_result["processing_time"],
+                    "bbox_data": ai_result["bbox_data"],
+                    "created_at": datetime.now().isoformat(),
+                    "source": "yolo-inference",
+                }, 201)
+            except Exception as inferr:
+                app.logger.warning("Real inference failed, falling back to mock: %s", inferr)
+
+    # ── 2. Fall back to database query or mock data ──
     try:
         with db_connection() as conn:
             if image_id:
