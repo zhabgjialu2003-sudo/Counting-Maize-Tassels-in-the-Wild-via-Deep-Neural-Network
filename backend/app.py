@@ -677,10 +677,19 @@ def predict():
             pass
 
     if predictor is not None and predictor.available and image_name:
-        # Resolve image path from database or uploads directory
+        # Resolve image path: try exact name, basename, then cleaned version
         image_path = UPLOAD_DIR / image_name
         if not image_path.exists():
             image_path = UPLOAD_DIR / Path(image_name).name
+        if not image_path.exists():
+            cleaned = clean_image_filename(image_name)
+            image_path = UPLOAD_DIR / cleaned
+        # Also search uploads directory for any file matching the stem
+        if not image_path.exists():
+            stem = Path(image_name).stem
+            matches = list(UPLOAD_DIR.glob(stem + ".*"))
+            if matches:
+                image_path = matches[0]
 
         if image_path.exists():
             try:
