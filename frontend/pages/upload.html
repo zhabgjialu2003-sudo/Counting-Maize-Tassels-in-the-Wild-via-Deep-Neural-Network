@@ -53,8 +53,8 @@
   </div>
 </div>
 
-<script src="../js/api.js?v=20260610-2"></script>
-<script src="../js/auth.js?v=20260610-2"></script>
+<script src="../js/api.js?v=20260610-4"></script>
+<script src="../js/auth.js?v=20260610-4"></script>
 <script>
 setActiveNav();
 
@@ -128,9 +128,41 @@ function fileToDataUrl(file) {
 }
 
 // USER STORIES A.1/A.2: frontend-to-backend sequence (/api/upload -> /api/predict).
+// Pre-scale large images before upload to speed up CPU inference.
+function resizeForUpload(file, maxSide) {
+  maxSide = maxSide || 1280;
+  return new Promise(function(resolve, reject) {
+    if (!file.type.startsWith('image/')) { resolve(file); return; }
+    var img = new Image();
+    var url = URL.createObjectURL(file);
+    img.onload = function() {
+      URL.revokeObjectURL(url);
+      if (img.width <= maxSide && img.height <= maxSide) { resolve(file); return; }
+      var scale = maxSide / Math.max(img.width, img.height);
+      var w = Math.round(img.width * scale);
+      var h = Math.round(img.height * scale);
+      var canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      canvas.toBlob(function(blob) {
+        if (blob) {
+          var resized = new File([blob], file.name, { type: 'image/jpeg', lastModified: Date.now() });
+          resolve(resized);
+        } else {
+          resolve(file); // fallback to original
+        }
+      }, 'image/jpeg', 0.90);
+    };
+    img.onerror = function() { URL.revokeObjectURL(url); resolve(file); };
+    img.src = url;
+  });
+}
+
 async function uploadAndPredict(file) {
+  // Pre-scale large images for faster CPU inference
+  var uploadFile = await resizeForUpload(file, 1280);
   const sessionUser = currentUser();
-  const uploadRes = await apiUpload(file, sessionUser ? sessionUser.user_id : 1);
+  const uploadRes = await apiUpload(uploadFile, sessionUser ? sessionUser.user_id : 1);
   if (!uploadRes.ok) {
     return { ok: false, error: uploadRes.error || 'Upload failed', fileName: file.name };
   }
@@ -139,7 +171,7 @@ async function uploadAndPredict(file) {
   const predictRes = await apiPost('/api/predict', {
     image_id: imageId,
     image_name: imageName,
-    file_size: file.size,
+    file_size: uploadFile.size,
   });
   return predictRes.ok
     ? { ok: true, result: normalizeResult(predictRes.data) }
