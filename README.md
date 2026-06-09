@@ -76,6 +76,10 @@ python -m http.server 8000
 
 Open `http://localhost:8000/frontend/pages/login.html`.
 
+Direct `file://` opening is also allowed for the local demo, but serving the
+repository over `http://localhost:8000` is recommended for consistent browser
+behaviour.
+
 ## Verification
 
 ```powershell
