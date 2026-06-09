@@ -3,8 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>Maize Detector - Upload</title>
-<link rel="stylesheet" href="../css/style.css">
+<link rel="stylesheet" href="../css/style.css?v=2">
 </head>
 <body>
 
@@ -53,8 +56,8 @@
   </div>
 </div>
 
-<script src="../js/api.js?v=20260610-5"></script>
-<script src="../js/auth.js?v=20260610-5"></script>
+<script src="../js/api.js"></script>
+<script src="../js/auth.js"></script>
 <script>
 setActiveNav();
 
@@ -127,58 +130,18 @@ function fileToDataUrl(file) {
   });
 }
 
-// USER STORIES A.1/A.2: frontend-to-backend sequence (/api/upload -> /api/predict).
-// Pre-scale large images before upload to speed up CPU inference.
-function resizeForUpload(file, maxSide) {
-  maxSide = maxSide || 1280;
-  return new Promise(function(resolve, reject) {
-    if (!file.type.startsWith('image/')) { resolve(file); return; }
-    var img = new Image();
-    var url = URL.createObjectURL(file);
-    img.onload = function() {
-      URL.revokeObjectURL(url);
-      if (img.width <= maxSide && img.height <= maxSide) { resolve(file); return; }
-      var scale = maxSide / Math.max(img.width, img.height);
-      var w = Math.round(img.width * scale);
-      var h = Math.round(img.height * scale);
-      var canvas = document.createElement('canvas');
-      canvas.width = w; canvas.height = h;
-      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-      canvas.toBlob(function(blob) {
-        if (blob) {
-          var resized = new File([blob], file.name, { type: 'image/jpeg', lastModified: Date.now() });
-          resolve(resized);
-        } else {
-          resolve(file); // fallback to original
-        }
-      }, 'image/jpeg', 0.90);
-    };
-    img.onerror = function() { URL.revokeObjectURL(url); resolve(file); };
-    img.src = url;
-  });
-}
-
 async function uploadAndPredict(file) {
-  console.log('[uploadAndPredict] start:', file.name, file.size);
-  // Pre-scale large images for faster CPU inference
-  var uploadFile = await resizeForUpload(file, 1280);
-  console.log('[uploadAndPredict] resized:', uploadFile.size);
-  const sessionUser = currentUser();
-  console.log('[uploadAndPredict] uploading...');
-  const uploadRes = await apiUpload(uploadFile);
-  console.log('[uploadAndPredict] upload done:', uploadRes.ok, uploadRes.status);
+  const uploadRes = await apiUpload(file);
   if (!uploadRes.ok) {
     return { ok: false, error: uploadRes.error || 'Upload failed', fileName: file.name };
   }
-  const imageId = uploadRes.ok ? uploadRes.data.image_id : null;
-  const imageName = uploadRes.ok ? uploadRes.data.image_name : file.name;
-  console.log('[uploadAndPredict] predicting, imageId:', imageId);
+  const imageId = uploadRes.data.image_id;
+  const imageName = uploadRes.data.image_name || file.name;
   const predictRes = await apiPost('/api/predict', {
     image_id: imageId,
     image_name: imageName,
-    file_size: uploadFile.size,
+    file_size: file.size,
   });
-  console.log('[uploadAndPredict] predict done:', predictRes.ok, predictRes.status);
   return predictRes.ok
     ? { ok: true, result: normalizeResult(predictRes.data) }
     : { ok: false, error: predictRes.error || 'Detection failed', fileName: file.name };
