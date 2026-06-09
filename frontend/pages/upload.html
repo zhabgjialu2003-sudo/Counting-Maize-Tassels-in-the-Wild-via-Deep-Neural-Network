@@ -185,7 +185,14 @@ async function submitUpload() {
       `<div class="alert ${failed ? 'alert-warning' : 'alert-success'}"><strong>Batch complete:</strong> ${success} successful, ${failed} failed.</div>`;
     if (lastResult) setTimeout(() => location.href = 'result.html', 1500);
   } else {
+    // Show elapsed time while waiting for inference
+    const startTime = Date.now();
+    const timerInterval = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - startTime) / 1000);
+      btn.innerHTML = '<span class="spinner"></span> Analyzing (' + elapsed + 's)...<br><small style="color:#888">YOLO26s on CPU - may take 30-60s for large images</small>';
+    }, 3000);
     const outcome = await uploadAndPredict(selectedFiles[0]);
+    clearInterval(timerInterval);
     if (!outcome.ok) {
       showError(outcome.error);
       btn.disabled = false;

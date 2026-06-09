@@ -4,11 +4,18 @@
 const API_BASE = 'http://127.0.0.1:5000';
 
 async function apiRequest(endpoint, options = {}) {
+  // Set a generous timeout (2 min) to prevent infinite hang on slow CPU inference
+  const timeoutMs = options.timeout || 120000;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
   try {
     const response = await fetch(`${API_BASE}${endpoint}`, {
       ...options,
       headers: authHeaders(options.headers),
+      signal: controller.signal,
     });
+    clearTimeout(timer);
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
       return {
@@ -19,6 +26,11 @@ async function apiRequest(endpoint, options = {}) {
     }
     return { ok: true, status: response.status, data };
   } catch (error) {
+    clearTimeout(timer);
+    if (error.name === 'AbortError') {
+      console.warn(`Request timed out after ${timeoutMs/1000}s: ${endpoint}`);
+      return { ok: false, status: 408, error: 'Analysis is taking longer than expected. The server may be busy. Try a smaller image.' };
+    }
     console.error(`API request failed: ${endpoint}`, error);
     return {
       ok: false,

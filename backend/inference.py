@@ -144,10 +144,10 @@ class YOLOPredictor:
             raise RuntimeError("YOLO model is not available for inference")
 
         image_path = Path(image_path)
-        cache_key = hashlib.sha256(image_path.read_bytes()).hexdigest() + f":{mode}"
+        # Use filename + mode as cache key (fast lookup without reading entire file)
+        cache_key = f"{image_path.name}:{mode}"
         if cache_key in self._cache:
             cached = dict(self._cache[cache_key])
-            cached["processing_time"] = 0.0
             cached["cache_hit"] = True
             return cached
 
