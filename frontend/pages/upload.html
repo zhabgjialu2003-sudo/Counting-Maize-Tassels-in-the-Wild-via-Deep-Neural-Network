@@ -54,6 +54,16 @@
       <button class="btn btn-outline" onclick="resetUpload()">Clear</button>
     </div>
   </div>
+
+  <!-- Batch Results Summary (shown after batch analysis) -->
+  <div id="batchSummary" style="display:none;">
+    <div class="card" style="margin-top:1rem;">
+      <h3 style="color:var(--green);margin-bottom:0.5rem;">Batch Results</h3>
+      <p id="batchStats" style="color:var(--gray-500);margin-bottom:1rem;"></p>
+      <div id="batchGrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;"></div>
+      <div id="batchPager" style="display:flex;justify-content:center;align-items:center;gap:1rem;margin-top:1rem;"></div>
+    </div>
+  </div>
 </div>
 
 <script src="../js/api.js"></script>
@@ -159,36 +169,31 @@ async function submitUpload() {
   if (selectedFiles.length > 1) {
     const progDiv = document.getElementById('batchProgress');
     progDiv.style.display = 'block';
-    let success = 0;
+    let allResults = [];
     let failed = 0;
-    let lastResult = null;
-    let lastSuccessFile = null;
     for (let i = 0; i < selectedFiles.length; i++) {
       document.getElementById('progressText').textContent = `${i + 1}/${selectedFiles.length}`;
       document.getElementById('progressFill').style.width = ((i + 1) / selectedFiles.length * 100) + '%';
       const outcome = await uploadAndPredict(selectedFiles[i]);
       if (outcome.ok) {
-        lastResult = outcome.result;
-        lastSuccessFile = selectedFiles[i];
-        success++;
+        allResults.push({ name: selectedFiles[i].name, result: outcome.result });
       } else {
         failed++;
-        showError(`${outcome.fileName}: ${outcome.error}`);
+        showError(`${selectedFiles[i].name}: ${outcome.error}`);
       }
     }
     document.getElementById('batchProgress').style.display = 'none';
-    if (lastResult) {
-      sessionStorage.setItem('lastResult', JSON.stringify(lastResult));
-      try {
-        const previewUrl = await fileToDataUrl(lastSuccessFile);
-        if (previewUrl) sessionStorage.setItem('lastImageDataUrl', previewUrl);
-      } catch (e) {
-        console.warn('Batch: image preview too large, will load from backend');
-      }
-    }
     document.getElementById('errorBox').innerHTML +=
-      `<div class="alert ${failed ? 'alert-warning' : 'alert-success'}"><strong>Batch complete:</strong> ${success} successful, ${failed} failed.</div>`;
-    if (lastResult) setTimeout(() => location.href = 'result.html', 1500);
+      `<div class="alert ${failed ? 'alert-warning' : 'alert-success'}"><strong>Batch complete:</strong> ${allResults.length} successful, ${failed} failed.</div>`;
+
+    if (allResults.length > 0) {
+      sessionStorage.setItem('batchResults', JSON.stringify(allResults));
+      sessionStorage.setItem('lastResult', JSON.stringify(allResults[allResults.length - 1].result));
+      renderBatchSummary(allResults);
+    }
+    btn.disabled = false;
+    btn.textContent = 'Analyze';
+    document.getElementById('estimateText').textContent = '';
   } else {
     // Show elapsed time while waiting for inference
     const startTime = Date.now();
@@ -227,9 +232,79 @@ function resetUpload() {
   document.getElementById('fileInput').value = '';
   document.getElementById('errorBox').innerHTML = '';
   document.getElementById('batchProgress').style.display = 'none';
+  document.getElementById('batchSummary').style.display = 'none';
   sessionStorage.removeItem('lastImageDataUrl');
+  sessionStorage.removeItem('batchResults');
   document.getElementById('estimateText').textContent = '';
   updatePreview();
+}
+
+// Paginated batch results display
+const BATCH_PAGE_SIZE = 6;
+
+function renderBatchSummary(allResults) {
+  const token = sessionStorage.getItem('maize_access_token') || '';
+  const summary = document.getElementById('batchSummary');
+  const stats = document.getElementById('batchStats');
+  const grid = document.getElementById('batchGrid');
+  const pager = document.getElementById('batchPager');
+
+  summary.style.display = 'block';
+  stats.textContent = `${allResults.length} images analyzed. Click any image to view details.`;
+
+  let page = 0;
+  const totalPages = Math.ceil(allResults.length / BATCH_PAGE_SIZE);
+
+  function showPage(p) {
+    page = p;
+    grid.innerHTML = '';
+    const start = page * BATCH_PAGE_SIZE;
+    const end = Math.min(start + BATCH_PAGE_SIZE, allResults.length);
+
+    for (let i = start; i < end; i++) {
+      const item = allResults[i];
+      const r = item.result;
+      const imgUrl = r.imageId
+        ? API_BASE + '/api/images/' + r.imageId + '/file/original?access_token=' + encodeURIComponent(token)
+        : '';
+      const card = document.createElement('div');
+      card.style.cssText = 'border:1px solid #ddd;border-radius:8px;overflow:hidden;cursor:pointer;transition:box-shadow 0.2s;';
+      card.onmouseenter = function() { card.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)'; };
+      card.onmouseleave = function() { card.style.boxShadow = 'none'; };
+      card.onclick = function() {
+        sessionStorage.setItem('lastResult', JSON.stringify(r));
+        location.href = 'result.html';
+      };
+
+      card.innerHTML =
+        '<div style="aspect-ratio:4/3;background:#f0f0f0;display:flex;align-items:center;justify-content:center;overflow:hidden;">' +
+        (imgUrl
+          ? '<img src="' + imgUrl + '" alt="' + esc(r.imageName) + '" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentElement.innerHTML=\\'<span style=color:#888>No preview</span>\\'">'
+          : '<span style="color:#888;">No preview</span>') +
+        '</div>' +
+        '<div style="padding:0.6rem;">' +
+        '<div style="font-weight:600;font-size:0.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + esc(r.imageName) + '</div>' +
+        '<div style="display:flex;justify-content:space-between;font-size:0.8rem;color:#666;margin-top:0.2rem;">' +
+        '<span><strong>' + r.tasselCount + '</strong> tassels</span>' +
+        '<span>' + (r.processingTime > 0 ? Number(r.processingTime).toFixed(1) + 's' : '') + '</span>' +
+        '<span>' + formatPercent(r.confidenceScore) + '</span>' +
+        '</div></div>';
+
+      grid.appendChild(card);
+    }
+
+    pager.innerHTML =
+      '<button class="btn btn-sm btn-outline" ' + (page === 0 ? 'disabled' : '') + ' onclick="arguments[0].stopPropagation();">Prev</button>' +
+      '<span style="font-size:0.9rem;color:#666;">Page ' + (page + 1) + ' / ' + totalPages + '</span>' +
+      '<button class="btn btn-sm btn-outline" ' + (page >= totalPages - 1 ? 'disabled' : '') + ' onclick="arguments[0].stopPropagation();">Next</button>';
+
+    // Re-attach events (workaround for innerHTML limits)
+    var btns = pager.querySelectorAll('button');
+    if (btns[0]) btns[0].onclick = function() { if (page > 0) showPage(page - 1); };
+    if (btns[1]) btns[1].onclick = function() { if (page < totalPages - 1) showPage(page + 1); };
+  }
+
+  showPage(0);
 }
 </script>
 </body>
