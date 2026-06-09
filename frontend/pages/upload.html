@@ -179,8 +179,12 @@ async function submitUpload() {
     document.getElementById('batchProgress').style.display = 'none';
     if (lastResult) {
       sessionStorage.setItem('lastResult', JSON.stringify(lastResult));
-      const previewUrl = await fileToDataUrl(lastSuccessFile);
-      if (previewUrl) sessionStorage.setItem('lastImageDataUrl', previewUrl);
+      try {
+        const previewUrl = await fileToDataUrl(lastSuccessFile);
+        if (previewUrl) sessionStorage.setItem('lastImageDataUrl', previewUrl);
+      } catch (e) {
+        console.warn('Batch: image preview too large, will load from backend');
+      }
     }
     document.getElementById('errorBox').innerHTML +=
       `<div class="alert ${failed ? 'alert-warning' : 'alert-success'}"><strong>Batch complete:</strong> ${success} successful, ${failed} failed.</div>`;
