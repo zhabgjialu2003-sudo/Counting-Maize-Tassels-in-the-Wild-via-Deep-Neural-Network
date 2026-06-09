@@ -18,7 +18,7 @@ python -m pip install -r backend/requirements.txt
 python backend/server.py
 ```
 
-The API runs at `http://localhost:5000`.
+The API runs at `http://127.0.0.1:5000`.
 
 `server.py` requires both PostgreSQL and `models/best.pt` to load successfully.
 It exits on startup failure instead of switching to fabricated data.

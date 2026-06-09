@@ -1,5 +1,7 @@
 // Maize Detector - shared API client and response normalization.
-const API_BASE = 'http://localhost:5000';
+// Use IPv4 explicitly because some Windows browsers resolve localhost to ::1
+// while the local assessment server listens on 127.0.0.1.
+const API_BASE = 'http://127.0.0.1:5000';
 
 async function apiRequest(endpoint, options = {}) {
   try {
@@ -21,7 +23,7 @@ async function apiRequest(endpoint, options = {}) {
     return {
       ok: false,
       status: 0,
-      error: 'Cannot connect to the backend service. Check that the API is running.',
+      error: `Cannot connect to the backend service at ${API_BASE}. Check that the API is running.`,
     };
   }
 }

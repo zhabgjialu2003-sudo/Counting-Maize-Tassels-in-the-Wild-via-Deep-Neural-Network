@@ -8,7 +8,7 @@ Farmers, Researchers, Agronomists, Administrators, and system/model operations.
 
 - Project website: https://zhabgjialu2003-sudo.github.io/Counting-Maize-Tassels-in-the-Wild-via-Deep-Neural-Network/
 - Repository: https://github.com/zhabgjialu2003-sudo/Counting-Maize-Tassels-in-the-Wild-via-Deep-Neural-Network
-- Local API: `http://localhost:5000`
+- Local API: `http://127.0.0.1:5000`
 
 ## Week 11 Status
 
