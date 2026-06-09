@@ -81,7 +81,7 @@ class YOLOPredictor:
 
         t0 = time.perf_counter()
 
-        results = self._model(str(image_path), verbose=False)
+        results = self._model.predict(str(image_path), verbose=False, conf=0.25, iou=0.7, device='cpu')
         result = results[0]  # first (only) image
 
         boxes_data = []

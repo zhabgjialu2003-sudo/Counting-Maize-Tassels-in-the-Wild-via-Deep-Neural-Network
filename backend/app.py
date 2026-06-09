@@ -1448,4 +1448,4 @@ if __name__ == "__main__":
             print(f"AI Inference: unavailable ({e}) — mock fallback active")
     else:
         print("AI Inference: inference.py not found — mock fallback active")
-    app.run(debug=os.getenv("FLASK_DEBUG", "0") == "1", port=5000)
+    app.run(debug=os.getenv("FLASK_DEBUG", "0") == "1", port=5000, threaded=False)
