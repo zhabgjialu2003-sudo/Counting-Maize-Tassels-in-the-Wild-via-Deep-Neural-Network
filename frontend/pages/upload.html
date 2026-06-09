@@ -203,8 +203,13 @@ async function submitUpload() {
     }
     const result = outcome.result;
     sessionStorage.setItem('lastResult', JSON.stringify(result));
-    const previewUrl = await fileToDataUrl(selectedFiles[0]);
-    if (previewUrl) sessionStorage.setItem('lastImageDataUrl', previewUrl);
+    // Store image preview for result page (skip if too large for sessionStorage)
+    try {
+      const previewUrl = await fileToDataUrl(selectedFiles[0]);
+      if (previewUrl) sessionStorage.setItem('lastImageDataUrl', previewUrl);
+    } catch (e) {
+      console.warn('Image preview too large for sessionStorage, will load from backend');
+    }
     document.getElementById('errorBox').innerHTML = '<div class="alert alert-success">Upload successful! Redirecting to result...</div>';
     setTimeout(() => location.href = 'result.html', 1000);
   }
