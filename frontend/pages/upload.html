@@ -53,8 +53,8 @@
   </div>
 </div>
 
-<script src="../js/api.js?v=20260610-4"></script>
-<script src="../js/auth.js?v=20260610-4"></script>
+<script src="../js/api.js?v=20260610-5"></script>
+<script src="../js/auth.js?v=20260610-5"></script>
 <script>
 setActiveNav();
 
@@ -159,20 +159,26 @@ function resizeForUpload(file, maxSide) {
 }
 
 async function uploadAndPredict(file) {
+  console.log('[uploadAndPredict] start:', file.name, file.size);
   // Pre-scale large images for faster CPU inference
   var uploadFile = await resizeForUpload(file, 1280);
+  console.log('[uploadAndPredict] resized:', uploadFile.size);
   const sessionUser = currentUser();
-  const uploadRes = await apiUpload(uploadFile, sessionUser ? sessionUser.user_id : 1);
+  console.log('[uploadAndPredict] uploading...');
+  const uploadRes = await apiUpload(uploadFile);
+  console.log('[uploadAndPredict] upload done:', uploadRes.ok, uploadRes.status);
   if (!uploadRes.ok) {
     return { ok: false, error: uploadRes.error || 'Upload failed', fileName: file.name };
   }
   const imageId = uploadRes.ok ? uploadRes.data.image_id : null;
   const imageName = uploadRes.ok ? uploadRes.data.image_name : file.name;
+  console.log('[uploadAndPredict] predicting, imageId:', imageId);
   const predictRes = await apiPost('/api/predict', {
     image_id: imageId,
     image_name: imageName,
     file_size: uploadFile.size,
   });
+  console.log('[uploadAndPredict] predict done:', predictRes.ok, predictRes.status);
   return predictRes.ok
     ? { ok: true, result: normalizeResult(predictRes.data) }
     : { ok: false, error: predictRes.error || 'Detection failed', fileName: file.name };
