@@ -1448,4 +1448,10 @@ if __name__ == "__main__":
             print(f"AI Inference: unavailable ({e}) — mock fallback active")
     else:
         print("AI Inference: inference.py not found — mock fallback active")
-    app.run(debug=False, port=5000, threaded=False, use_reloader=False)
+    from wsgiref.simple_server import make_server
+    httpd = make_server("127.0.0.1", 5000, app)
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("\nShutting down...")
+        httpd.server_close()
