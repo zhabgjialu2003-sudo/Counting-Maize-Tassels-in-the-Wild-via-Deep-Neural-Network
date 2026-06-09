@@ -730,6 +730,8 @@ def predict():
                 return ok({
                     "image_id": image_id,
                     "image_name": image_name,
+                    "image_path": f"uploads/{image_name}",
+                    "original_image_path": f"uploads/{image_name}",
                     "tassel_count": ai_result["tassel_count"],
                     "count": ai_result["tassel_count"],
                     "confidence_score": ai_result["confidence_score"],
