@@ -3,13 +3,20 @@
 import psycopg2
 import psycopg2.extras
 import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 DB_CONFIG = {
     "host": os.getenv("PGHOST", "localhost"),
     "port": int(os.getenv("PGPORT", "5432")),
     "dbname": os.getenv("PGDATABASE", "maize_detector"),
     "user": os.getenv("PGUSER", "postgres"),
-    "password": os.getenv("PGPASSWORD", "123456"),
+    "password": os.getenv("PGPASSWORD", ""),
+    "connect_timeout": int(os.getenv("PGCONNECT_TIMEOUT", "3")),
+    "options": f"-c statement_timeout={int(os.getenv('PGSTATEMENT_TIMEOUT_MS', '5000'))}",
 }
 
 

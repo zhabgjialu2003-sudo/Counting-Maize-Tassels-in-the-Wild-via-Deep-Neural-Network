@@ -11,6 +11,7 @@
 <nav class="nav" id="mainNav"></nav>
 
 <div class="container">
+  <!-- USER STORY B.3 Boundary: filter, sort, inspect, and chart historical data. -->
   <h2 class="page-title">Detection History</h2>
   <p class="page-subtitle">View and filter past tassel counting records</p>
 
@@ -58,12 +59,17 @@
 if (!requireRole(["Researcher"])) throw new Error('Access denied');
 initNav();
 
-let allRecords = [...MockData.results].reverse();
+let allRecords = [];
 
+// USER STORY B.3 Control call: load filterable history from /api/history.
 async function loadHistory() {
   const response = await apiGet('/api/history?limit=100');
   if (response.ok && Array.isArray(response.data.records)) {
     allRecords = response.data.records.map(record => normalizeResult(record));
+  } else {
+    document.getElementById('historyTableBody').innerHTML =
+      '<tr><td colspan="5" class="info-text">Unable to load history from the backend.</td></tr>';
+    return;
   }
   applyFilters();
 }
@@ -82,6 +88,7 @@ function viewResult(resultId) {
   location.href = `result.html?id=${resultId}`;
 }
 
+// USER STORY B.3 Boundary logic: date, field/search, and sort controls.
 function applyFilters() {
   let filtered = [...allRecords];
   const from = document.getElementById('filterFrom').value;
@@ -89,9 +96,11 @@ function applyFilters() {
   const search = document.getElementById('searchField').value.toLowerCase();
   const sort = document.getElementById('sortColumn').value;
 
-  if (from) filtered = filtered.filter(r => r.createdAt >= from);
-  if (to) filtered = filtered.filter(r => r.createdAt <= to);
-  if (search) filtered = filtered.filter(r => r.imageName.toLowerCase().includes(search));
+  if (from) filtered = filtered.filter(r => r.createdAt.slice(0, 10) >= from);
+  if (to) filtered = filtered.filter(r => r.createdAt.slice(0, 10) <= to);
+  if (search) filtered = filtered.filter(r =>
+    r.imageName.toLowerCase().includes(search) || (r.fieldName || '').toLowerCase().includes(search)
+  );
 
   if (sort === 'count') filtered.sort((a, b) => b.tasselCount - a.tasselCount);
   else if (sort === 'confidence') filtered.sort((a, b) => b.confidenceScore - a.confidenceScore);

@@ -1,67 +1,70 @@
-# FYP-26-S2-7 Week 10 Demo Flow & Backup Plan
+# FYP-26-S2-7 Week 11 Demo Flow and Backup Plan
 
-## Primary Demo Flow (5 minutes)
+## Pre-Demo Startup
 
-| Step | Action | Screen | What to Say |
-|------|--------|--------|-------------|
-| 1 | Open project website | index.html | "This is our project entry point showing the overview, team, and document links." |
-| 2 | Click "Live Prototype" → Login | login.html | "We have 4 demo roles: Farmer, Researcher, Agronomist, Admin. Let me log in as Farmer." |
-| 3 | Login as john@farm.com / 123456 | dashboard.html | "The Farmer dashboard shows quick actions and recent results." |
-| 4 | Click "Upload Image" → Select JPG | upload.html | "Upload a maize field image — JPG/PNG supported, PDF rejected with error message." |
-| 5 | Click "Analyze" | loading → result.html | "The system processes the image. If the AI model is connected, it uses YOLO26s; otherwise mock data runs the same flow." |
-| 6 | Show result page | result.html | "Tassel count, confidence score, annotated image with bounding boxes, compare toggle." |
-| 7 | Switch to Researcher → History | history.html | "Researcher can view historical detection records with trend analysis." |
-| 8 | Show Report tabs | report.html | "Daily, Weekly, Monthly reports with aggregated statistics." |
-| 9 | Show Export | export.html | "Select records and download as CSV — real Blob download, not fake." |
-| 10 | Show Admin → Users | admin.html | "Admin manages 100 users with CRUD, permissions, datasets, backups, and logs." |
+1. Start PostgreSQL and confirm the `maize_detector` database is available.
+2. Run `python backend/server.py`.
+3. Confirm the startup output reports PostgreSQL connected and `best.pt` loaded.
+4. Serve the repository with `python -m http.server 8000`.
+5. Open `http://localhost:8000/frontend/pages/login.html`.
 
-## Key Talking Points for Q&A
+The strict server exits when the database or trained model is unavailable. The
+demo does not silently replace failed operations with fabricated results.
 
-- **Real AI**: YOLO26s training notebook with mAP50 = 0.899 on ground data. Model weights being integrated.
-- **Database**: PostgreSQL 18, 7 tables, 100 seeded users. Graceful mock fallback when DB unavailable.
-- **Mobile**: Responsive at 375px, buttons 47px ≥ 44px WCAG requirement.
-- **Testing**: 17/17 prototype tests passed, 30 user story test tables with BCE traceability.
-- **Architecture**: Frontend → Flask API → YOLO inference → PostgreSQL. Graceful degradation at every layer.
+## Primary Demo Flow
 
-## Backup Plan (if live demo fails)
+| Step | Action | Evidence |
+|---|---|---|
+| 1 | Open the project website | Week 11 status, team, documentation, GitHub |
+| 2 | Sign in as Farmer | Signed session and role-specific dashboard |
+| 3 | Upload one or multiple JPG/PNG images | Validation, preview, progress, encrypted persistence |
+| 4 | Run analysis | Real YOLO26s inference from `backend/models/best.pt` |
+| 5 | Open the result | Count, confidence, processing time, bounding boxes |
+| 6 | Open history and export | PostgreSQL records, filtering, CSV/JSON export |
+| 7 | Sign in as Researcher | Result review, model comparison, datasets, reports |
+| 8 | Sign in as Agronomist | Health, growth, anomaly, multi-field, insights |
+| 9 | Sign in as Admin | Users, secure storage, monitoring, datasets, permissions, backups |
+| 10 | Open System page | Preprocess, train, evaluate, deploy, version workflows |
 
-### Option A: Screenshots Only
-- All 11 page screenshots available in `docs/screenshots/` (or captured from running prototype)
-- Click through screenshots in presentation order instead of live browser
+## Key Talking Points
 
-### Option B: Recorded Video
-- Record a walkthrough using OBS or PowerPoint screen recording:
-  1. Open project website → navigate to prototype
-  2. Login as each role showing different dashboards
-  3. Upload → Analyze → Result workflow
-  4. History + Report + Export
-  5. Admin user management
-- Duration: 3-5 minutes
-- Include voiceover explaining each step
+- AI: the team's trained `best.pt` is loaded by Ultralytics for live inference.
+- Database: PostgreSQL persists users, images, encrypted files, detections,
+  reports, logs, datasets, fields, recommendations, models, and training runs.
+- Traceability: 30 User Stories map to 30 BCE and 30 sequence diagrams.
+- Security: signed authentication, role checks, encrypted image bytes, access
+  policies, audit logging, and protected backup/restore operations.
+- Validation: automated compliance tests plus live database/model smoke checks.
 
-### Option C: Offline Localhost
-- Run backend: `cd backend && python app.py`
-- Open frontend pages via `file://` protocol or simple HTTP server
-- Demonstrate full Upload → Predict → Result flow with live API response
+## Backup Evidence
 
-## Pre-Demo Checklist
+If the live display fails, show evidence without claiming that a failed service
+is working:
 
-- [ ] Backend Flask server starts without errors (`python app.py`)
-- [ ] Frontend pages load from GitHub Pages or locally
-- [ ] Demo accounts work (john@farm.com, liwei@research.org, etc.)
-- [ ] Upload folder has sample images (`backend/uploads/` or `datasets/`)
-- [ ] CORS works (frontend can call backend API)
-- [ ] Screenshots backup folder ready
-- [ ] Recording software installed and tested (if using video backup)
-- [ ] Browser cache cleared (clean demo experience)
-- [ ] Internet connection (for GitHub Pages demo) or local fallback ready
+- screenshots in `docs/screenshots/`
+- BCE and sequence diagrams in `docs/diagrams/`
+- the User Story code guide
+- the Week 11 compliance audit and test output
+- sample annotated model results
 
-## Demo Script (Short Version — 3 minutes)
+## Final Checklist
 
-> "Good morning. Our project is Counting Maize Tassels in the Wild via Deep Neural Network.  
-> This is our project website. Clicking into the prototype, you can log in with 4 different roles.  
-> As a Farmer, I upload a maize field image and click Analyze. The system returns the tassel count, confidence score, and highlights each detected tassel with bounding boxes.  
-> Switching to Researcher, you can browse history records and generate daily, weekly, and monthly reports.  
-> The Admin panel manages 100 users, datasets, permissions, and backups.  
-> The AI model is YOLO26s trained on 1,161 field images — achieving mAP50 of 0.899.  
-> All 17 prototype tests passed, the architecture uses Flask + PostgreSQL with graceful fallback, and we're now integrating the trained model for live inference in Weeks 11-14."
+- [ ] `python backend/server.py` starts without an error
+- [ ] `/api/health` reports the database and model as ready
+- [ ] all compliance tests pass
+- [ ] each demo account can access only its permitted pages
+- [ ] upload, inference, result persistence, history, and export work
+- [ ] report generation creates a PostgreSQL record
+- [ ] admin backup creation is tested
+- [ ] browser viewport is tested at desktop and 375 px mobile width
+- [ ] current Week 11 report and presentation describe real integration
+- [ ] local changes are committed and pushed before the website is assessed
+
+## Short Script
+
+> Our Week 11 prototype is fully integrated. A role-authorized user uploads a
+> maize image, the backend runs the team's trained YOLO26s `best.pt`, and the
+> result is stored in PostgreSQL with encrypted image data. The interface then
+> presents the count, confidence, processing time, bounding boxes, history, and
+> export or reporting workflows. The implementation is traceable through all
+> 30 User Stories in BCE order.

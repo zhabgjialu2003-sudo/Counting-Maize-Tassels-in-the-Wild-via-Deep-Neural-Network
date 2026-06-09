@@ -11,9 +11,11 @@
 <nav class="nav" id="mainNav"></nav>
 
 <div class="container">
+  <!-- RESEARCHER BOUNDARY: all Researcher stories appear below in BCE order. -->
   <h2 class="page-title">Researcher Dashboard</h2>
   <p class="page-subtitle">Detection records, exports, reports, and model comparison</p>
 
+  <h3 style="color:var(--green);margin-bottom:0.75rem;">B.1 Accurate Result Review</h3>
   <div class="card-grid">
     <div class="stat-card">
       <div class="value" id="recordCount">-</div>
@@ -28,40 +30,52 @@
       <div class="label">Average Tassel Count</div>
     </div>
     <div class="stat-card">
-      <div class="value">2</div>
+      <div class="value" id="modelCount">-</div>
       <div class="label">Prototype Models</div>
     </div>
   </div>
 
   <div class="card" style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:1rem;">
-    <a class="btn btn-primary btn-lg" href="history.html">Analyse History</a>
-    <a class="btn btn-outline btn-lg" href="report.html">Generate Report</a>
-    <a class="btn btn-outline btn-lg" href="export.html">Export Data</a>
+    <strong style="width:100%;color:var(--green);">B.2 Export Results</strong>
+    <a class="btn btn-primary btn-lg" href="export.html">Export CSV / JSON</a>
+    <strong style="width:100%;color:var(--green);margin-top:0.5rem;">B.3 Historical Analysis</strong>
+    <a class="btn btn-outline btn-lg" href="history.html">Analyse History</a>
   </div>
 
   <div class="card-grid">
     <div class="card">
-      <h3 style="color:var(--green);margin-bottom:0.75rem;">Model Output Comparison</h3>
+      <h3 style="color:var(--green);margin-bottom:0.75rem;">B.4 Model Output Comparison</h3>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Model</th><th>Count</th><th>Confidence</th><th>Status</th></tr></thead>
-          <tbody>
-            <tr><td>YOLOv8n Prototype</td><td>37</td><td>89%</td><td><span class="badge badge-green">Selected</span></td></tr>
-            <tr><td>YOLOv8s Planned</td><td>39</td><td>91%</td><td><span class="badge badge-yellow">Pending</span></td></tr>
-          </tbody>
+          <thead><tr><th>Model</th><th>mAP@0.5</th><th>Precision</th><th>Status</th></tr></thead>
+          <tbody id="modelRows"></tbody>
         </table>
       </div>
+      <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.75rem;">
+        <select id="modelA"></select>
+        <select id="modelB"></select>
+        <select id="comparisonDataset"></select>
+        <input id="comparisonYaml" placeholder="Optional shared validation YAML">
+        <button class="btn btn-primary btn-sm" onclick="compareSelectedModels()">Compare Metrics</button>
+      </div>
+      <div id="comparisonResult" class="info-text" style="margin-top:0.75rem;"></div>
     </div>
 
     <div class="card">
-      <h3 style="color:var(--green);margin-bottom:0.75rem;">Dataset Access</h3>
+      <h3 style="color:var(--green);margin-bottom:0.75rem;">B.5 Dataset Access</h3>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Dataset</th><th>Images</th><th>Format</th></tr></thead>
+          <thead><tr><th>Dataset</th><th>Images</th><th>Format</th><th></th></tr></thead>
           <tbody id="datasetRows"></tbody>
         </table>
       </div>
     </div>
+  </div>
+
+  <div class="card">
+    <h3 style="color:var(--green);margin-bottom:0.75rem;">B.6 Visual Reports</h3>
+    <p class="info-text">Select fields and dates, save chart data, then export the report as PDF.</p>
+    <a class="btn btn-primary btn-lg" href="report.html">Generate Report</a>
   </div>
 
   <div class="card">
@@ -81,32 +95,48 @@
 if (!requireRole(["Researcher"])) throw new Error('Access denied');
 initNav();
 
+// USER STORIES B.1-B.5: load records, datasets, and registered models.
 async function loadResearcherDashboard() {
-  const [historyRes, datasetsRes] = await Promise.all([
+  const [historyRes, datasetsRes, modelsRes] = await Promise.all([
     apiGet('/api/history?limit=20'),
     apiGet('/api/datasets'),
+    apiGet('/api/models'),
   ]);
 
   const records = historyRes.ok && Array.isArray(historyRes.data.records)
     ? historyRes.data.records.map(r => normalizeResult(r))
-    : MockData.results.map(r => normalizeResult(r));
+    : [];
 
   const datasets = datasetsRes.ok && Array.isArray(datasetsRes.data.datasets)
     ? datasetsRes.data.datasets
-    : MockData.datasets.map(d => ({
-        dataset_name: d.datasetName,
-        total_images: d.totalImages,
-        annotation_format: d.annotationFormat,
-      }));
+    : [];
+  const models = modelsRes.ok && Array.isArray(modelsRes.data.models)
+    ? modelsRes.data.models
+    : [];
 
   const totalConfidence = records.reduce((sum, r) => sum + Number(r.confidenceScore || 0), 0);
   const totalTassels = records.reduce((sum, r) => sum + Number(r.tasselCount || 0), 0);
   document.getElementById('recordCount').textContent = records.length;
   document.getElementById('avgConfidence').textContent = records.length ? formatPercent(totalConfidence / records.length) : '-';
   document.getElementById('avgTassels').textContent = records.length ? (totalTassels / records.length).toFixed(1) : '-';
+  document.getElementById('modelCount').textContent = models.length;
 
   document.getElementById('datasetRows').innerHTML = datasets.slice(0, 4).map(d =>
-    '<tr><td>' + esc(d.dataset_name) + '</td><td>' + (d.total_images || 0) + '</td><td>' + esc(d.annotation_format || '-') + '</td></tr>'
+    '<tr><td>' + esc(d.dataset_name) + '</td><td>' + (d.total_images || 0) + '</td><td>' + esc(d.annotation_format || '-') +
+    '</td><td><button class="btn btn-sm btn-outline" onclick="downloadDataset(' + d.dataset_id + ')">Download ZIP</button></td></tr>'
+  ).join('') || '<tr><td colspan="4" class="info-text">No datasets available.</td></tr>';
+
+  document.getElementById('modelRows').innerHTML = models.map(m =>
+    '<tr><td>' + esc(m.model_name + ' ' + m.model_version) + '</td><td>' + formatMetric(m.map50) +
+    '</td><td>' + formatMetric(m.precision) + '</td><td><span class="badge ' +
+    (m.status === 'active' ? 'badge-green' : 'badge-yellow') + '">' + esc(m.status) + '</span></td></tr>'
+  ).join('') || '<tr><td colspan="4" class="info-text">No models registered.</td></tr>';
+  const modelOptions = models.map(m => '<option value="' + m.model_id + '">' + esc(m.model_version + ' - ' + m.model_name) + '</option>').join('');
+  document.getElementById('modelA').innerHTML = modelOptions;
+  document.getElementById('modelB').innerHTML = modelOptions;
+  if (models.length > 1) document.getElementById('modelB').selectedIndex = 1;
+  document.getElementById('comparisonDataset').innerHTML = datasets.map(d =>
+    '<option value="' + d.dataset_id + '">' + esc(d.dataset_name) + '</option>'
   ).join('');
 
   document.getElementById('recentRows').innerHTML = records.slice(0, 6).map(r => {
@@ -114,7 +144,53 @@ async function loadResearcherDashboard() {
     return '<tr><td>' + esc(r.imageName) + '</td><td>' + formatDate(r.createdAt) + '</td><td>' + r.tasselCount +
       '</td><td><span class="badge ' + badge + '">' + formatPercent(r.confidenceScore) +
       '</span></td><td><a class="btn btn-sm btn-outline" href="result.html?id=' + r.resultId + '">Review</a></td></tr>';
-  }).join('');
+  }).join('') || '<tr><td colspan="5" class="info-text">No detection records available.</td></tr>';
+}
+
+function formatMetric(value) {
+  return value === null || value === undefined ? 'Not recorded' : (Number(value) * 100).toFixed(1) + '%';
+}
+
+// USER STORY B.4 Control call: POST /api/models/compare.
+async function compareSelectedModels() {
+  const ids = [Number(document.getElementById('modelA').value), Number(document.getElementById('modelB').value)];
+  if (ids[0] === ids[1]) {
+    document.getElementById('comparisonResult').textContent = 'Choose two different model versions.';
+    return;
+  }
+  const res = await apiPost('/api/models/compare', {
+    model_ids: ids,
+    dataset_id: Number(document.getElementById('comparisonDataset').value) || null,
+    dataset_yaml: document.getElementById('comparisonYaml').value
+  });
+  if (!res.ok) {
+    document.getElementById('comparisonResult').textContent = res.error || 'Comparison failed.';
+    return;
+  }
+  const winner = res.data.models.find(m => m.model_id === res.data.winner_model_id);
+  document.getElementById('comparisonResult').innerHTML =
+    '<strong>Higher recorded metrics:</strong> ' + esc(winner.model_version) +
+    '. ' + esc(res.data.basis);
+}
+
+// USER STORY B.5 Control call: authenticated ZIP or TAR.GZ dataset download.
+async function downloadDataset(datasetId) {
+  const format = prompt('Package format: zip or tar', 'zip');
+  if (!format || !['zip', 'tar'].includes(format.toLowerCase())) return;
+  const response = await fetch(API_BASE + '/api/datasets/' + datasetId + '/download?format=' + format.toLowerCase(), {
+    headers: authHeaders(),
+  });
+  if (!response.ok) {
+    alert('Dataset download failed.');
+    return;
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = 'maize-dataset-' + datasetId + (format.toLowerCase() === 'tar' ? '.tar.gz' : '.zip');
+  anchor.click();
+  URL.revokeObjectURL(url);
 }
 
 loadResearcherDashboard();

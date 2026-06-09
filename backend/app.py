@@ -1,39 +1,129 @@
+"""Flask controls organized by the FYP-26-S2-7 User Stories.
+
+USER STORY API INDEX
+====================
+Farmer
+  A.1 Upload images              -> POST /api/upload
+  A.2 Count tassels              -> POST /api/predict
+  A.3 View result                -> GET  /api/results/<result_id>
+  A.4 Highlight tassels          -> GET  /api/results/<result_id>
+                                      GET  /api/images/<image_id>/file/<file_type>
+  A.5 Batch upload               -> repeated A.1 + A.2 requests
+  A.6 Quick result               -> POST /api/predict (fast mode and cache)
+  A.7 Mobile access              -> shared authenticated A.1 + A.2 APIs
+  A.8 Intuitive interface        -> GET  /api/auth/me, GET /api/stats
+
+Researcher
+  B.1 Accurate result review     -> POST /api/results/<result_id>/flag
+  B.2 Export standard formats    -> GET  /api/history
+  B.3 Historical analysis        -> GET  /api/history
+  B.4 Compare models             -> POST /api/models/compare
+  B.5 Access raw datasets        -> GET  /api/datasets
+                                      GET  /api/datasets/<dataset_id>/download
+  B.6 Generate visual reports    -> POST /api/reports
+
+Agronomist
+  C.1 Evaluate plant health      -> GET  /api/fields/<field_id>/health
+                                      GET/POST /api/fields/<field_id>/recommendations
+  C.2 Monitor growth             -> GET  /api/fields/<field_id>/growth
+  C.3 Detect anomalies           -> GET  /api/fields/anomalies
+                                      POST /api/fields/<field_id>/anomaly
+  C.4 View multiple fields       -> GET  /api/fields
+  C.5 Summarized insights        -> GET  /api/fields/insights
+
+Admin
+  D.1 Manage users               -> /api/users and /api/users/<user_id>
+  D.2 Secure image storage       -> /api/access-policies, /api/admin/storage
+  D.3 Monitor system usage       -> /api/admin/stats, /api/admin/logs
+  D.4 Manage datasets            -> /api/datasets and /api/datasets/upload
+  D.5 Control permissions        -> /api/users/<user_id>/permissions
+  D.6 Backup data                -> /api/admin/backup and /api/admin/backups
+
+AI System
+  E.1 Preprocess images          -> POST /api/system/preprocess/<image_id>
+  E.2 Train models               -> GET/POST /api/training-runs
+  E.3 Evaluate models            -> POST /api/models/<model_id>/evaluate
+  E.4 Deploy model service       -> POST /api/models/<model_id>/deploy
+  E.5 Register model updates     -> GET/POST /api/models
+
+Shared helpers, authentication, database access, and security stay above the
+routes because they support multiple User Stories.
+"""
+
 from __future__ import annotations
 
 import os
+import io
 import json
-import random
-
 from dotenv import load_dotenv
 load_dotenv()  # load .env file so PGPASSWORD etc. are always available
 import hashlib
+import base64
 import shutil
 import subprocess
+import tempfile
+import tarfile
+import zipfile
+import threading
+import time
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 from decimal import Decimal
+from functools import wraps
 from pathlib import Path
 from typing import Any
 
 from flask import Flask, jsonify, request, Response, send_from_directory
 from flask_cors import CORS
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
+from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
+from cryptography.fernet import Fernet, InvalidToken
 
 try:
     import psycopg
     from psycopg.rows import dict_row
-except ImportError:  # Allows the prototype to run before dependencies are installed.
+except ImportError:
     psycopg = None
     dict_row = None
 
 try:
-    from inference import get_predictor
+    from .inference import activate_predictor, get_predictor
 except ImportError:
-    get_predictor = None
+    try:
+        from inference import activate_predictor, get_predictor
+    except ImportError:
+        activate_predictor = None
+        get_predictor = None
+
+try:
+    from .training import evaluate_model, train_model
+except ImportError:
+    try:
+        from training import evaluate_model, train_model
+    except ImportError:
+        evaluate_model = None
+        train_model = None
 
 
 app = Flask(__name__)
-CORS(app)
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv(
+        "CORS_ALLOWED_ORIGINS",
+        (
+            "http://localhost:8000,http://127.0.0.1:8000,"
+            "https://zhabgjialu2003-sudo.github.io"
+        ),
+    ).split(",")
+    if origin.strip()
+]
+CORS(app, resources={r"/*": {"origins": ALLOWED_ORIGINS}})
+SERVICE_STARTED_AT = datetime.now()
+_backup_scheduler_started = False
+app.config["SECRET_KEY"] = os.getenv(
+    "SECRET_KEY", "week10-development-key-change-before-production"
+)
 
 UPLOAD_DIR = Path(__file__).resolve().parent / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
@@ -43,76 +133,35 @@ BACKUP_DIR.mkdir(exist_ok=True)
 ALLOWED_IMAGE_EXTENSIONS = {"jpg", "jpeg", "png"}
 ALLOWED_IMAGE_MIME_TYPES = {"image/jpeg", "image/png"}
 VALID_USER_STATUSES = {"active", "disabled"}
-
-
-# --- Mock Data: same domain entities as the frontend BCE prototype ---
-MOCK_RESULTS = [
-    {"image_name": "maize_001.jpg", "count": 37, "confidence": 0.89, "processing_time": 2.4},
-    {"image_name": "maize_002.jpg", "count": 42, "confidence": 0.91, "processing_time": 2.1},
-    {"image_name": "maize_003.jpg", "count": 29, "confidence": 0.85, "processing_time": 3.0},
-    {"image_name": "maize_004.jpg", "count": 35, "confidence": 0.93, "processing_time": 1.8},
-    {"image_name": "maize_005.jpg", "count": 31, "confidence": 0.87, "processing_time": 2.6},
-]
-
-MOCK_HISTORY = [
-    {
-        "result_id": i + 1,
-        "image_id": i + 1,
-        "image_name": r["image_name"],
-        "tassel_count": r["count"],
-        "count": r["count"],
-        "confidence_score": r["confidence"],
-        "confidence": r["confidence"],
-        "processing_time": r["processing_time"],
-        "created_at": f"2026-06-{10 + i:02d}",
-        "annotated_image_path": f"/mock/annotated_{r['image_name']}",
-    }
-    for i, r in enumerate(MOCK_RESULTS)
-]
-
-BASE_MOCK_USERS = [
-    {"user_id": 1, "name": "John Smith", "email": "john@farm.com", "role": "Farmer", "status": "active"},
-    {"user_id": 2, "name": "Dr. Li Wei", "email": "liwei@research.org", "role": "Researcher", "status": "active"},
-    {"user_id": 3, "name": "Maria Garcia", "email": "maria@agro.com", "role": "Agronomist", "status": "active"},
-    {"user_id": 4, "name": "Admin User", "email": "admin@system.com", "role": "Admin", "status": "active"},
-    {"user_id": 5, "name": "Bob Brown", "email": "bob@farm.com", "role": "Farmer", "status": "disabled"},
-]
-
-MOCK_ROLE_EMAIL_DOMAINS = {
-    "Farmer": "farm.com",
-    "Researcher": "research.org",
-    "Agronomist": "agro.com",
-    "Admin": "system.com",
+TOKEN_MAX_AGE_SECONDS = int(os.getenv("TOKEN_MAX_AGE_SECONDS", "28800"))
+ROLE_PERMISSIONS = {
+    "Farmer": ["images:upload", "results:read-own"],
+    "Researcher": [
+        "results:read",
+        "results:export",
+        "datasets:download",
+        "models:compare",
+        "reports:generate",
+    ],
+    "Agronomist": [
+        "fields:read",
+        "fields:evaluate",
+        "fields:recommend",
+        "insights:generate",
+    ],
+    "Admin": ["*"],
 }
 
-MOCK_ROLE_SEQUENCE = ("Farmer", "Researcher", "Agronomist", "Farmer", "Farmer")
 
-MOCK_USERS = BASE_MOCK_USERS + [
-    {
-        "user_id": index + 5,
-        "name": f"Demo {MOCK_ROLE_SEQUENCE[(index - 1) % len(MOCK_ROLE_SEQUENCE)]} {index:03d}",
-        "email": f"{MOCK_ROLE_SEQUENCE[(index - 1) % len(MOCK_ROLE_SEQUENCE)].lower()}{index:03d}@{MOCK_ROLE_EMAIL_DOMAINS[MOCK_ROLE_SEQUENCE[(index - 1) % len(MOCK_ROLE_SEQUENCE)]]}",
-        "role": MOCK_ROLE_SEQUENCE[(index - 1) % len(MOCK_ROLE_SEQUENCE)],
-        "status": "disabled" if index % 17 == 0 else "active",
-    }
-    for index in range(1, 96)
-]
-
-MOCK_DATASETS = [
-    {"dataset_id": 1, "dataset_name": "Maize Tassel Train v1", "dataset_path": "datasets/train-v1", "total_images": 200, "annotation_status": "completed", "annotation_format": "YOLO"},
-    {"dataset_id": 2, "dataset_name": "Maize Tassel Train v2", "dataset_path": "datasets/train-v2", "total_images": 500, "annotation_status": "in_progress", "annotation_format": "COCO"},
-    {"dataset_id": 3, "dataset_name": "Batch 3 - North Fields", "dataset_path": "datasets/north-fields", "total_images": 320, "annotation_status": "not_started", "annotation_format": None},
-    {"dataset_id": 4, "dataset_name": "MTDC-UAV Demo Detection Set", "dataset_path": "datasets/mtdc-demo", "total_images": 40, "annotation_status": "completed", "annotation_format": "Pascal VOC XML"},
-]
-
-
-def db_config() -> dict[str, str]:
+def db_config() -> dict[str, str | int]:
     return {
         "host": os.getenv("PGHOST", "localhost"),
         "port": os.getenv("PGPORT", "5432"),
         "dbname": os.getenv("PGDATABASE", "maize_detector"),
         "user": os.getenv("PGUSER", "postgres"),
         "password": os.getenv("PGPASSWORD", ""),
+        "connect_timeout": int(os.getenv("PGCONNECT_TIMEOUT", "3")),
+        "options": f"-c statement_timeout={int(os.getenv('PGSTATEMENT_TIMEOUT_MS', '5000'))}",
     }
 
 
@@ -156,6 +205,180 @@ def fail(message: str, status: int = 400, **extra):
     return ok({"status": "error", "message": message, **extra}, status)
 
 
+def token_serializer() -> URLSafeTimedSerializer:
+    return URLSafeTimedSerializer(app.config["SECRET_KEY"], salt="maize-auth")
+
+
+def issue_access_token(user: dict[str, Any]) -> str:
+    return token_serializer().dumps(
+        {
+            "user_id": user["user_id"],
+            "email": user["email"],
+            "role": user["role"],
+            "status": user.get("status", "active"),
+            "permissions": permissions_for(user),
+        }
+    )
+
+
+def authenticated_user() -> dict[str, Any] | None:
+    header = request.headers.get("Authorization", "")
+    token = (
+        header.removeprefix("Bearer ").strip()
+        if header.startswith("Bearer ")
+        else request.args.get("access_token", "")
+    )
+    if not token:
+        return None
+    try:
+        return token_serializer().loads(token, max_age=TOKEN_MAX_AGE_SECONDS)
+    except (BadSignature, SignatureExpired):
+        return None
+
+
+def require_roles(*roles: str, permission: str | None = None):
+    def decorator(view):
+        @wraps(view)
+        def wrapped(*args, **kwargs):
+            user = authenticated_user()
+            if not user:
+                return fail("Authentication required", 401)
+            if user.get("status") != "active":
+                return fail("Account is disabled", 403)
+            if roles and user.get("role") not in roles:
+                return fail("You do not have permission to perform this action", 403)
+            granted = user.get("permissions") or ROLE_PERMISSIONS.get(user.get("role"), [])
+            if permission and "*" not in granted and permission not in granted:
+                return fail(f"Missing permission: {permission}", 403)
+            request.auth_user = user
+            return view(*args, **kwargs)
+
+        return wrapped
+
+    return decorator
+
+
+def permissions_for(user: dict[str, Any]) -> list[str]:
+    custom = user.get("permissions")
+    return custom if isinstance(custom, list) else ROLE_PERMISSIONS.get(user.get("role"), [])
+
+
+def encryption_cipher() -> Fernet:
+    configured = os.getenv("FILE_ENCRYPTION_KEY")
+    if configured:
+        return Fernet(configured.encode("ascii"))
+    digest = hashlib.sha256(app.config["SECRET_KEY"].encode("utf-8")).digest()
+    return Fernet(base64.urlsafe_b64encode(digest))
+
+
+def encrypted_path(filename: str) -> Path:
+    return UPLOAD_DIR / f"{filename}.enc"
+
+
+def secure_store_bytes(filename: str, data: bytes) -> Path:
+    path = encrypted_path(filename)
+    path.write_bytes(encryption_cipher().encrypt(data))
+    return path
+
+
+def secure_read_bytes(filename: str) -> bytes:
+    encrypted = encrypted_path(filename)
+    if encrypted.exists():
+        try:
+            return encryption_cipher().decrypt(encrypted.read_bytes())
+        except InvalidToken as exc:
+            raise RuntimeError("Encrypted image could not be decrypted") from exc
+    plain = UPLOAD_DIR / filename
+    if plain.exists():
+        return plain.read_bytes()
+    raise FileNotFoundError(filename)
+
+
+@contextmanager
+def materialized_image(filename: str):
+    plain = UPLOAD_DIR / filename
+    if plain.exists():
+        yield plain
+        return
+    data = secure_read_bytes(filename)
+    suffix = Path(filename).suffix or ".jpg"
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as handle:
+        handle.write(data)
+        temp_path = Path(handle.name)
+    try:
+        yield temp_path
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+
+def log_action(conn, action: str, details: str, user_id: int | None = None) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO system_logs (user_id, action, details) VALUES (%s, %s, %s)",
+            (user_id, action, details),
+        )
+
+
+def normalize_model_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "model_id": row.get("model_id"),
+        "model_name": row.get("model_name"),
+        "model_version": row.get("model_version"),
+        "weights_path": row.get("weights_path"),
+        "status": row.get("status"),
+        "map50": row.get("map50"),
+        "precision": row.get("precision_score", row.get("precision")),
+        "recall": row.get("recall_score", row.get("recall")),
+        "iou_threshold": row.get("iou_threshold"),
+        "parent_model_id": row.get("parent_model_id"),
+        "changelog": row.get("changelog"),
+        "created_at": row.get("created_at"),
+        "activated_at": row.get("activated_at"),
+        "comparison_mode": (
+            "weights-and-metrics"
+            if row.get("weights_path") and Path(str(row["weights_path"])).exists()
+            else "metrics-only"
+        ),
+    }
+
+
+def find_psql() -> str | None:
+    configured = os.getenv("PSQL_PATH")
+    if configured and Path(configured).exists():
+        return configured
+    for candidate in (
+        r"C:\PostgreSQL\18\bin\psql.exe",
+        r"C:\Program Files\PostgreSQL\18\bin\psql.exe",
+    ):
+        if Path(candidate).exists():
+            return candidate
+    return shutil.which("psql")
+
+
+def find_pg_restore() -> str | None:
+    configured = os.getenv("PG_RESTORE_PATH")
+    if configured and Path(configured).exists():
+        return configured
+    for candidate in (
+        r"C:\PostgreSQL\18\bin\pg_restore.exe",
+        r"C:\Program Files\PostgreSQL\18\bin\pg_restore.exe",
+    ):
+        if Path(candidate).exists():
+            return candidate
+    return shutil.which("pg_restore")
+
+
+def verify_password(stored_hash: str, password: str) -> bool:
+    if not stored_hash:
+        return False
+    if stored_hash.startswith("sha256$"):
+        return stored_hash == f"sha256${hashlib.sha256(password.encode('utf-8')).hexdigest()}"
+    try:
+        return check_password_hash(stored_hash, password)
+    except ValueError:
+        return False
+
+
 def db_ready() -> tuple[bool, str | None]:
     try:
         with db_connection() as conn:
@@ -165,33 +388,6 @@ def db_ready() -> tuple[bool, str | None]:
         return True, None
     except Exception as exc:
         return False, str(exc)
-
-
-def pick_mock_result(image_name: str | None = None) -> dict[str, Any]:
-    result = random.choice(MOCK_RESULTS).copy()
-    if image_name:
-        result["image_name"] = image_name
-    return {**result, "status": "success", "source": "mock"}
-
-
-def mock_auth_user(email: str, password: str = "") -> dict[str, Any] | None:
-    if password != "123456":
-        return None
-    normalized_email = email.strip().lower()
-    for user in MOCK_USERS:
-        if user["email"].lower() == normalized_email and user["status"] == "active":
-            return {
-                "user_id": user["user_id"],
-                "name": user["name"],
-                "email": user["email"],
-                "role": user["role"],
-            }
-    return None
-
-
-def mock_user_by_id(user_id: int) -> dict[str, Any]:
-    existing = next((user.copy() for user in MOCK_USERS if user["user_id"] == user_id), None)
-    return existing or {"user_id": user_id, "name": "Demo User", "email": f"user{user_id}@example.com", "role": "Farmer", "status": "active"}
 
 
 def allowed_image_filename(filename: str) -> bool:
@@ -220,8 +416,7 @@ def clean_image_filename(filename: str) -> str:
 
 
 def hash_password(password: str) -> str:
-    digest = hashlib.sha256(password.encode("utf-8")).hexdigest()
-    return f"sha256${digest}"
+    return generate_password_hash(password, method="scrypt")
 
 
 def normalize_user_row(row: dict[str, Any]) -> dict[str, Any]:
@@ -336,6 +531,59 @@ def find_pg_dump() -> str | None:
     return shutil.which("pg_dump")
 
 
+def create_scheduled_backup() -> Path:
+    """Create a PostgreSQL plain-SQL backup for the D.6 scheduler."""
+    config = db_config()
+    pg_dump = find_pg_dump()
+    if not config["password"] or not pg_dump:
+        raise RuntimeError("Database password or pg_dump is not configured")
+    database_name = secure_filename(str(config["dbname"])) or "maize_detector"
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_path = BACKUP_DIR / f"{database_name}_{timestamp}.sql"
+    command = [
+        pg_dump,
+        "-h", str(config["host"]),
+        "-p", str(config["port"]),
+        "-U", str(config["user"]),
+        "-d", str(config["dbname"]),
+        "-F", "p",
+        "-f", str(backup_path),
+    ]
+    env = os.environ.copy()
+    env["PGPASSWORD"] = str(config["password"])
+    completed = subprocess.run(
+        command, env=env, capture_output=True, text=True, timeout=90, check=False
+    )
+    if completed.returncode != 0:
+        backup_path.unlink(missing_ok=True)
+        raise RuntimeError((completed.stderr or completed.stdout or "pg_dump failed").strip())
+    try:
+        with db_connection() as conn:
+            log_action(conn, "backup_created", backup_path.name, None)
+    except Exception:
+        pass
+    return backup_path
+
+
+def start_backup_scheduler() -> None:
+    """Start one daemon that creates regular backups while the API is running."""
+    global _backup_scheduler_started
+    if _backup_scheduler_started:
+        return
+    _backup_scheduler_started = True
+    interval_hours = max(1, int(os.getenv("AUTO_BACKUP_INTERVAL_HOURS", "24")))
+
+    def worker():
+        while True:
+            time.sleep(interval_hours * 3600)
+            try:
+                create_scheduled_backup()
+            except Exception as exc:
+                app.logger.error("Scheduled backup failed: %s", exc)
+
+    threading.Thread(target=worker, name="maize-backup-scheduler", daemon=True).start()
+
+
 def normalize_detection_row(row: dict[str, Any]) -> dict[str, Any]:
     count = row.get("tassel_count", row.get("count", 0))
     confidence = row.get("confidence_score", row.get("confidence", 0))
@@ -354,6 +602,9 @@ def normalize_detection_row(row: dict[str, Any]) -> dict[str, Any]:
         "annotated_image_path": row.get("annotated_image_path"),
         "bbox_data": row.get("bbox_data"),
         "created_at": row.get("created_at"),
+        "field_name": row.get("field_name"),
+        "quality_status": row.get("quality_status", "unreviewed"),
+        "review_note": row.get("review_note"),
         "status": "success",
         "source": "database",
     }
@@ -373,9 +624,13 @@ def latest_detection_for_image(conn, image_id: int) -> dict[str, Any] | None:
                 dr.processing_time,
                 dr.annotated_image_path,
                 dr.bbox_data,
+                dr.quality_status,
+                dr.review_note,
+                f.field_name,
                 dr.created_at
             FROM detection_results dr
             JOIN images i ON i.image_id = dr.image_id
+            LEFT JOIN fields f ON f.field_id = i.field_id
             WHERE dr.image_id = %s
             ORDER BY dr.created_at DESC, dr.result_id DESC
             LIMIT 1
@@ -401,49 +656,39 @@ def create_image_record(conn, image_name: str, file_size: int | None = None, use
         return cur.fetchone()["image_id"]
 
 
-def create_mock_detection(conn, image_id: int) -> dict[str, Any]:
-    mock = random.choice(MOCK_RESULTS)
-    tassel_count = mock["count"]
-    confidence = mock["confidence"]
-    processing_time = mock["processing_time"]
-    bbox_data = {
-        "model": "prototype-yolo-mock",
-        "boxes": [
-            {"x": 100, "y": 60, "width": 80, "height": 80, "confidence": round(confidence - 0.02, 2)},
-            {"x": 250, "y": 120, "width": 80, "height": 80, "confidence": confidence},
-            {"x": 400, "y": 80, "width": 80, "height": 80, "confidence": round(confidence - 0.04, 2)},
-        ],
-    }
-
+def store_image_blob(
+    conn,
+    image_id: int,
+    file_type: str,
+    file_name: str,
+    mime_type: str,
+    encrypted_data: bytes,
+) -> None:
     with conn.cursor() as cur:
-        cur.execute("UPDATE images SET status = 'completed' WHERE image_id = %s", (image_id,))
         cur.execute(
             """
-            INSERT INTO detection_results (
-                image_id,
-                tassel_count,
-                confidence_score,
-                annotated_image_path,
-                processing_time,
-                bbox_data
+            INSERT INTO image_files (
+                image_id, file_type, file_name, mime_type, file_size,
+                image_data, encrypted
             )
-            VALUES (%s, %s, %s, %s, %s, %s::jsonb)
-            RETURNING result_id
+            VALUES (%s, %s, %s, %s, %s, %s, TRUE)
+            ON CONFLICT (image_id, file_type) DO UPDATE SET
+                file_name = EXCLUDED.file_name,
+                mime_type = EXCLUDED.mime_type,
+                file_size = EXCLUDED.file_size,
+                image_data = EXCLUDED.image_data,
+                encrypted = TRUE,
+                created_at = CURRENT_TIMESTAMP
             """,
             (
                 image_id,
-                tassel_count,
-                confidence,
-                f"uploads/annotated_image_{image_id}.jpg",
-                processing_time,
-                json.dumps(bbox_data),
+                file_type,
+                file_name,
+                mime_type,
+                len(encrypted_data),
+                encrypted_data,
             ),
         )
-        result_id = cur.fetchone()["result_id"]
-
-    result = latest_detection_for_image(conn, image_id)
-    result["result_id"] = result_id
-    return result
 
 
 def detection_for_result(conn, result_id: int) -> dict[str, Any] | None:
@@ -460,9 +705,13 @@ def detection_for_result(conn, result_id: int) -> dict[str, Any] | None:
                 dr.processing_time,
                 dr.annotated_image_path,
                 dr.bbox_data,
+                dr.quality_status,
+                dr.review_note,
+                f.field_name,
                 dr.created_at
             FROM detection_results dr
             JOIN images i ON i.image_id = dr.image_id
+            LEFT JOIN fields f ON f.field_id = i.field_id
             WHERE dr.result_id = %s
             LIMIT 1
             """,
@@ -472,25 +721,47 @@ def detection_for_result(conn, result_id: int) -> dict[str, Any] | None:
     return normalize_detection_row(row) if row else None
 
 
+# Shared secure file compatibility route (A.4, D.2).
 @app.route("/uploads/<path:filename>", methods=["GET"])
+@require_roles("Farmer", "Researcher", "Agronomist", "Admin")
 def uploaded_file(filename: str):
-    return send_from_directory(UPLOAD_DIR, filename)
+    try:
+        if request.auth_user["role"] in {"Farmer", "Agronomist"}:
+            with db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT user_id FROM images WHERE image_name = %s ORDER BY image_id DESC LIMIT 1",
+                        (Path(filename).name,),
+                    )
+                    image = cur.fetchone()
+                if not image:
+                    return fail("Image not found", 404)
+                if request.auth_user["role"] == "Agronomist":
+                    return fail("Agronomists can access aggregated field data only", 403)
+                if image["user_id"] != request.auth_user["user_id"]:
+                    return fail("You can only access your own images", 403)
+        data = secure_read_bytes(filename)
+        mime = "image/png" if filename.lower().endswith(".png") else "image/jpeg"
+        return Response(data, mimetype=mime)
+    except FileNotFoundError:
+        return fail("Image not found", 404)
 
 
+# Shared service health route (D.3, E.4).
 @app.route("/api/health", methods=["GET"])
 def health():
     ready, error = db_ready()
-    return ok(
-        {
-            "status": "ok",
-            "service": "Maize Detector API",
-            "version": "0.2.0",
-            "database": "connected" if ready else "mock",
-            "database_error": error if not ready else None,
-        }
-    )
+    payload = {
+        "status": "ok" if ready else "degraded",
+        "service": "Maize Detector API",
+        "version": "1.0.0",
+        "database": "connected" if ready else "unavailable",
+        "database_error": error if not ready else None,
+    }
+    return ok(payload, 200 if ready else 503)
 
 
+# Shared authentication control (A.7, A.8, D.1, D.5).
 @app.route("/api/auth/login", methods=["POST"])
 def auth_login():
     """Authenticate user and return role info. BCE A.7 (access), D.1 (user mgmt)."""
@@ -506,7 +777,7 @@ def auth_login():
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT u.user_id, u.name, u.email, u.password_hash, u.status,
+                    SELECT u.user_id, u.name, u.email, u.password_hash, u.status, u.permissions,
                            r.role_name AS role
                     FROM users u
                     JOIN roles r ON r.role_id = u.role_id
@@ -517,61 +788,38 @@ def auth_login():
                 user = cur.fetchone()
 
         if not user:
-            mock_user = mock_auth_user(email, password)
-            if mock_user:
-                return ok(
-                    {
-                        "status": "success",
-                        "message": "Login successful in demo seed mode",
-                        "user": mock_user,
-                        "source": "mock",
-                    },
-                    202,
-                )
             return fail("Invalid email or password", 401)
 
         if user["status"] == "disabled":
             return fail("Account is disabled. Contact administrator.", 403)
 
-        # Prototype: accept any password or verify hash
         stored_hash = user["password_hash"]
-        if stored_hash and not stored_hash.startswith("$2b$"):
-            # SHA-256 hash (prototype)
-            expected = hash_password(password)
-            if expected != stored_hash:
-                return fail("Invalid email or password", 401)
+        if not verify_password(stored_hash, password):
+            return fail("Invalid email or password", 401)
 
-        return ok(
-            {
-                "status": "success",
-                "message": "Login successful",
-                "user": {
-                    "user_id": user["user_id"],
-                    "name": user["name"],
-                    "email": user["email"],
-                    "role": user["role"],
-                },
-            }
-        )
+        session_user = {
+            "user_id": user["user_id"],
+            "name": user["name"],
+            "email": user["email"],
+            "role": user["role"],
+            "status": user["status"],
+            "permissions": permissions_for(user),
+        }
+        return ok({
+            "status": "success",
+            "message": "Login successful",
+            "user": session_user,
+            "access_token": issue_access_token(session_user),
+            "expires_in": TOKEN_MAX_AGE_SECONDS,
+        })
     except Exception as exc:
-        mock_user = mock_auth_user(email, password)
-        if mock_user:
-            return ok(
-                {
-                    "status": "success",
-                    "message": "Login successful in mock mode",
-                    "user": mock_user,
-                    "source": "mock",
-                    "database_error": str(exc),
-                },
-                202,
-            )
-        return fail("Invalid email or password", 401, source="mock", database_error=str(exc))
+        return db_error_response(exc, 503)
 
 
+# Shared account registration control (A.8, D.1).
 @app.route("/api/auth/register", methods=["POST"])
 def auth_register():
-    """Public account creation for the prototype. New sign-ups become Farmers."""
+    """Create a Farmer account in PostgreSQL."""
     payload = request.get_json(silent=True) or {}
     name = str(payload.get("name") or "").strip()
     email = str(payload.get("email") or "").strip().lower()
@@ -601,21 +849,39 @@ def auth_register():
                 )
                 user_id = cur.fetchone()["user_id"]
             user = fetch_user(conn, user_id)
-        return ok({"status": "success", "message": "Account created", "user": user, "source": "database"}, 201)
+        return ok({
+            "status": "success",
+            "message": "Account created",
+            "user": user,
+            "access_token": issue_access_token(user),
+            "expires_in": TOKEN_MAX_AGE_SECONDS,
+            "source": "database",
+        }, 201)
     except Exception as exc:
         msg = str(exc).lower()
         if "users_email_key" in msg or "duplicate key" in msg or "unique" in msg:
             return fail("Email already exists", 409)
-        if any(user["email"].lower() == email for user in MOCK_USERS):
-            return fail("Email already exists", 409, source="mock")
         return db_error_response(exc)
 
 
+# USER STORY A.8 - Validate the signed session used by the interface.
+@app.route("/api/auth/me", methods=["GET"])
+@require_roles("Farmer", "Researcher", "Agronomist", "Admin")
+def auth_me():
+    """Validate the signed session and return the current BCE User entity."""
+    return ok({
+        "user": request.auth_user,
+        "permissions": request.auth_user.get("permissions", []),
+    })
+
+
+# USER STORIES A.1, A.5, A.7 - Upload one validated image per request.
 @app.route("/api/upload", methods=["POST"])
+@require_roles("Farmer", "Admin", permission="images:upload")
 def upload():
     file = request.files.get("image") or request.files.get("file")
     payload = request.get_json(silent=True) or {}
-    user_id = request.form.get("user_id") or payload.get("user_id") or 1
+    user_id = request.auth_user["user_id"]
 
     if file:
         original_name = file.filename or "uploaded_maize_image.jpg"
@@ -624,8 +890,11 @@ def upload():
             return fail(validation_error, 400)
 
         image_name = clean_image_filename(original_name)
-        file_size = request.content_length
-        file.save(UPLOAD_DIR / image_name)
+        raw_image = file.read()
+        if not raw_image:
+            return fail("Image file is empty", 400)
+        file_size = len(raw_image)
+        stored_path = secure_store_bytes(image_name, raw_image)
     else:
         image_name = payload.get("image_name") or payload.get("imageName") or "uploaded_maize_image.jpg"
         validation_error = validate_image_upload(image_name)
@@ -638,6 +907,21 @@ def upload():
     try:
         with db_connection() as conn:
             image_id = create_image_record(conn, image_name=image_name, file_size=file_size, user_id=int(user_id))
+            if file:
+                store_image_blob(
+                    conn,
+                    image_id,
+                    "original",
+                    image_name,
+                    file.content_type or "image/jpeg",
+                    stored_path.read_bytes(),
+                )
+                log_action(
+                    conn,
+                    "secure_image_upload",
+                    f"Encrypted upload stored for image {image_id}",
+                    int(user_id),
+                )
         return ok(
             {
                 "status": "success",
@@ -649,51 +933,63 @@ def upload():
             201,
         )
     except Exception as exc:
-        return ok(
-            {
-                "status": "success",
-                "message": "Image upload accepted in mock mode",
-                "image_id": random.randint(100, 999),
-                "image_name": image_name,
-                "source": "mock",
-                "database_error": str(exc),
-            },
-            202,
-        )
+        return db_error_response(exc)
 
 
+# USER STORIES A.2, A.6 - Run real YOLO counting in fast or accurate mode.
 @app.route("/api/predict", methods=["POST"])
+@require_roles("Farmer", "Researcher", "Admin")
 def predict():
     payload = request.get_json(silent=True) or {}
     image_id = payload.get("image_id") or payload.get("imageId")
-    image_name = payload.get("image_name") or payload.get("imageName") or "maize_sample.jpg"
+    if not image_id:
+        return fail("image_id is required; upload the image before prediction", 400)
+    try:
+        image_id = int(image_id)
+    except (TypeError, ValueError):
+        return fail("image_id must be an integer", 400)
+
+    try:
+        with db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT image_name, user_id FROM images WHERE image_id = %s",
+                    (image_id,),
+                )
+                image = cur.fetchone()
+        if not image:
+            return fail("Uploaded image not found", 404)
+        if (
+            request.auth_user["role"] == "Farmer"
+            and image["user_id"] != request.auth_user["user_id"]
+        ):
+            return fail("You can only analyse your own images", 403)
+        image_name = image["image_name"]
+    except Exception as exc:
+        return db_error_response(exc)
+    inference_mode = payload.get("mode") or (
+        "accurate" if request.auth_user.get("role") == "Researcher" else "fast"
+    )
+    if inference_mode not in {"fast", "accurate"}:
+        return fail("mode must be fast or accurate", 400)
 
     # ── 1. Try real YOLO inference if model is available ──
     predictor = None
     if get_predictor is not None:
         try:
             predictor = get_predictor()
-        except Exception:
-            pass
+        except Exception as exc:
+            app.logger.exception("Could not initialize the inference runtime")
+            return fail("Inference runtime is unavailable", 503, model_error=str(exc))
+
+    if predictor is None or not predictor.available:
+        return fail("The trained model is unavailable", 503)
 
     if predictor is not None and predictor.available and image_name:
         # Resolve image path: try exact name, basename, then cleaned version
-        image_path = UPLOAD_DIR / image_name
-        if not image_path.exists():
-            image_path = UPLOAD_DIR / Path(image_name).name
-        if not image_path.exists():
-            cleaned = clean_image_filename(image_name)
-            image_path = UPLOAD_DIR / cleaned
-        # Also search uploads directory for any file matching the stem
-        if not image_path.exists():
-            stem = Path(image_name).stem
-            matches = list(UPLOAD_DIR.glob(stem + ".*"))
-            if matches:
-                image_path = matches[0]
-
-        if image_path.exists():
-            try:
-                ai_result = predictor.detect(str(image_path))
+        try:
+            with materialized_image(Path(image_name).name) as image_path:
+                ai_result = predictor.detect(str(image_path), mode=inference_mode)
                 # Save detection to database
                 try:
                     with db_connection() as conn:
@@ -725,7 +1021,8 @@ def predict():
                             ai_result["result_id"] = cur.fetchone()["result_id"]
                         conn.commit()
                 except Exception as db_err:
-                    app.logger.warning("Real inference succeeded but DB save failed: %s", db_err)
+                    app.logger.exception("Inference succeeded but result persistence failed")
+                    return fail("Detection result could not be saved", 500, database_error=str(db_err))
 
                 return ok({
                     "image_id": image_id,
@@ -738,30 +1035,24 @@ def predict():
                     "confidence": ai_result["confidence_score"],
                     "processing_time": ai_result["processing_time"],
                     "bbox_data": ai_result["bbox_data"],
+                    "inference_mode": ai_result.get("inference_mode", inference_mode),
+                    "cache_hit": ai_result.get("cache_hit", False),
                     "created_at": datetime.now().isoformat(),
                     "source": "yolo-inference",
                 }, 201)
-            except Exception as inferr:
-                app.logger.warning("Real inference failed, falling back to mock: %s", inferr)
+        except (FileNotFoundError, RuntimeError) as inferr:
+            app.logger.exception("Inference image or runtime unavailable")
+            return fail("Model inference failed", 500, model_error=str(inferr))
+        except Exception as inferr:
+            app.logger.exception("Real inference failed")
+            return fail("Model inference failed", 500, model_error=str(inferr))
 
-    # ── 2. Fall back to database query or mock data ──
-    try:
-        with db_connection() as conn:
-            if image_id:
-                image_id = int(image_id)
-                existing = latest_detection_for_image(conn, image_id)
-                if existing:
-                    return ok(existing)
-            else:
-                image_id = create_image_record(conn, image_name=image_name, file_size=payload.get("file_size"))
-
-            result = create_mock_detection(conn, image_id)
-            return ok(result, 201)
-    except Exception as exc:
-        return ok({**pick_mock_result(image_name), "database_error": str(exc)}, 202)
+    return fail("Model inference did not produce a result", 500)
 
 
+# USER STORIES B.2, B.3 - Read exportable and filterable detection history.
 @app.route("/api/history", methods=["GET"])
+@require_roles("Farmer", "Researcher", "Agronomist", "Admin")
 def history():
     try:
         limit = min(int(request.args.get("limit", 100)), 200)
@@ -770,8 +1061,31 @@ def history():
     try:
         with db_connection() as conn:
             with conn.cursor() as cur:
+                filters = []
+                params: list[Any] = []
+                if request.auth_user["role"] == "Farmer":
+                    filters.append("i.user_id = %s")
+                    params.append(request.auth_user["user_id"])
+                if request.args.get("from"):
+                    filters.append("dr.created_at::date >= %s")
+                    params.append(request.args["from"])
+                if request.args.get("to"):
+                    filters.append("dr.created_at::date <= %s")
+                    params.append(request.args["to"])
+                if request.args.get("field"):
+                    filters.append("LOWER(COALESCE(f.field_name, '')) LIKE %s")
+                    params.append(f"%{request.args['field'].lower()}%")
+                where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
+                order_by = {
+                    "count": "dr.tassel_count DESC",
+                    "confidence": "dr.confidence_score DESC NULLS LAST",
+                }.get(
+                    request.args.get("sort", "date"),
+                    "dr.created_at DESC, dr.result_id DESC",
+                )
+                params.append(limit)
                 cur.execute(
-                    """
+                    f"""
                     SELECT
                         dr.result_id,
                         dr.image_id,
@@ -782,25 +1096,40 @@ def history():
                         dr.processing_time,
                         dr.annotated_image_path,
                         dr.bbox_data,
+                        dr.quality_status,
+                        dr.review_note,
+                        f.field_name,
                         dr.created_at
                     FROM detection_results dr
                     JOIN images i ON i.image_id = dr.image_id
-                    ORDER BY dr.created_at DESC, dr.result_id DESC
+                    LEFT JOIN fields f ON f.field_id = i.field_id
+                    {where_clause}
+                    ORDER BY {order_by}
                     LIMIT %s
                     """,
-                    (limit,),
+                    params,
                 )
                 records = [normalize_detection_row(row) for row in cur.fetchall()]
         return ok({"records": records, "total": len(records), "source": "database"})
     except Exception as exc:
-        return ok({"records": MOCK_HISTORY[:limit], "total": len(MOCK_HISTORY[:limit]), "source": "mock", "database_error": str(exc)})
+        return db_error_response(exc)
 
 
+# USER STORIES A.3, A.4 - Return count, confidence, timing, and bbox data.
 @app.route("/api/results/<int:result_id>", methods=["GET"])
+@require_roles("Farmer", "Researcher", "Agronomist", "Admin")
 def result_detail(result_id: int):
     try:
         with db_connection() as conn:
             result = detection_for_result(conn, result_id)
+            if result and request.auth_user["role"] == "Farmer":
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT 1 FROM images WHERE image_id = %s AND user_id = %s",
+                        (result["image_id"], request.auth_user["user_id"]),
+                    )
+                    if not cur.fetchone():
+                        return fail("You can only view your own results", 403)
         if not result:
             return fail("Detection result not found", 404)
         return ok(result)
@@ -808,68 +1137,37 @@ def result_detail(result_id: int):
         return db_error_response(exc)
 
 
+# USER STORY A.8 - Farmer dashboard summary.
 @app.route("/api/stats", methods=["GET"])
+@require_roles("Farmer", "Researcher", "Admin")
 def stats():
     try:
         with db_connection() as conn:
             with conn.cursor() as cur:
+                owner_filter = ""
+                params: tuple[Any, ...] = ()
+                if request.auth_user["role"] == "Farmer":
+                    owner_filter = "WHERE i.user_id = %s"
+                    params = (request.auth_user["user_id"],)
                 cur.execute(
-                    """
+                    f"""
                     SELECT
                         COUNT(DISTINCT i.image_id) AS total_uploaded_images,
                         COALESCE(SUM(dr.tassel_count), 0) AS total_detected_tassels,
                         COALESCE(AVG(dr.tassel_count), 0) AS average_tassel_count
                     FROM images i
                     LEFT JOIN detection_results dr ON dr.image_id = i.image_id
-                    """
+                    {owner_filter}
+                    """,
+                    params,
                 )
                 row = cur.fetchone()
         return ok({**row, "model_status": "Active", "source": "database"})
     except Exception as exc:
-        total = sum(r["count"] for r in MOCK_RESULTS)
-        return ok(
-            {
-                "total_uploaded_images": 128,
-                "total_detected_tassels": total,
-                "average_tassel_count": round(total / len(MOCK_RESULTS), 1),
-                "model_status": "Active",
-                "source": "mock",
-                "database_error": str(exc),
-            }
-        )
+        return db_error_response(exc)
 
 
 def report_response(report_type: str):
-    fallback = {
-        "daily": {
-            "date": "2026-06-13",
-            "total_uploads": 24,
-            "successful_detections": 22,
-            "failed_detections": 2,
-            "average_tassel_count": 31,
-            "system_status": "Normal",
-        },
-        "weekly": {
-            "week": "2026-06-07 to 2026-06-13",
-            "total_uploads": 148,
-            "successful_detections": 139,
-            "failed_detections": 9,
-            "average_tassel_count": 33,
-            "most_active_day": "Friday",
-            "average_processing_time": 2.8,
-            "system_status": "Normal",
-        },
-        "monthly": {
-            "month": "June 2026",
-            "total_uploads": 520,
-            "successful_detections": 496,
-            "failed_detections": 24,
-            "average_tassel_count": 34,
-            "model_accuracy_estimate": 0.88,
-            "system_status": "Normal",
-        },
-    }
-
     try:
         with db_connection() as conn:
             with conn.cursor() as cur:
@@ -885,7 +1183,7 @@ def report_response(report_type: str):
                 )
                 report = cur.fetchone()
         if not report:
-            return ok({**fallback[report_type], "source": "mock"})
+            return fail(f"No {report_type} report is available", 404)
 
         payload = {
             "report_id": report["report_id"],
@@ -915,25 +1213,125 @@ def report_response(report_type: str):
 
         return ok(payload)
     except Exception as exc:
-        return ok({**fallback[report_type], "source": "mock", "database_error": str(exc)})
+        return db_error_response(exc)
 
 
 @app.route("/api/report/daily", methods=["GET"])
+@require_roles("Researcher", "Admin")
 def report_daily():
     return report_response("daily")
 
 
 @app.route("/api/report/weekly", methods=["GET"])
+@require_roles("Researcher", "Admin")
 def report_weekly():
     return report_response("weekly")
 
 
 @app.route("/api/report/monthly", methods=["GET"])
+@require_roles("Researcher", "Admin")
 def report_monthly():
     return report_response("monthly")
 
 
+# USER STORY B.6 - Generate and persist a visual report.
+@app.route("/api/reports", methods=["POST"])
+@require_roles("Researcher", "Admin")
+def generate_report():
+    """G.6: select fields/date range, aggregate detections, and save Report."""
+    payload = request.get_json(silent=True) or {}
+    date_from = str(payload.get("date_from") or "").strip()
+    date_to = str(payload.get("date_to") or "").strip()
+    field_ids = payload.get("field_ids") or []
+    report_type = payload.get("report_type", "weekly")
+    if report_type not in {"daily", "weekly", "monthly"}:
+        return fail("report_type must be daily, weekly, or monthly", 400)
+    try:
+        start_date = date.fromisoformat(date_from)
+        end_date = date.fromisoformat(date_to)
+    except ValueError:
+        return fail("date_from and date_to must use YYYY-MM-DD", 400)
+    if start_date > end_date:
+        return fail("date_from cannot be after date_to", 400)
+    if not isinstance(field_ids, list):
+        return fail("field_ids must be an array", 400)
+
+    try:
+        with db_connection() as conn:
+            filters = ["dr.created_at::date BETWEEN %s AND %s"]
+            params: list[Any] = [start_date, end_date]
+            if field_ids:
+                filters.append("i.field_id = ANY(%s)")
+                params.append([int(item) for item in field_ids])
+            where_clause = " AND ".join(filters)
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    SELECT
+                        dr.created_at::date AS day,
+                        COUNT(*) AS detections,
+                        COALESCE(AVG(dr.tassel_count), 0) AS average_count
+                    FROM detection_results dr
+                    JOIN images i ON i.image_id = dr.image_id
+                    WHERE {where_clause}
+                    GROUP BY dr.created_at::date
+                    ORDER BY day
+                    """,
+                    params,
+                )
+                daily = cur.fetchall()
+            total = sum(int(row["detections"]) for row in daily)
+            weighted_count = sum(
+                float(row["average_count"]) * int(row["detections"]) for row in daily
+            )
+            average = round(weighted_count / total, 2) if total else 0
+            chart_data = {
+                "labels": [row["day"].isoformat() for row in daily],
+                "values": [int(row["detections"]) for row in daily],
+                "average_counts": [float(row["average_count"]) for row in daily],
+                "field_ids": [int(item) for item in field_ids],
+                "date_from": start_date.isoformat(),
+                "date_to": end_date.isoformat(),
+                "summary": (
+                    f"{total} detection records were analysed from "
+                    f"{start_date.isoformat()} to {end_date.isoformat()}; "
+                    f"the average tassel count was {average:.2f}."
+                ),
+            }
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO reports (
+                        report_type, report_date, total_uploads,
+                        successful_detections, failed_detections,
+                        average_tassel_count, chart_data
+                    ) VALUES (%s, %s, %s, %s, 0, %s, %s::jsonb)
+                    RETURNING *
+                    """,
+                    (
+                        report_type,
+                        end_date,
+                        total,
+                        total,
+                        average,
+                        json.dumps(chart_data),
+                    ),
+                )
+                report = cur.fetchone()
+            log_action(
+                conn,
+                "report_generated",
+                f"report_id={report['report_id']}, range={start_date}:{end_date}",
+                request.auth_user["user_id"],
+            )
+        return ok({"status": "success", "report": report, "chart_data": chart_data}, 201)
+    except Exception as exc:
+        return db_error_response(exc)
+
+
+# USER STORY D.1 - User collection management.
 @app.route("/api/users", methods=["GET", "POST", "PUT", "DELETE"])
+@require_roles("Admin")
 def users():
     if request.method in {"PUT", "DELETE"}:
         payload = request.get_json(silent=True) or {}
@@ -980,17 +1378,7 @@ def users():
         except ValueError as exc:
             return fail(str(exc), 400)
         except Exception as exc:
-            role_map = {1: "Farmer", 2: "Researcher", 3: "Agronomist", 4: "Admin"}
-            role_id = int(payload.get("role_id") or payload.get("roleId") or 1)
-            user = {
-                "user_id": random.randint(100, 999),
-                "name": str(payload["name"]).strip(),
-                "email": str(payload["email"]).strip(),
-                "role_id": role_id,
-                "role": role_map.get(role_id, "Farmer"),
-                "status": payload.get("status", "active"),
-            }
-            return ok({"status": "success", "message": "User created in mock mode", "user": user, "source": "mock", "database_error": str(exc)}, 202)
+            return db_error_response(exc)
 
     try:
         with db_connection() as conn:
@@ -1006,10 +1394,12 @@ def users():
                 rows = [normalize_user_row(row) for row in cur.fetchall()]
         return ok({"users": rows, "total": len(rows), "source": "database"})
     except Exception as exc:
-        return ok({"users": MOCK_USERS, "total": len(MOCK_USERS), "source": "mock", "database_error": str(exc)})
+        return db_error_response(exc)
 
 
+# USER STORY D.1 - Individual user management.
 @app.route("/api/users/<int:user_id>", methods=["GET", "PUT", "DELETE"])
+@require_roles("Admin")
 def user_detail(user_id: int):
     if request.method == "GET":
         try:
@@ -1049,6 +1439,15 @@ def user_detail(user_id: int):
 
                 role_id = resolve_role_id(conn, payload, required=False)
                 if role_id is not None:
+                    if user_id == request.auth_user["user_id"]:
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                "SELECT role_name FROM roles WHERE role_id = %s",
+                                (role_id,),
+                            )
+                            requested_role = cur.fetchone()
+                        if not requested_role or requested_role["role_name"] != "Admin":
+                            return fail("Administrators cannot remove their own admin role", 400)
                     updates.append("role_id = %s")
                     params.append(role_id)
 
@@ -1075,19 +1474,7 @@ def user_detail(user_id: int):
         except ValueError as exc:
             return fail(str(exc), 400)
         except Exception as exc:
-            role_map = {1: "Farmer", 2: "Researcher", 3: "Agronomist", 4: "Admin"}
-            user = mock_user_by_id(user_id)
-            if "name" in payload and payload.get("name"):
-                user["name"] = str(payload["name"]).strip()
-            if "email" in payload and payload.get("email"):
-                user["email"] = str(payload["email"]).strip()
-            role_id = payload.get("role_id") or payload.get("roleId")
-            if role_id:
-                user["role_id"] = int(role_id)
-                user["role"] = role_map.get(int(role_id), user["role"])
-            if "status" in payload:
-                user["status"] = payload["status"]
-            return ok({"status": "success", "message": "User updated in mock mode", "user": user, "source": "mock", "database_error": str(exc)}, 202)
+            return db_error_response(exc)
 
     try:
         with db_connection() as conn:
@@ -1109,12 +1496,12 @@ def user_detail(user_id: int):
             }
         )
     except Exception as exc:
-        user = mock_user_by_id(user_id)
-        user["status"] = "disabled"
-        return ok({"status": "success", "message": "User disabled in mock mode", "delete_mode": "soft", "user": user, "source": "mock", "database_error": str(exc)}, 202)
+        return db_error_response(exc)
 
 
+# USER STORY D.1 - Enable or disable a user.
 @app.route("/api/users/<int:user_id>/status", methods=["PUT"])
+@require_roles("Admin")
 def user_status(user_id: int):
     """Toggle user status (active/disabled) — D.1 admin requirement."""
     payload = request.get_json(silent=True) or {}
@@ -1132,13 +1519,108 @@ def user_status(user_id: int):
             user = fetch_user(conn, user_id)
         return ok({"status": "success", "message": f"User {new_status}", "user": user, "source": "database"})
     except Exception as exc:
-        user = mock_user_by_id(user_id)
-        user["status"] = new_status
-        return ok({"status": "success", "message": f"User {new_status} in mock mode", "user": user, "source": "mock", "database_error": str(exc)}, 202)
+        return db_error_response(exc)
 
 
+# USER STORY D.5 - Read and update a user's permissions.
+@app.route("/api/users/<int:user_id>/permissions", methods=["GET", "PUT"])
+@require_roles("Admin")
+def user_permissions(user_id: int):
+    try:
+        with db_connection() as conn:
+            if request.method == "GET":
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT u.user_id, u.name, r.role_name AS role, u.permissions
+                        FROM users u JOIN roles r ON r.role_id = u.role_id
+                        WHERE u.user_id = %s
+                        """,
+                        (user_id,),
+                    )
+                    user = cur.fetchone()
+                if not user:
+                    return fail("User not found", 404)
+                return ok({
+                    "user_id": user["user_id"],
+                    "name": user["name"],
+                    "role": user["role"],
+                    "permissions": permissions_for(user),
+                    "source": "database",
+                })
+
+            payload = request.get_json(silent=True) or {}
+            permissions = payload.get("permissions")
+            if not isinstance(permissions, list) or not all(isinstance(item, str) for item in permissions):
+                return fail("permissions must be an array of strings", 400)
+            if request.auth_user["user_id"] == user_id and "*" not in permissions:
+                return fail("Administrators cannot remove their own full access", 400)
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE users SET permissions = %s::jsonb WHERE user_id = %s RETURNING user_id",
+                    (json.dumps(permissions), user_id),
+                )
+                if not cur.fetchone():
+                    return fail("User not found", 404)
+            log_action(conn, "permissions_updated", f"Updated permissions for user {user_id}", request.auth_user["user_id"])
+        return ok({"status": "success", "user_id": user_id, "permissions": permissions})
+    except Exception as exc:
+        return db_error_response(exc)
+
+
+# USER STORY D.2 - Configure secure image access policies.
+@app.route("/api/access-policies", methods=["GET", "PUT"])
+@require_roles("Admin")
+def access_policies():
+    try:
+        with db_connection() as conn:
+            if request.method == "GET":
+                with conn.cursor() as cur:
+                    cur.execute("SELECT * FROM access_policies ORDER BY role_name")
+                    policies = cur.fetchall()
+                return ok({"policies": policies, "source": "database"})
+
+            payload = request.get_json(silent=True) or {}
+            role_name = payload.get("role_name")
+            access_level = payload.get("access_level")
+            if role_name not in ROLE_PERMISSIONS or not access_level:
+                return fail("A valid role_name and access_level are required", 400)
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO access_policies (role_name, access_level, updated_by)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (role_name) DO UPDATE SET
+                        access_level = EXCLUDED.access_level,
+                        updated_by = EXCLUDED.updated_by,
+                        updated_at = CURRENT_TIMESTAMP
+                    RETURNING *
+                    """,
+                    (role_name, access_level, request.auth_user["user_id"]),
+                )
+                policy = cur.fetchone()
+                cur.execute(
+                    """
+                    UPDATE images i
+                    SET access_level = %s
+                    FROM users u
+                    JOIN roles r ON r.role_id = u.role_id
+                    WHERE i.user_id = u.user_id AND r.role_name = %s
+                    """,
+                    (access_level, role_name),
+                )
+            log_action(conn, "access_policy", f"{role_name}={access_level}", request.auth_user["user_id"])
+        return ok({"status": "success", "policy": policy})
+    except Exception as exc:
+        return db_error_response(exc)
+
+
+# USER STORIES B.5, D.4 - List datasets or create dataset metadata.
 @app.route("/api/datasets", methods=["GET", "POST"])
+@require_roles("Researcher", "Admin")
 def datasets():
+    if request.method == "POST" and request.auth_user["role"] != "Admin":
+        return fail("Only administrators can create datasets", 403)
     if request.method == "POST":
         payload = request.get_json(silent=True) or {}
         name = payload.get("dataset_name") or payload.get("datasetName")
@@ -1162,15 +1644,7 @@ def datasets():
                     ds = cur.fetchone()
             return ok({"status": "success", "message": "Dataset created", "dataset": ds, "source": "database"}, 201)
         except Exception as exc:
-            ds = {
-                "dataset_id": random.randint(100, 999),
-                "dataset_name": str(name).strip(),
-                "dataset_path": payload.get("dataset_path", ""),
-                "total_images": int(payload.get("total_images", 0)),
-                "annotation_status": payload.get("annotation_status", "not_started"),
-                "annotation_format": payload.get("annotation_format"),
-            }
-            return ok({"status": "success", "message": "Dataset created in mock mode", "dataset": ds, "source": "mock", "database_error": str(exc)}, 202)
+            return db_error_response(exc)
 
     try:
         with db_connection() as conn:
@@ -1179,10 +1653,12 @@ def datasets():
                 rows = cur.fetchall()
         return ok({"datasets": rows, "total": len(rows), "source": "database"})
     except Exception as exc:
-        return ok({"datasets": MOCK_DATASETS, "total": len(MOCK_DATASETS), "source": "mock", "database_error": str(exc)})
+        return db_error_response(exc)
 
 
+# USER STORY D.4 - Update or delete a dataset.
 @app.route("/api/datasets/<int:dataset_id>", methods=["PUT", "DELETE"])
+@require_roles("Admin")
 def dataset_detail(dataset_id: int):
     if request.method == "DELETE":
         try:
@@ -1191,7 +1667,7 @@ def dataset_detail(dataset_id: int):
                     cur.execute("DELETE FROM datasets WHERE dataset_id = %s", (dataset_id,))
             return ok({"status": "success", "message": "Dataset deleted", "source": "database"})
         except Exception as exc:
-            return ok({"status": "success", "message": "Dataset deleted in mock mode", "source": "mock", "database_error": str(exc)}, 202)
+            return db_error_response(exc)
 
     payload = request.get_json(silent=True) or {}
     try:
@@ -1214,12 +1690,484 @@ def dataset_detail(dataset_id: int):
                 ds = cur.fetchone()
         return ok({"status": "success", "message": "Dataset updated", "dataset": ds, "source": "database"})
     except Exception as exc:
-        ds = next((item.copy() for item in MOCK_DATASETS if item["dataset_id"] == dataset_id), {"dataset_id": dataset_id})
-        ds.update({key: value for key, value in payload.items() if key in {"dataset_name", "annotation_status", "annotation_format", "total_images"}})
-        return ok({"status": "success", "message": "Dataset updated in mock mode", "dataset": ds, "source": "mock", "database_error": str(exc)}, 202)
+        return db_error_response(exc)
 
 
+# USER STORY D.4 - Upload a managed dataset package.
+@app.route("/api/datasets/upload", methods=["POST"])
+@require_roles("Admin")
+def dataset_upload():
+    file = request.files.get("dataset")
+    name = str(request.form.get("dataset_name") or "").strip()
+    if not file or not name:
+        return fail("dataset file and dataset_name are required", 400)
+    extension = Path(file.filename or "").suffix.lower()
+    if extension not in {".zip", ".tar", ".gz"}:
+        return fail("Dataset package must be ZIP, TAR, or GZ", 400)
+    datasets_dir = Path(__file__).resolve().parents[1] / "datasets" / "packages"
+    datasets_dir.mkdir(parents=True, exist_ok=True)
+    filename = secure_filename(file.filename) or f"dataset-{datetime.now().strftime('%Y%m%d%H%M%S')}.zip"
+    target = datasets_dir / filename
+    file.save(target)
+    try:
+        with db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO datasets (
+                        dataset_name, dataset_path, total_images,
+                        annotation_status, annotation_format
+                    ) VALUES (%s, %s, %s, %s, %s) RETURNING *
+                    """,
+                    (
+                        name,
+                        str(target.relative_to(Path(__file__).resolve().parents[1])),
+                        int(request.form.get("total_images") or 0),
+                        request.form.get("annotation_status") or "not_started",
+                        request.form.get("annotation_format") or None,
+                    ),
+                )
+                dataset = cur.fetchone()
+            log_action(conn, "dataset_upload", filename, request.auth_user["user_id"])
+        return ok({"status": "success", "dataset": dataset}, 201)
+    except Exception as exc:
+        if target.exists():
+            target.unlink()
+        return db_error_response(exc)
+
+
+# USER STORY B.5 - Download a dataset as ZIP or TAR.GZ.
+@app.route("/api/datasets/<int:dataset_id>/download", methods=["GET"])
+@require_roles("Researcher", "Admin", permission="datasets:download")
+def dataset_download(dataset_id: int):
+    archive_format = request.args.get("format", "zip").lower()
+    if archive_format not in {"zip", "tar", "tar.gz", "tgz"}:
+        return fail("format must be zip or tar", 400)
+    try:
+        with db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM datasets WHERE dataset_id = %s", (dataset_id,))
+                dataset = cur.fetchone()
+        if not dataset:
+            return fail("Dataset not found", 404)
+    except Exception as exc:
+        return db_error_response(exc)
+
+    requested = Path(str(dataset.get("dataset_path") or ""))
+    project_root = Path(__file__).resolve().parents[1]
+    source = requested if requested.is_absolute() else project_root / requested
+    memory = tempfile.SpooledTemporaryFile(max_size=20 * 1024 * 1024)
+    manifest = json.dumps(jsonable(dataset), indent=2, ensure_ascii=False).encode("utf-8")
+    if archive_format == "zip":
+        with zipfile.ZipFile(memory, "w", zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("dataset-manifest.json", manifest)
+            if source.exists() and source.is_dir():
+                for path in source.rglob("*"):
+                    if path.is_file() and path.stat().st_size <= 25 * 1024 * 1024:
+                        archive.write(path, path.relative_to(source))
+            elif source.exists() and source.is_file():
+                archive.write(source, source.name)
+        mime = "application/zip"
+        suffix = "zip"
+    else:
+        with tarfile.open(fileobj=memory, mode="w:gz") as archive:
+            info = tarfile.TarInfo("dataset-manifest.json")
+            info.size = len(manifest)
+            archive.addfile(info, fileobj=io.BytesIO(manifest))
+            if source.exists() and source.is_dir():
+                for path in source.rglob("*"):
+                    if path.is_file() and path.stat().st_size <= 25 * 1024 * 1024:
+                        archive.add(path, arcname=str(path.relative_to(source)))
+            elif source.exists() and source.is_file():
+                archive.add(source, arcname=source.name)
+        mime = "application/gzip"
+        suffix = "tar.gz"
+    memory.seek(0)
+    filename = secure_filename(str(dataset["dataset_name"])) or f"dataset-{dataset_id}"
+    return Response(
+        memory.read(),
+        mimetype=mime,
+        headers={"Content-Disposition": f'attachment; filename="{filename}.{suffix}"'},
+    )
+
+
+# USER STORY E.5 - List or register versioned model updates.
+@app.route("/api/models", methods=["GET", "POST"])
+@require_roles("Researcher", "Admin")
+def models():
+    if request.method == "POST" and request.auth_user["role"] != "Admin":
+        return fail("Only administrators can register models", 403)
+    if request.method == "POST":
+        payload = request.get_json(silent=True) or {}
+        required = ("model_name", "model_version", "weights_path")
+        if any(not payload.get(field) for field in required):
+            return fail("model_name, model_version and weights_path are required", 400)
+        try:
+            with db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO models (
+                            model_name, model_version, weights_path, status,
+                            map50, precision_score, recall_score, iou_threshold,
+                            parent_model_id, changelog
+                        ) VALUES (%s,%s,%s,'registered',%s,%s,%s,%s,%s,%s)
+                        RETURNING *
+                        """,
+                        (
+                            payload["model_name"],
+                            payload["model_version"],
+                            payload["weights_path"],
+                            payload.get("map50"),
+                            payload.get("precision"),
+                            payload.get("recall"),
+                            payload.get("iou_threshold", 0.5),
+                            payload.get("parent_model_id"),
+                            payload.get("changelog"),
+                        ),
+                    )
+                    model = normalize_model_row(cur.fetchone())
+                log_action(conn, "model_registered", payload["model_version"], request.auth_user["user_id"])
+            return ok({"status": "success", "model": model}, 201)
+        except Exception as exc:
+            return db_error_response(exc)
+
+    try:
+        with db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM models ORDER BY created_at DESC, model_id DESC")
+                rows = [normalize_model_row(row) for row in cur.fetchall()]
+        return ok({"models": rows, "source": "database"})
+    except Exception as exc:
+        return db_error_response(exc)
+
+
+# USER STORY B.4 - Compare two registered models.
+@app.route("/api/models/compare", methods=["POST"])
+@require_roles("Researcher", "Admin", permission="models:compare")
+def compare_models():
+    payload = request.get_json(silent=True) or {}
+    model_ids = payload.get("model_ids") or []
+    if not isinstance(model_ids, list) or len(model_ids) != 2:
+        return fail("Exactly two model_ids are required", 400)
+    try:
+        with db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT * FROM models WHERE model_id = ANY(%s) ORDER BY model_id",
+                    ([int(item) for item in model_ids],),
+                )
+                selected = [normalize_model_row(row) for row in cur.fetchall()]
+    except Exception as exc:
+        return db_error_response(exc)
+    if len(selected) != 2:
+        return fail("Both models must exist", 404)
+    dataset_yaml = str(payload.get("dataset_yaml") or "").strip()
+    comparison_source = "stored-evaluation"
+    if dataset_yaml:
+        if evaluate_model is None:
+            return fail("Evaluation runtime is unavailable", 503)
+        evaluated = []
+        for model in selected:
+            weights_path = Path(str(model["weights_path"]))
+            if not weights_path.is_absolute():
+                weights_path = Path(__file__).resolve().parents[1] / weights_path
+            if not weights_path.exists():
+                return fail(
+                    f"Weights are unavailable for {model['model_version']}; "
+                    "use stored metrics or register the missing artifact",
+                    409,
+                )
+            metrics_result = evaluate_model(weights_path, dataset_yaml)
+            evaluated.append({
+                **model,
+                "map50": metrics_result["map50"],
+                "precision": metrics_result["precision"],
+                "recall": metrics_result["recall"],
+            })
+        selected = evaluated
+        comparison_source = "shared-validation-run"
+    metrics = ("map50", "precision", "recall")
+    winner = max(
+        selected,
+        key=lambda item: sum(float(item.get(metric) or 0) for metric in metrics),
+    )
+    return ok({
+        "models": selected,
+        "winner_model_id": winner["model_id"],
+        "dataset_id": payload.get("dataset_id"),
+        "comparison_source": comparison_source,
+        "basis": (
+            "Both models were evaluated against the same validation YAML."
+            if comparison_source == "shared-validation-run"
+            else "Stored evaluation outputs (mAP, precision, recall) for the selected test dataset."
+        ),
+    })
+
+
+# USER STORY E.4 - Health-check and activate a deployable model.
+@app.route("/api/models/<int:model_id>/deploy", methods=["POST"])
+@require_roles("Admin")
+def deploy_model(model_id: int):
+    try:
+        with db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM models WHERE model_id = %s", (model_id,))
+                model = cur.fetchone()
+                if not model:
+                    return fail("Model not found", 404)
+                weights_path = Path(str(model["weights_path"]))
+                if not weights_path.is_absolute():
+                    weights_path = Path(__file__).resolve().parents[1] / weights_path
+                if not weights_path.exists():
+                    return fail("Model weights file does not exist", 409)
+                if activate_predictor is None:
+                    return fail("Inference runtime is unavailable", 503)
+                try:
+                    activate_predictor(weights_path)
+                except Exception as exc:
+                    return fail("Model warm-up or health check failed", 409, model_error=str(exc))
+                cur.execute("UPDATE models SET status = 'archived' WHERE status = 'active'")
+                cur.execute(
+                    "UPDATE models SET status = 'active', activated_at = CURRENT_TIMESTAMP WHERE model_id = %s",
+                    (model_id,),
+                )
+            log_action(conn, "model_deployed", f"model_id={model_id}", request.auth_user["user_id"])
+        return ok({
+            "status": "success",
+            "message": "Model loaded, health checked, and deployed",
+            "model_id": model_id,
+            "health_check": "passed",
+        })
+    except Exception as exc:
+        return db_error_response(exc)
+
+
+# USER STORY E.3 - Evaluate stored metrics or run YOLO validation.
+@app.route("/api/models/<int:model_id>/evaluate", methods=["POST"])
+@require_roles("Admin", "Researcher")
+def evaluate_registered_model(model_id: int):
+    payload = request.get_json(silent=True) or {}
+    dataset_yaml = str(payload.get("dataset_yaml") or "").strip()
+    try:
+        with db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM models WHERE model_id = %s", (model_id,))
+                model = cur.fetchone()
+            if not model:
+                return fail("Model not found", 404)
+            weights_path = Path(str(model["weights_path"]))
+            if not weights_path.is_absolute():
+                weights_path = Path(__file__).resolve().parents[1] / weights_path
+            if dataset_yaml:
+                if evaluate_model is None:
+                    return fail("Evaluation runtime is unavailable", 503)
+                metrics = evaluate_model(weights_path, dataset_yaml)
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        UPDATE models
+                        SET map50 = %s, precision_score = %s, recall_score = %s
+                        WHERE model_id = %s
+                        """,
+                        (
+                            metrics["map50"],
+                            metrics["precision"],
+                            metrics["recall"],
+                            model_id,
+                        ),
+                    )
+                source = "validation-run"
+            else:
+                metrics = {
+                    "map50": float(model["map50"]) if model["map50"] is not None else None,
+                    "precision": (
+                        float(model["precision_score"])
+                        if model["precision_score"] is not None else None
+                    ),
+                    "recall": (
+                        float(model["recall_score"])
+                        if model["recall_score"] is not None else None
+                    ),
+                }
+                source = "stored-evaluation"
+            log_action(
+                conn,
+                "model_evaluated",
+                f"model_id={model_id}, source={source}",
+                request.auth_user["user_id"],
+            )
+        return ok({"status": "success", "model_id": model_id, "metrics": metrics, "source": source})
+    except Exception as exc:
+        return db_error_response(exc)
+
+
+# USER STORY B.1 - Flag an inaccurate or uncertain result for review.
+@app.route("/api/results/<int:result_id>/flag", methods=["POST"])
+@require_roles("Researcher", "Admin")
+def flag_result(result_id: int):
+    payload = request.get_json(silent=True) or {}
+    note = str(payload.get("note") or "").strip()
+    if not note:
+        return fail("A review note is required", 400)
+    try:
+        with db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE detection_results
+                    SET quality_status = 'flagged', review_note = %s
+                    WHERE result_id = %s
+                    RETURNING result_id
+                    """,
+                    (note, result_id),
+                )
+                if not cur.fetchone():
+                    return fail("Detection result not found", 404)
+            log_action(conn, "result_flagged", f"result_id={result_id}: {note}", request.auth_user["user_id"])
+        return ok({"status": "success", "result_id": result_id, "quality_status": "flagged"})
+    except Exception as exc:
+        return db_error_response(exc)
+
+
+# USER STORY E.2 - List, queue, or execute a model training run.
+@app.route("/api/training-runs", methods=["GET", "POST"])
+@require_roles("Admin")
+def training_runs():
+    if request.method == "GET":
+        try:
+            with db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT * FROM training_runs ORDER BY run_id DESC")
+                    runs = cur.fetchall()
+            return ok({"training_runs": runs, "source": "database"})
+        except Exception as exc:
+            return db_error_response(exc)
+
+    payload = request.get_json(silent=True) or {}
+    if not payload.get("model_id") or not payload.get("dataset_id"):
+        return fail("model_id and dataset_id are required", 400)
+    if payload.get("execute_local") and not str(payload.get("dataset_yaml") or "").strip():
+        return fail("dataset_yaml is required when execute_local is true", 400)
+    hyperparameters = payload.get("hyperparameters") or {
+        "epochs": 100,
+        "image_size": 640,
+        "batch": 16,
+    }
+    try:
+        with db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO training_runs (
+                        model_id, dataset_id, status, hyperparameters, started_at
+                    ) VALUES (%s, %s, 'queued', %s::jsonb, CURRENT_TIMESTAMP)
+                    RETURNING *
+                    """,
+                    (payload["model_id"], payload["dataset_id"], json.dumps(hyperparameters)),
+                )
+                run = cur.fetchone()
+            log_action(conn, "training_queued", f"run_id={run['run_id']}", request.auth_user["user_id"])
+        if payload.get("execute_local"):
+            dataset_yaml = str(payload.get("dataset_yaml") or "").strip()
+            threading.Thread(
+                target=execute_training_run,
+                args=(run["run_id"], dataset_yaml),
+                name=f"training-run-{run['run_id']}",
+                daemon=True,
+            ).start()
+        return ok({
+            "status": "success",
+            "training_run": run,
+            "execution": (
+                "Local training started in the background."
+                if payload.get("execute_local")
+                else "Training configuration queued; execute it locally or through the project Colab notebook."
+            ),
+        }, 202)
+    except Exception as exc:
+        return db_error_response(exc)
+
+
+def execute_training_run(run_id: int, dataset_yaml: str) -> None:
+    """E.2 worker: load data/model, train epochs, validate, and save best weights."""
+    try:
+        if train_model is None:
+            raise RuntimeError("Training runtime is unavailable")
+        with db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT tr.*, m.weights_path, m.model_id
+                    FROM training_runs tr
+                    JOIN models m ON m.model_id = tr.model_id
+                    WHERE tr.run_id = %s
+                    """,
+                    (run_id,),
+                )
+                run = cur.fetchone()
+                if not run:
+                    raise RuntimeError("Training run not found")
+                cur.execute(
+                    "UPDATE training_runs SET status = 'running', started_at = CURRENT_TIMESTAMP WHERE run_id = %s",
+                    (run_id,),
+                )
+                cur.execute(
+                    "UPDATE models SET status = 'training' WHERE model_id = %s",
+                    (run["model_id"],),
+                )
+        params = run["hyperparameters"] or {}
+        weights = Path(str(run["weights_path"]))
+        if not weights.is_absolute():
+            weights = Path(__file__).resolve().parents[1] / weights
+        result = train_model(
+            weights,
+            dataset_yaml,
+            epochs=int(params.get("epochs", 100)),
+            image_size=int(params.get("image_size", 640)),
+            batch=int(params.get("batch", 16)),
+            project=Path(__file__).resolve().parents[1] / "runs" / "train",
+            name=f"run-{run_id}",
+        )
+        with db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE training_runs
+                    SET status = 'completed', metrics = %s::jsonb,
+                        completed_at = CURRENT_TIMESTAMP
+                    WHERE run_id = %s
+                    """,
+                    (json.dumps(result), run_id),
+                )
+                cur.execute(
+                    """
+                    UPDATE models
+                    SET status = 'trained', weights_path = %s
+                    WHERE model_id = %s
+                    """,
+                    (result["best_weights"], run["model_id"]),
+                )
+    except Exception as exc:
+        try:
+            with db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        UPDATE training_runs
+                        SET status = 'failed', error_message = %s,
+                            completed_at = CURRENT_TIMESTAMP
+                        WHERE run_id = %s
+                        """,
+                        (str(exc), run_id),
+                    )
+        except Exception:
+            app.logger.exception("Could not persist training failure for run %s", run_id)
+
+
+# USER STORY D.3 - System usage and uptime metrics.
 @app.route("/api/admin/stats")
+@require_roles("Admin")
 def admin_stats():
     try:
         with db_connection() as conn:
@@ -1232,38 +2180,118 @@ def admin_stats():
             with conn.cursor() as cur:
                 cur.execute("SELECT COUNT(*) AS cnt FROM detection_results")
                 detections = cur.fetchone()["cnt"]
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT COUNT(*) AS api_calls,
+                           COUNT(*) FILTER (
+                               WHERE action ILIKE '%failed%' OR details ILIKE '%error%'
+                           ) AS errors
+                    FROM system_logs
+                    WHERE created_at >= CURRENT_TIMESTAMP - INTERVAL '24 hours'
+                    """
+                )
+                log_metrics = cur.fetchone()
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT COALESCE(AVG(processing_time), 0) AS average_time FROM detection_results"
+                )
+                average_time = cur.fetchone()["average_time"]
+        api_calls = int(log_metrics["api_calls"])
+        errors = int(log_metrics["errors"])
         return ok({
             "active_users": active,
             "queue_length": queue,
             "total_detections": detections,
-            "uptime": "99.7%",
-            "error_rate": "1.6%",
+            "api_calls_24h": api_calls,
+            "average_processing_time": round(float(average_time), 2),
+            "uptime": str(datetime.now() - SERVICE_STARTED_AT).split(".")[0],
+            "error_rate": f"{(errors / api_calls * 100) if api_calls else 0:.1f}%",
             "source": "database",
         })
     except Exception as exc:
-        return ok({
-            "active_users": 6, "queue_length": 11, "total_detections": 1420,
-            "uptime": "99.7%", "error_rate": "1.6%",
-            "source": "mock", "database_error": str(exc),
-        })
+        return db_error_response(exc)
 
 
+# USER STORY D.3 - Administrative audit and error logs.
 @app.route("/api/admin/logs")
+@require_roles("Admin")
 def admin_logs():
     return logs()
 
 
+# USER STORY D.6 - Create a backup immediately.
 @app.route("/api/admin/backup", methods=["POST"])
+@require_roles("Admin")
 def admin_backup_create():
     return backup()
 
 
+# USER STORY D.6 - List available backups.
 @app.route("/api/admin/backups")
+@require_roles("Admin")
 def admin_backups():
     return backup()
 
 
+# USER STORY D.6 - Restore a selected PostgreSQL backup.
+@app.route("/api/admin/backups/<path:file_name>/restore", methods=["POST"])
+@require_roles("Admin")
+def admin_backup_restore(file_name: str):
+    payload = request.get_json(silent=True) or {}
+    if payload.get("confirm") != "RESTORE":
+        return fail('Restore requires confirm="RESTORE"', 400)
+    safe_name = secure_filename(file_name)
+    backup_path = (BACKUP_DIR / safe_name).resolve()
+    if backup_path.parent != BACKUP_DIR.resolve() or not backup_path.exists():
+        return fail("Backup file not found", 404)
+    config = db_config()
+    if not config["password"]:
+        return fail("Database password is not configured", 503)
+    if backup_path.suffix.lower() == ".dump":
+        pg_restore = find_pg_restore()
+        if not pg_restore:
+            return fail("pg_restore is not configured", 503)
+        command = [
+            pg_restore,
+            "-h", str(config["host"]),
+            "-p", str(config["port"]),
+            "-U", str(config["user"]),
+            "-d", str(config["dbname"]),
+            "--clean", "--if-exists", "--no-owner", "--single-transaction",
+            str(backup_path),
+        ]
+    else:
+        psql = find_psql()
+        if not psql:
+            return fail("psql is not configured", 503)
+        command = [
+            psql,
+            "-h", str(config["host"]),
+            "-p", str(config["port"]),
+            "-U", str(config["user"]),
+            "-d", str(config["dbname"]),
+            "-v", "ON_ERROR_STOP=1",
+            "-f", str(backup_path),
+        ]
+    env = os.environ.copy()
+    env["PGPASSWORD"] = config["password"]
+    completed = subprocess.run(
+        command, env=env, capture_output=True, text=True, timeout=120, check=False
+    )
+    if completed.returncode != 0:
+        return fail("Database restore failed", 500, restore_error=completed.stderr[-1000:])
+    try:
+        with db_connection() as conn:
+            log_action(conn, "backup_restored", safe_name, request.auth_user["user_id"])
+    except Exception:
+        pass
+    return ok({"status": "success", "message": "Backup restored", "file_name": safe_name})
+
+
+# USER STORY D.2 - Report secure storage state.
 @app.route("/api/admin/storage")
+@require_roles("Admin")
 def admin_storage():
     try:
         with db_connection() as conn:
@@ -1282,16 +2310,16 @@ def admin_storage():
             "total_size_bytes": int(total_bytes),
             "total_size_mb": round(int(total_bytes) / (1024 * 1024), 2),
             "encrypted": True,
+            "encryption": "Fernet AES-128-CBC + HMAC-SHA256",
             "source": "database",
         })
     except Exception as exc:
-        return ok({
-            "total_images": 520, "total_size_mb": 1240, "encrypted": True,
-            "source": "mock", "database_error": str(exc),
-        })
+        return db_error_response(exc)
 
 
+# USER STORIES A.4, D.2 - Authorize and decrypt an image for viewing.
 @app.route("/api/images/<int:image_id>/file/<string:file_type>")
+@require_roles("Farmer", "Researcher", "Agronomist", "Admin")
 def serve_image_file(image_id: int, file_type: str):
     """Serve binary image data from image_files table."""
     if file_type not in ("original", "annotated"):
@@ -1300,15 +2328,46 @@ def serve_image_file(image_id: int, file_type: str):
         with db_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT image_data, mime_type, file_name FROM image_files "
+                    "SELECT user_id, access_level FROM images WHERE image_id = %s",
+                    (image_id,),
+                )
+                image = cur.fetchone()
+            if not image:
+                return fail("Image not found", 404)
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT access_level FROM access_policies WHERE role_name = %s",
+                    (request.auth_user["role"],),
+                )
+                policy = cur.fetchone()
+            access_level = policy["access_level"] if policy else None
+            if access_level == "aggregated_field_data":
+                return fail("This role can access aggregated field data only", 403)
+            if access_level in {"own_images", None} and (
+                request.auth_user["role"] == "Farmer"
+                and image["user_id"] != request.auth_user["user_id"]
+            ):
+                return fail("You can only access your own images", 403)
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT image_data, mime_type, file_name, encrypted FROM image_files "
                     "WHERE image_id = %s AND file_type = %s",
                     (image_id, file_type),
                 )
                 row = cur.fetchone()
-        if not row:
-            return fail("File not found", 404)
+            if not row:
+                return fail("File not found", 404)
+            data = bytes(row["image_data"])
+            if row.get("encrypted", True):
+                data = encryption_cipher().decrypt(data)
+            log_action(
+                conn,
+                "image_accessed",
+                f"image_id={image_id}, file_type={file_type}",
+                request.auth_user["user_id"],
+            )
         return Response(
-            bytes(row["image_data"]),
+            data,
             mimetype=row["mime_type"],
             headers={"Content-Disposition": f'inline; filename="{row["file_name"]}"'},
         )
@@ -1317,6 +2376,7 @@ def serve_image_file(image_id: int, file_type: str):
 
 
 @app.route("/api/logs", methods=["GET"])
+@require_roles("Admin")
 def logs():
     try:
         with db_connection() as conn:
@@ -1333,10 +2393,11 @@ def logs():
                 rows = cur.fetchall()
         return ok({"logs": rows, "total": len(rows), "source": "database"})
     except Exception as exc:
-        return ok({"logs": [], "total": 0, "source": "mock", "database_error": str(exc)})
+        return db_error_response(exc)
 
 
 @app.route("/api/backup", methods=["GET", "POST"])
+@require_roles("Admin")
 def backup():
     if request.method == "GET":
         backups = list_backup_files()
@@ -1383,6 +2444,16 @@ def backup():
                 backup_error=(completed.stderr or completed.stdout or "pg_dump returned a non-zero exit code").strip(),
             )
 
+        try:
+            with db_connection() as conn:
+                log_action(
+                    conn,
+                    "backup_created",
+                    backup_path.name,
+                    request.auth_user["user_id"],
+                )
+        except Exception:
+            pass
         return ok(
             {
                 "status": "success",
@@ -1398,58 +2469,333 @@ def backup():
         return fail("Database backup timed out", 504)
 
 
+# USER STORY C.4 - List fields with optional region filtering.
 @app.route("/api/fields", methods=["GET"])
+@require_roles("Researcher", "Agronomist", "Admin")
 def fields():
-    # The Week 10 database does not yet include a fields table, so this endpoint
-    # keeps the Agronomist dashboard demonstrable until the next schema phase.
-    return ok(
-        {
-            "fields": [
-                {
-                    "field_id": 1,
-                    "field_name": "Field A - North",
-                    "location": "North Region",
-                    "latest_avg_count": 35,
-                    "baseline_count": 30,
-                    "health_status": "Healthy",
-                },
-                {
-                    "field_id": 2,
-                    "field_name": "Field B - East",
-                    "location": "East Region",
-                    "latest_avg_count": 18,
-                    "baseline_count": 30,
-                    "health_status": "At-Risk",
-                },
-                {
-                    "field_id": 3,
-                    "field_name": "Field C - South",
-                    "location": "South Region",
-                    "latest_avg_count": 42,
-                    "baseline_count": 40,
-                    "health_status": "Healthy",
-                },
-            ],
-            "source": "mock",
-        }
-    )
+    region = request.args.get("region")
+    try:
+        with db_connection() as conn:
+            with conn.cursor() as cur:
+                if region:
+                    cur.execute("SELECT * FROM fields WHERE location = %s ORDER BY field_id", (region,))
+                else:
+                    cur.execute("SELECT * FROM fields ORDER BY field_id")
+                rows = cur.fetchall()
+        return ok({"fields": rows, "source": "database"})
+    except Exception as exc:
+        return db_error_response(exc)
+
+
+# USER STORY C.1 - Evaluate one field's plant health.
+@app.route("/api/fields/<int:field_id>/health", methods=["GET"])
+@require_roles("Agronomist", "Admin")
+def field_health(field_id: int):
+    try:
+        with db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM fields WHERE field_id = %s", (field_id,))
+                field = cur.fetchone()
+            if field:
+                count = float(field["latest_avg_count"])
+                health = "Warning" if count < float(field["threshold_low"]) else "Healthy"
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "UPDATE fields SET health_status = %s WHERE field_id = %s",
+                        (health, field_id),
+                    )
+                field["health_status"] = health
+    except Exception as exc:
+        return db_error_response(exc)
+    if not field:
+        return fail("Field not found", 404)
+    count = float(field["latest_avg_count"])
+    baseline = float(field["baseline_count"])
+    threshold = float(field["threshold_low"])
+    return ok({
+        "field": field,
+        "health": "Warning" if count < threshold else "Healthy",
+        "gap": round(count - baseline, 2),
+        "recommendation": (
+            "Inspect irrigation, nutrient availability, and image sampling coverage."
+            if count < threshold
+            else "Continue the current monitoring schedule."
+        ),
+    })
+
+
+# USER STORY C.1 - Read or save agronomist recommendations.
+@app.route("/api/fields/<int:field_id>/recommendations", methods=["GET", "POST"])
+@require_roles("Agronomist", "Admin")
+def field_recommendations(field_id: int):
+    if request.method == "POST":
+        payload = request.get_json(silent=True) or {}
+        note = str(payload.get("note") or "").strip()
+        if not note:
+            return fail("Recommendation note is required", 400)
+        try:
+            with db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO recommendations (field_id, user_id, note)
+                        VALUES (%s, %s, %s) RETURNING *
+                        """,
+                        (field_id, request.auth_user["user_id"], note),
+                    )
+                    recommendation = cur.fetchone()
+                log_action(conn, "recommendation_added", f"field_id={field_id}", request.auth_user["user_id"])
+            return ok({"status": "success", "recommendation": recommendation}, 201)
+        except Exception as exc:
+            return db_error_response(exc)
+    try:
+        with db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT * FROM recommendations WHERE field_id = %s ORDER BY created_at DESC",
+                    (field_id,),
+                )
+                rows = cur.fetchall()
+        return ok({"recommendations": rows, "source": "database"})
+    except Exception as exc:
+        return db_error_response(exc)
+
+
+# USER STORY C.2 - Aggregate field growth over time.
+@app.route("/api/fields/<int:field_id>/growth", methods=["GET"])
+@require_roles("Agronomist", "Admin")
+def field_growth(field_id: int):
+    try:
+        weeks = max(2, min(int(request.args.get("weeks", 4)), 12))
+    except (TypeError, ValueError):
+        return fail("weeks must be an integer between 2 and 12", 400)
+    try:
+        with db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT date_trunc('week', dr.created_at)::date AS week,
+                           AVG(dr.tassel_count) AS average_count
+                    FROM detection_results dr
+                    JOIN images i ON i.image_id = dr.image_id
+                    WHERE i.field_id = %s
+                      AND dr.created_at >= CURRENT_DATE - (%s * INTERVAL '1 week')
+                    GROUP BY date_trunc('week', dr.created_at)
+                    ORDER BY week
+                    """,
+                    (field_id, weeks),
+                )
+                rows = cur.fetchall()
+        labels = [row["week"].isoformat() for row in rows]
+        trend = [round(float(row["average_count"]), 2) for row in rows]
+    except Exception as exc:
+        return db_error_response(exc)
+    return ok({
+        "field_id": field_id,
+        "weeks": weeks,
+        "labels": labels,
+        "trend": trend,
+        "growth_rate": (
+            round((trend[-1] - trend[0]) / max(len(trend) - 1, 1), 2)
+            if trend
+            else 0
+        ),
+        "source": "database",
+    })
+
+
+# USER STORY C.3 - Scan fields for abnormal tassel patterns.
+@app.route("/api/fields/anomalies", methods=["GET"])
+@require_roles("Agronomist", "Admin")
+def field_anomalies():
+    """H.3: scan every Field, compare with its threshold, and persist flags."""
+    try:
+        with db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE fields
+                    SET anomaly_flag = latest_avg_count < threshold_low,
+                        health_status = CASE
+                            WHEN latest_avg_count < threshold_low THEN 'Warning'
+                            ELSE 'Healthy'
+                        END
+                    """
+                )
+                cur.execute(
+                    "SELECT * FROM fields WHERE anomaly_flag = TRUE ORDER BY field_id"
+                )
+                anomalies = cur.fetchall()
+        return ok({"anomalies": anomalies, "source": "database"})
+    except Exception as exc:
+        return db_error_response(exc)
+
+
+# USER STORY C.3 - Persist an anomaly review request.
+@app.route("/api/fields/<int:field_id>/anomaly", methods=["POST"])
+@require_roles("Agronomist", "Admin")
+def flag_field_anomaly(field_id: int):
+    payload = request.get_json(silent=True) or {}
+    reason = str(payload.get("reason") or "").strip()
+    if not reason:
+        return fail("An anomaly review reason is required", 400)
+    try:
+        with db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE fields
+                    SET anomaly_flag = TRUE, anomaly_reason = %s, health_status = 'Warning'
+                    WHERE field_id = %s
+                    RETURNING *
+                    """,
+                    (reason, field_id),
+                )
+                field = cur.fetchone()
+            if not field:
+                return fail("Field not found", 404)
+            log_action(
+                conn,
+                "field_anomaly_review",
+                f"field_id={field_id}: {reason}",
+                request.auth_user["user_id"],
+            )
+        return ok({"status": "success", "field": field})
+    except Exception as exc:
+        return db_error_response(exc)
+
+
+# USER STORY C.5 - Return summarized agronomy insights.
+@app.route("/api/fields/insights", methods=["GET"])
+@require_roles("Agronomist", "Admin")
+def field_insights():
+    try:
+        with db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM fields ORDER BY field_id")
+                fields_payload = cur.fetchall()
+                cur.execute(
+                    """
+                    SELECT COALESCE(AVG(dr.tassel_count), 0) AS average_count,
+                           COUNT(*) AS result_count
+                    FROM detection_results dr
+                    WHERE dr.created_at >= CURRENT_DATE - INTERVAL '30 days'
+                    """
+                )
+                aggregate = cur.fetchone()
+        source = "database"
+    except Exception as exc:
+        return db_error_response(exc)
+    at_risk = [item for item in fields_payload if item["anomaly_flag"]]
+    return ok({
+        "insights": [
+            f"{len(fields_payload) - len(at_risk)} of {len(fields_payload)} fields are within the healthy range.",
+            f"{len(at_risk)} field(s) require review due to low tassel counts.",
+            (
+                f"{int(aggregate['result_count'])} results from the last 30 days have an "
+                f"average count of {float(aggregate['average_count']):.1f}."
+            ),
+        ],
+        "recommendation": "Prioritize follow-up surveys for flagged fields and retain the same camera height for comparable counts.",
+        "source": source,
+    })
+
+
+# USER STORY E.1 - Preprocess and securely save an image.
+@app.route("/api/system/preprocess/<int:image_id>", methods=["POST"])
+@require_roles("Admin")
+def preprocess_image(image_id: int):
+    payload = request.get_json(silent=True) or {}
+    augment = bool(payload.get("augment", False))
+    try:
+        with db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT image_name FROM images WHERE image_id = %s", (image_id,))
+                image = cur.fetchone()
+        if not image:
+            return fail("Image not found", 404)
+        from PIL import Image, ImageOps
+        with materialized_image(image["image_name"]) as source:
+            processed = ImageOps.exif_transpose(Image.open(source).convert("RGB"))
+            processed.thumbnail((640, 640))
+            if augment:
+                processed = ImageOps.mirror(processed)
+            output = tempfile.SpooledTemporaryFile()
+            processed.save(output, format="JPEG", quality=90)
+            output.seek(0)
+            data = output.read()
+        name = f"preprocessed_{Path(image['image_name']).stem}.jpg"
+        stored = secure_store_bytes(name, data)
+        with db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE images
+                    SET preprocessed = TRUE, preprocessed_path = %s
+                    WHERE image_id = %s
+                    """,
+                    (str(stored), image_id),
+                )
+            log_action(
+                conn,
+                "image_preprocessed",
+                f"image_id={image_id}, augment={augment}",
+                request.auth_user["user_id"],
+            )
+        steps = ["EXIF orientation", "RGB conversion", "resize within 640x640", "JPEG normalization"]
+        if augment:
+            steps.append("horizontal augmentation")
+        return ok({
+            "status": "success",
+            "image_id": image_id,
+            "preprocessed_name": name,
+            "preprocessed": True,
+            "steps": steps,
+        })
+    except Exception as exc:
+        return fail("Preprocessing failed", 500, error=str(exc))
+
+
+# Shared AI system status for E.1-E.5.
+@app.route("/api/system/status", methods=["GET"])
+@require_roles("Admin", "Researcher")
+def system_status():
+    weights = Path(__file__).resolve().parent / "models" / "best.pt"
+    predictor_available = False
+    if get_predictor is not None:
+        try:
+            predictor_available = get_predictor().available
+        except Exception:
+            predictor_available = False
+    active_version = None
+    try:
+        with db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT model_version FROM models WHERE status = 'active' ORDER BY activated_at DESC NULLS LAST LIMIT 1"
+                )
+                active = cur.fetchone()
+                active_version = active["model_version"] if active else None
+    except Exception:
+        active_version = None
+    return ok({
+        "model_file": str(weights.relative_to(Path(__file__).resolve().parents[1])),
+        "model_file_exists": weights.exists(),
+        "inference_available": predictor_available,
+        "active_model_version": active_version,
+        "training_notebooks": ["maize_yolo26_colab.ipynb", "maize_yolo26_final (4).ipynb"],
+    })
 
 
 if __name__ == "__main__":
     print("Maize Detector API running at http://localhost:5000")
-    print("Database: PostgreSQL if PGPASSWORD is set, otherwise mock fallback")
-    # Report AI inference availability at startup
-    if get_predictor is not None:
-        try:
-            pred = get_predictor()
-            if pred.available:
-                print("AI Inference: YOLO model loaded — real detection enabled")
-            else:
-                print("AI Inference: model weights not found in backend/models/ — mock fallback active")
-        except Exception as e:
-            print(f"AI Inference: unavailable ({e}) — mock fallback active")
-    else:
-        print("AI Inference: inference.py not found — mock fallback active")
+    ready, error = db_ready()
+    if not ready:
+        raise SystemExit(f"PostgreSQL startup check failed: {error}")
+    if get_predictor is None or not get_predictor().available:
+        raise SystemExit("AI startup check failed: backend/models/best.pt is unavailable")
+    print("Database: PostgreSQL connected")
+    print("AI Inference: backend/models/best.pt loaded")
     from wsgiref.simple_server import make_server
     httpd = make_server("127.0.0.1", 5000, app)
     try:

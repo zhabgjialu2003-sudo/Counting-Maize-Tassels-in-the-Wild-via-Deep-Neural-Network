@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Maize Detector - AI System</title>
+<link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+<nav class="nav" id="mainNav"></nav>
+<div class="container">
+  <!-- AI SYSTEM BOUNDARY: all AI System stories appear below in BCE order. -->
+  <h2 class="page-title">AI Model System</h2>
+  <p class="page-subtitle">BCE workflow in strict numbered order</p>
+  <div class="card-grid" id="systemCards"></div>
+
+  <div class="card">
+    <h3 style="color:var(--green);">E.1 Image Preprocessing</h3>
+    <div style="display:flex;gap:0.75rem;align-items:end;flex-wrap:wrap;">
+      <div class="form-group"><label>Database Image ID</label><input id="preprocessImageId" type="number" value="1" min="1"></div>
+      <label class="toggle"><input id="augmentImage" type="checkbox"> Apply horizontal augmentation</label>
+      <button class="btn btn-primary" id="runPreprocess">Run Pipeline</button>
+    </div>
+    <p id="preprocessMsg" class="info-text"></p>
+  </div>
+
+  <div class="card">
+    <h3 style="color:var(--green);">E.2 Train Deep Learning Model</h3>
+    <div class="card-grid">
+      <div class="form-group"><label>Model</label><select id="trainingModel"></select></div>
+      <div class="form-group"><label>Dataset</label><select id="trainingDataset"></select></div>
+      <div class="form-group"><label>Epochs</label><input id="epochs" type="number" value="100" min="1"></div>
+      <div class="form-group"><label>Dataset YAML (for local execution)</label><input id="datasetYaml" placeholder="datasets/data.yaml"></div>
+    </div>
+    <label class="toggle"><input id="executeLocal" type="checkbox"> Start local Ultralytics training worker</label>
+    <button class="btn btn-primary" id="queueTraining">Start Training Workflow</button>
+    <p id="trainingMsg" class="info-text"></p>
+  </div>
+
+  <div class="card">
+    <h3 style="color:var(--green);">E.3 Evaluate Model Performance</h3>
+    <div class="form-group"><label>Optional Validation Dataset YAML</label><input id="evaluationYaml" placeholder="Leave blank to read stored notebook metrics"></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Version</th><th>mAP@0.5</th><th>Precision</th><th>Recall</th><th>Status</th><th></th></tr></thead>
+      <tbody id="modelRows"></tbody>
+    </table></div>
+    <p id="evaluationMsg" class="info-text"></p>
+  </div>
+
+  <div class="card">
+    <h3 style="color:var(--green);">E.4 Deploy Trained Model Service</h3>
+    <p class="info-text">Deployment loads weights, performs a health check, activates the selected model, and archives the previous version.</p>
+    <div id="deployChoices"></div>
+  </div>
+
+  <div class="card">
+    <h3 style="color:var(--green);">E.5 Register System / Model Update</h3>
+    <div class="card-grid">
+      <div class="form-group"><label>Version</label><input id="newVersion" value="v1.1"></div>
+      <div class="form-group"><label>Weights Path</label><input id="weightsPath" value="backend/models/best.pt"></div>
+    </div>
+    <div class="form-group"><label>Changelog</label><textarea id="changelog">Improved maize tassel detector.</textarea></div>
+    <button class="btn btn-primary" id="registerModel">Register Version</button>
+    <p id="registerMsg" class="info-text"></p>
+  </div>
+</div>
+
+<script src="../js/api.js"></script>
+<script src="../js/auth.js"></script>
+<script>
+if (!requireRole(["Admin"])) throw new Error('Access denied');
+initNav();
+let models = [];
+
+function metric(value) {
+  return value === null || value === undefined ? '-' : (Number(value) * 100).toFixed(1) + '%';
+}
+
+async function loadSystem() {
+  const [statusResult, modelResult, datasetResult] = await Promise.all([
+    apiGet('/api/system/status'), apiGet('/api/models'), apiGet('/api/datasets')
+  ]);
+  const status = statusResult.ok ? statusResult.data : {};
+  models = modelResult.ok ? modelResult.data.models : [];
+  const datasets = datasetResult.ok ? datasetResult.data.datasets : [];
+  document.getElementById('systemCards').innerHTML =
+    '<div class="stat-card"><div class="value">' + (status.model_file_exists ? 'Found' : 'Missing') + '</div><div class="label">best.pt</div></div>' +
+    '<div class="stat-card"><div class="value">' + (status.inference_available ? 'Ready' : 'Fallback') + '</div><div class="label">Inference Service</div></div>' +
+    '<div class="stat-card"><div class="value">' + esc(status.active_model_version || '-') + '</div><div class="label">Active Version</div></div>';
+  document.getElementById('modelRows').innerHTML = models.map(model =>
+    '<tr><td>' + esc(model.model_version) + '</td><td>' + metric(model.map50) + '</td><td>' +
+    metric(model.precision) + '</td><td>' + metric(model.recall) + '</td><td>' + esc(model.status) +
+    '</td><td><button class="btn btn-sm btn-outline" onclick="evaluateModel(' + model.model_id + ')">Evaluate</button></td></tr>'
+  ).join('');
+  document.getElementById('deployChoices').innerHTML = models.map(model =>
+    '<button class="btn btn-outline" style="margin:0.25rem;" onclick="deployModel(' + model.model_id + ')">Deploy ' +
+    esc(model.model_version) + '</button>'
+  ).join('');
+  document.getElementById('trainingModel').innerHTML = models.map(model =>
+    '<option value="' + model.model_id + '">' + esc(model.model_version) + '</option>'
+  ).join('');
+  document.getElementById('trainingDataset').innerHTML = datasets.map(dataset =>
+    '<option value="' + dataset.dataset_id + '">' + esc(dataset.dataset_name) + '</option>'
+  ).join('');
+}
+
+// USER STORY E.1 Control call: preprocess one stored image.
+document.getElementById('runPreprocess').onclick = async function() {
+  const result = await apiPost('/api/system/preprocess/' + document.getElementById('preprocessImageId').value, {
+    augment: document.getElementById('augmentImage').checked
+  });
+  document.getElementById('preprocessMsg').textContent = result.ok
+    ? 'Completed and saved: ' + result.data.steps.join(', ') : (result.error || 'Preprocessing failed.');
+};
+
+// USER STORY E.2 Control call: queue or execute an Ultralytics training run.
+document.getElementById('queueTraining').onclick = async function() {
+  const executeLocal = document.getElementById('executeLocal').checked;
+  const result = await apiPost('/api/training-runs', {
+    model_id: Number(document.getElementById('trainingModel').value),
+    dataset_id: Number(document.getElementById('trainingDataset').value),
+    dataset_yaml: document.getElementById('datasetYaml').value,
+    execute_local: executeLocal,
+    hyperparameters: { epochs: Number(document.getElementById('epochs').value), image_size: 640, batch: 16 }
+  });
+  document.getElementById('trainingMsg').textContent = result.ok ? result.data.execution : (result.error || 'Training could not start.');
+};
+
+// USER STORY E.3 Control call: evaluate a registered model.
+async function evaluateModel(modelId) {
+  const result = await apiPost('/api/models/' + modelId + '/evaluate', {
+    dataset_yaml: document.getElementById('evaluationYaml').value
+  });
+  document.getElementById('evaluationMsg').textContent = result.ok
+    ? 'Evaluation complete: mAP50 ' + metric(result.data.metrics.map50) +
+      ', precision ' + metric(result.data.metrics.precision) +
+      ', recall ' + metric(result.data.metrics.recall)
+    : (result.error || 'Evaluation failed.');
+  if (result.ok) loadSystem();
+}
+
+// USER STORY E.4 Control call: health-check and activate model weights.
+async function deployModel(modelId) {
+  const result = await apiPost('/api/models/' + modelId + '/deploy', {});
+  alert(result.ok ? 'Health check passed and model deployed.' : (result.error || 'Deployment failed.'));
+  if (result.ok) loadSystem();
+}
+
+// USER STORY E.5 Control call: register version, parent, path, and changelog.
+document.getElementById('registerModel').onclick = async function() {
+  const result = await apiPost('/api/models', {
+    model_name: 'Maize Tassel Detector',
+    model_version: document.getElementById('newVersion').value,
+    weights_path: document.getElementById('weightsPath').value,
+    parent_model_id: models.find(model => model.status === 'active')?.model_id,
+    changelog: document.getElementById('changelog').value
+  });
+  document.getElementById('registerMsg').textContent = result.ok ? 'Version registered with parent and changelog.' : (result.error || 'Registration failed.');
+  if (result.ok) loadSystem();
+};
+
+loadSystem();
+</script>
+</body>
+</html>

@@ -27,9 +27,10 @@
 <body>
 
 <div class="container">
+  <!-- SHARED BOUNDARY: A.7/A.8 access, D.1 accounts, and D.5 role permissions. -->
   <div class="login-card card">
     <h2>Maize Detector</h2>
-    <p class="sub">FYP-26-S2-7 | Role-based prototype access</p>
+    <p class="sub">FYP-26-S2-7 | Secure role-based access</p>
 
     <div id="errorBox"></div>
 
@@ -105,6 +106,7 @@ function setAuthMode(mode) {
   document.getElementById('errorBox').innerHTML = '';
 }
 
+// SHARED CONTROL CALL: POST /api/auth/login, then route by server role.
 async function handleLogin() {
   var email = document.getElementById('email').value.trim();
   var password = document.getElementById('password').value;
@@ -131,6 +133,7 @@ async function handleLogin() {
   }
 }
 
+// USER STORY D.1 / A.8: create a Farmer account through /api/auth/register.
 async function handleCreateAccount() {
   var name = document.getElementById('newName').value.trim();
   var email = document.getElementById('newEmail').value.trim();

@@ -3,107 +3,103 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Maize Detector — System Report</title>
+<title>Maize Detector - Visual Report</title>
 <link rel="stylesheet" href="../css/style.css">
 </head>
 <body>
-
 <nav class="nav" id="mainNav"></nav>
-
 <div class="container">
-  <h2 class="page-title">System Report</h2>
-  <p class="page-subtitle">Daily / Weekly / Monthly operation summary</p>
+  <!-- USER STORY B.6 Boundary: choose date range, fields, and report type. -->
+  <h2 class="page-title">Generate Visual Report</h2>
+  <p class="page-subtitle">Select fields and a date range, then save a report with chart data</p>
 
-  <!-- Tabs (B.5 BCE: ReportPage navigation) -->
-  <div class="tabs">
-    <button class="tab active" onclick="switchTab(this, 'daily')">Daily</button>
-    <button class="tab" onclick="switchTab(this, 'weekly')">Weekly</button>
-    <button class="tab" onclick="switchTab(this, 'monthly')">Monthly</button>
+  <div class="card" id="reportControls">
+    <div style="display:flex;gap:0.75rem;flex-wrap:wrap;">
+      <div class="form-group"><label>From</label><input id="reportFrom" type="date"></div>
+      <div class="form-group"><label>To</label><input id="reportTo" type="date"></div>
+      <div class="form-group"><label>Report Type</label>
+        <select id="reportType"><option>daily</option><option selected>weekly</option><option>monthly</option></select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Fields</label>
+      <div id="fieldChoices" style="display:flex;gap:1rem;flex-wrap:wrap;"></div>
+    </div>
+    <button class="btn btn-primary" id="generateReport">Generate Report</button>
+    <span id="reportMessage" class="info-text" style="margin-left:0.75rem;"></span>
   </div>
 
   <div id="reportContent"></div>
-
-  <!-- Export PDF (B.5 BCE: exportPDF) -->
-  <div style="margin-top:1rem;">
-    <button class="btn btn-primary" onclick="exportPDF()">Export Report as PDF</button>
-  </div>
+  <button class="btn btn-outline" id="exportPdf" style="display:none;" onclick="window.print()">Export PDF</button>
 </div>
 
 <script src="../js/api.js"></script>
 <script src="../js/auth.js"></script>
 <script>
-setActiveNav();
-
 if (!requireRole(["Researcher"])) throw new Error('Access denied');
 initNav();
 
+function defaultDates() {
+  const to = new Date();
+  const from = new Date(to);
+  from.setDate(to.getDate() - 30);
+  document.getElementById('reportTo').value = to.toISOString().slice(0, 10);
+  document.getElementById('reportFrom').value = from.toISOString().slice(0, 10);
+}
 
+async function loadFields() {
+  const response = await apiGet('/api/fields');
+  const fields = response.ok ? response.data.fields : [];
+  document.getElementById('fieldChoices').innerHTML = fields.map(field =>
+    '<label class="toggle"><input class="report-field" type="checkbox" value="' +
+    field.field_id + '" checked> ' + esc(field.field_name) + '</label>'
+  ).join('') || '<span class="info-text">No fields configured; all detections will be included.</span>';
+}
 
-// Fallback mock data in case API is unavailable
-const fallbackData = {
-  daily: { report_type: 'daily', report_date: '2026-06-13', total_uploads: 24, successful_detections: 22, failed_detections: 2, average_tassel_count: 31 },
-  weekly: { report_type: 'weekly', report_date: '2026-06-13', total_uploads: 148, successful_detections: 139, failed_detections: 9, average_tassel_count: 33 },
-  monthly: { report_type: 'monthly', report_date: '2026-06-01', total_uploads: 520, successful_detections: 496, failed_detections: 24, average_tassel_count: 34 },
+// USER STORY B.6 Boundary rendering: show persisted summary and chart data.
+function renderGeneratedReport(data) {
+  const report = data.report;
+  const chart = data.chart_data;
+  const max = Math.max(...chart.values, 1);
+  document.getElementById('reportContent').innerHTML =
+    '<div class="card"><h3 style="color:var(--green);">Saved Report #' + report.report_id + '</h3>' +
+    '<div class="card-grid"><div class="stat-card"><div class="value">' + report.total_uploads +
+    '</div><div class="label">Records</div></div><div class="stat-card"><div class="value">' +
+    Number(report.average_tassel_count || 0).toFixed(1) +
+    '</div><div class="label">Average Tassel Count</div></div></div>' +
+    '<h4>Detection Bar Chart</h4><div style="display:flex;align-items:end;gap:0.4rem;height:220px;padding:1rem;background:var(--gray-50);">' +
+    chart.values.map((value, index) =>
+      '<div style="flex:1;text-align:center;"><div style="height:' + Math.max(4, value / max * 160) +
+      'px;background:var(--green);"></div><small>' + esc(chart.labels[index]) + '<br>' + value + '</small></div>'
+    ).join('') + '</div><h4 style="margin-top:1rem;">Trend Line</h4>' +
+    '<p class="info-text">' + esc(chart.average_counts.join(' -> ')) + '</p>' +
+    '<div class="alert alert-success">' + esc(chart.summary) + '</div></div>';
+  document.getElementById('exportPdf').style.display = 'inline-flex';
+}
+
+// USER STORY B.6 Control call: aggregate records and save the report entity.
+document.getElementById('generateReport').onclick = async function() {
+  const button = this;
+  button.disabled = true;
+  document.getElementById('reportMessage').textContent = 'Querying and aggregating detection records...';
+  const fieldIds = Array.from(document.querySelectorAll('.report-field:checked')).map(item => Number(item.value));
+  const response = await apiPost('/api/reports', {
+    date_from: document.getElementById('reportFrom').value,
+    date_to: document.getElementById('reportTo').value,
+    field_ids: fieldIds,
+    report_type: document.getElementById('reportType').value
+  });
+  button.disabled = false;
+  if (!response.ok) {
+    document.getElementById('reportMessage').textContent = response.error || 'Report generation failed.';
+    return;
+  }
+  document.getElementById('reportMessage').textContent = 'Report saved.';
+  renderGeneratedReport(response.data);
 };
 
-const reportCache = {};
-
-async function renderReport(type) {
-  const el = document.getElementById('reportContent');
-  el.innerHTML = '<div class="card" style="text-align:center;padding:3rem;"><span class="spinner"></span> Loading report...</div>';
-
-  let d;
-  if (reportCache[type]) {
-    d = reportCache[type];
-  } else {
-    const res = await apiGet(`/api/report/${type}`);
-    if (res.ok && res.data.total_uploads !== undefined) {
-      d = res.data;
-      reportCache[type] = d;
-    } else {
-      d = fallbackData[type];
-    }
-  }
-
-  const success = d.successful_detections || 0;
-  const fail = d.failed_detections || 0;
-  const total = success + fail || 1;
-  const successPct = Math.round((success / total) * 100);
-  const failPct = 100 - successPct;
-
-  el.innerHTML = `<div class="card"><h3 style="color:var(--green);margin-bottom:0.75rem;">${type.charAt(0).toUpperCase() + type.slice(1)} Report &mdash; ${d.report_date || ''}</h3>
-    <div class="card-grid">
-      <div class="stat-card"><div class="value">${d.total_uploads || 0}</div><div class="label">Total Uploads</div></div>
-      <div class="stat-card"><div class="value">${success}</div><div class="label">Successful Detections</div></div>
-      <div class="stat-card"><div class="value" style="color:var(--red);">${fail}</div><div class="label">Failed Detections</div></div>
-      <div class="stat-card"><div class="value">${Number(d.average_tassel_count || 0).toFixed(1)}</div><div class="label">Avg Tassel Count</div></div>
-    </div>
-    <div style="margin-top:1.5rem;"><h4 style="margin-bottom:0.5rem;">Success Rate (Bar Chart)</h4>
-      <div style="background:var(--gray-100);border-radius:6px;height:40px;overflow:hidden;display:flex;">
-        <div style="background:var(--green);height:100%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:0.8rem;font-weight:600;width:${successPct}%;">Success (${successPct}%)</div>
-        ${fail > 0 ? `<div style="background:var(--red);height:100%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:0.8rem;font-weight:600;width:${failPct}%;">Fail (${failPct}%)</div>` : ''}
-      </div>
-    </div>
-    <div style="margin-top:1.5rem;"><h4 style="margin-bottom:0.5rem;">Detection Trend</h4>
-      <div style="background:var(--white);border:1px solid var(--gray-100);border-radius:6px;padding:1.5rem;text-align:center;">
-        <svg width="100%" height="150" viewBox="0 0 400 150"><polyline fill="none" stroke="var(--green)" stroke-width="3" points="20,120 80,100 140,110 200,85 260,95 320,60 380,40"/><circle cx="380" cy="40" r="4" fill="var(--green)"/></svg>
-        <p class="info-text">Detection count trending upward over the period</p>
-      </div>
-    </div>
-  </div>`;
-}
-
-function switchTab(tab, type) {
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  tab.classList.add('active');
-  renderReport(type);
-}
-
-function exportPDF() {
-  window.print();
-}
-
-renderReport('daily');
+defaultDates();
+loadFields();
 </script>
 </body>
 </html>

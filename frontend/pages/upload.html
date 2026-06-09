@@ -11,9 +11,11 @@
 <nav class="nav" id="mainNav"></nav>
 
 <div class="container">
+  <!-- USER STORY A.1 Boundary: select, validate, preview, and upload maize images. -->
   <h2 class="page-title">Upload Maize Image</h2>
   <p class="page-subtitle">Select maize field images for tassel detection (JPG / PNG only)</p>
 
+  <!-- USER STORY A.5 Boundary: enable multiple-image batch upload. -->
   <div class="card" style="margin-bottom:1rem;">
     <label class="toggle">
       <input type="checkbox" id="batchMode" onchange="toggleBatch()">
@@ -24,7 +26,8 @@
   <div class="card">
     <div class="form-group">
       <label>Select Image<small id="batchHint" style="display:none;"> - hold Ctrl/Cmd to select multiple</small></label>
-      <input type="file" id="fileInput" accept="image/jpeg,image/png" onchange="handleFiles(this.files)" style="padding:0.5rem;">
+      <!-- USER STORY A.7 Boundary: capture="environment" opens the rear camera on mobile. -->
+      <input type="file" id="fileInput" accept="image/jpeg,image/png" capture="environment" onchange="handleFiles(this.files)" style="padding:0.5rem;">
     </div>
 
     <div class="preview-box" id="previewBox">
@@ -32,12 +35,14 @@
     </div>
     <div id="fileInfo" class="info-text" style="margin-bottom:0.5rem;"></div>
 
+    <!-- USER STORIES A.5/A.6 Boundary: batch progress and response-time feedback. -->
     <div id="batchProgress" style="display:none;margin:1rem 0;">
       <div style="display:flex;justify-content:space-between;margin-bottom:0.3rem;"><span>Uploading...</span><span id="progressText">0/0</span></div>
       <div class="progress-bar"><div class="fill" id="progressFill" style="width:0%;"></div></div>
     </div>
 
     <div id="errorBox"></div>
+    <p id="estimateText" class="info-text"></p>
 
     <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-top:1rem;">
       <button class="btn btn-primary btn-lg" id="analyzeBtn" onclick="submitUpload()" disabled>
@@ -60,6 +65,7 @@ initNav();
 let selectedFiles = [];
 let isBatch = false;
 
+// USER STORY A.5 Control call preparation: switch between single and batch input.
 function toggleBatch() {
   isBatch = document.getElementById('batchMode').checked;
   document.getElementById('fileInput').multiple = isBatch;
@@ -69,6 +75,7 @@ function toggleBatch() {
   updatePreview();
 }
 
+// USER STORIES A.1/A.7 Boundary validation: accept mobile or desktop JPG/PNG files.
 function handleFiles(files) {
   selectedFiles = [];
   document.getElementById('errorBox').innerHTML = '';
@@ -120,9 +127,13 @@ function fileToDataUrl(file) {
   });
 }
 
+// USER STORIES A.1/A.2: frontend-to-backend sequence (/api/upload -> /api/predict).
 async function uploadAndPredict(file) {
   const sessionUser = currentUser();
   const uploadRes = await apiUpload(file, sessionUser ? sessionUser.user_id : 1);
+  if (!uploadRes.ok) {
+    return { ok: false, error: uploadRes.error || 'Upload failed', fileName: file.name };
+  }
   const imageId = uploadRes.ok ? uploadRes.data.image_id : null;
   const imageName = uploadRes.ok ? uploadRes.data.image_name : file.name;
   const predictRes = await apiPost('/api/predict', {
@@ -130,37 +141,61 @@ async function uploadAndPredict(file) {
     image_name: imageName,
     file_size: file.size,
   });
-  return predictRes.ok ? normalizeResult(predictRes.data) : mockPredict(file.name);
+  return predictRes.ok
+    ? { ok: true, result: normalizeResult(predictRes.data) }
+    : { ok: false, error: predictRes.error || 'Detection failed', fileName: file.name };
 }
 
+// USER STORIES A.5/A.6: process the queue and display progress/estimated time.
 async function submitUpload() {
   if (selectedFiles.length === 0) return;
   const btn = document.getElementById('analyzeBtn');
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Analyzing...';
+  document.getElementById('estimateText').textContent =
+    `Estimated time: ${selectedFiles.length * 3}-${selectedFiles.length * 6} seconds`;
 
   if (selectedFiles.length > 1) {
     const progDiv = document.getElementById('batchProgress');
     progDiv.style.display = 'block';
     let success = 0;
+    let failed = 0;
     let lastResult = null;
+    let lastSuccessFile = null;
     for (let i = 0; i < selectedFiles.length; i++) {
       document.getElementById('progressText').textContent = `${i + 1}/${selectedFiles.length}`;
       document.getElementById('progressFill').style.width = ((i + 1) / selectedFiles.length * 100) + '%';
       await new Promise(r => setTimeout(r, 600 + Math.random() * 400));
-      lastResult = await uploadAndPredict(selectedFiles[i]);
-      success++;
+      const outcome = await uploadAndPredict(selectedFiles[i]);
+      if (outcome.ok) {
+        lastResult = outcome.result;
+        lastSuccessFile = selectedFiles[i];
+        success++;
+      } else {
+        failed++;
+        showError(`${outcome.fileName}: ${outcome.error}`);
+      }
     }
     document.getElementById('batchProgress').style.display = 'none';
-    const lastFile = selectedFiles[selectedFiles.length - 1];
-    sessionStorage.setItem('lastResult', JSON.stringify(lastResult));
-    const previewUrl = await fileToDataUrl(lastFile);
-    if (previewUrl) sessionStorage.setItem('lastImageDataUrl', previewUrl);
-    document.getElementById('errorBox').innerHTML = `<div class="alert alert-success"><strong>Batch complete:</strong> ${success}/${selectedFiles.length} processed. Redirecting to result...</div>`;
-    setTimeout(() => location.href = 'result.html', 1500);
+    if (lastResult) {
+      sessionStorage.setItem('lastResult', JSON.stringify(lastResult));
+      const previewUrl = await fileToDataUrl(lastSuccessFile);
+      if (previewUrl) sessionStorage.setItem('lastImageDataUrl', previewUrl);
+    }
+    document.getElementById('errorBox').innerHTML +=
+      `<div class="alert ${failed ? 'alert-warning' : 'alert-success'}"><strong>Batch complete:</strong> ${success} successful, ${failed} failed.</div>`;
+    if (lastResult) setTimeout(() => location.href = 'result.html', 1500);
   } else {
     await new Promise(r => setTimeout(r, 800 + Math.random() * 500));
-    const result = await uploadAndPredict(selectedFiles[0]);
+    const outcome = await uploadAndPredict(selectedFiles[0]);
+    if (!outcome.ok) {
+      showError(outcome.error);
+      btn.disabled = false;
+      btn.textContent = 'Analyze';
+      document.getElementById('estimateText').textContent = '';
+      return;
+    }
+    const result = outcome.result;
     sessionStorage.setItem('lastResult', JSON.stringify(result));
     const previewUrl = await fileToDataUrl(selectedFiles[0]);
     if (previewUrl) sessionStorage.setItem('lastImageDataUrl', previewUrl);
@@ -169,6 +204,7 @@ async function submitUpload() {
   }
   btn.disabled = false;
   btn.textContent = 'Analyze';
+  document.getElementById('estimateText').textContent = '';
 }
 
 function resetUpload() {
@@ -177,6 +213,7 @@ function resetUpload() {
   document.getElementById('errorBox').innerHTML = '';
   document.getElementById('batchProgress').style.display = 'none';
   sessionStorage.removeItem('lastImageDataUrl');
+  document.getElementById('estimateText').textContent = '';
   updatePreview();
 }
 </script>

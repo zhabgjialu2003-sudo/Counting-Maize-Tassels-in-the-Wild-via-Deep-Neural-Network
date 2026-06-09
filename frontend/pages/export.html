@@ -11,6 +11,7 @@
 <nav class="nav" id="mainNav"></nav>
 
 <div class="container">
+  <!-- USER STORY B.2 Boundary: select records, date range, and output format. -->
   <h2 class="page-title">Export Detection Results</h2>
   <p class="page-subtitle">Download analysis records in standard formats</p>
 
@@ -20,11 +21,11 @@
     <div style="display:flex;gap:0.75rem;flex-wrap:wrap;">
       <div class="form-group" style="flex:1;min-width:150px;">
         <label>From Date</label>
-        <input type="date" id="dateFrom">
+        <input type="date" id="dateFrom" onchange="renderRecords()">
       </div>
       <div class="form-group" style="flex:1;min-width:150px;">
         <label>To Date</label>
-        <input type="date" id="dateTo">
+        <input type="date" id="dateTo" onchange="renderRecords()">
       </div>
       <!-- Format (B.2 BCE: chooseFormat) -->
       <div class="form-group" style="flex:1;min-width:150px;">
@@ -63,39 +64,64 @@ initNav();
 
 let records = [];
 
+// USER STORY B.2 Control call: GET /api/history supplies exportable records.
 async function loadExportData() {
   const res = await apiGet('/api/history');
   if (res.ok && Array.isArray(res.data.records)) {
     records = res.data.records.map(r => normalizeResult(r)).map(r => ({...r, selected: false}));
   } else {
-    records = MockData.results.map(r => normalizeResult(r)).map(r => ({...r, selected: false}));
+    records = [];
+    document.getElementById('recordTable').innerHTML =
+      '<tr><td colspan="5" class="info-text">Unable to load export data from the backend.</td></tr>';
+    return;
   }
   renderRecords();
 }
 
 function renderRecords() {
-  document.getElementById('recordTable').innerHTML = records.map((r, i) =>
+  const from = document.getElementById('dateFrom').value;
+  const to = document.getElementById('dateTo').value;
+  document.getElementById('recordTable').innerHTML = records.map((r, i) => ({r, i}))
+    .filter(item => (!from || item.r.createdAt.slice(0, 10) >= from) && (!to || item.r.createdAt.slice(0, 10) <= to))
+    .map(({r, i}) =>
     `<tr><td><input type="checkbox" onchange="toggleRecord(${i}, this)"></td><td>${esc(r.imageName)}</td><td>${formatDate(r.createdAt)}</td><td>${r.tasselCount}</td><td><span class="badge badge-green">${formatPercent(r.confidenceScore)}</span></td></tr>`
   ).join('');
+  updateCount();
 }
 
-function toggleAll(cb) { records.forEach(r => r.selected = cb.checked); updateCount(); }
+function inDateRange(record) {
+  const from = document.getElementById('dateFrom').value;
+  const to = document.getElementById('dateTo').value;
+  return (!from || record.createdAt.slice(0, 10) >= from) &&
+    (!to || record.createdAt.slice(0, 10) <= to);
+}
+function toggleAll(cb) { records.filter(inDateRange).forEach(r => r.selected = cb.checked); updateCount(); }
 function toggleRecord(i, cb) { records[i].selected = cb.checked; updateCount(); }
 function updateCount() {
-  const n = records.filter(r => r.selected).length;
+  const n = records.filter(r => r.selected && inDateRange(r)).length;
   document.getElementById('selectedCount').textContent = n;
   document.getElementById('downloadBtn').disabled = n === 0;
 }
 
+// USER STORY B.2 Boundary logic: build an escaped CSV or JSON download.
 function exportData() {
-  const selected = records.filter(r => r.selected);
+  const from = document.getElementById('dateFrom').value;
+  const to = document.getElementById('dateTo').value;
+  const selected = records.filter(r =>
+    r.selected &&
+    (!from || r.createdAt.slice(0, 10) >= from) &&
+    (!to || r.createdAt.slice(0, 10) <= to)
+  );
   if (selected.length === 0) return;
   const fmt = document.getElementById('exportFormat').value;
   let content, filename;
 
   if (fmt === 'csv') {
     const headers = 'image_name,date,tassel_count,confidence';
-    const rows = selected.map(r => `${r.imageName},${r.createdAt},${r.tasselCount},${r.confidenceScore}`).join('\n');
+    const csv = value => '"' + String(value ?? '').replace(/"/g, '""') + '"';
+    const rows = selected.map(r =>
+      [r.imageName, r.createdAt, r.tasselCount, r.confidenceScore].map(csv).join(',')
+    ).join('\n');
     content = headers + '\n' + rows;
     filename = `maize_results_${new Date().toISOString().slice(0,10)}.csv`;
   } else {

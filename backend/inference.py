@@ -1,8 +1,7 @@
 """YOLO inference module for Maize Tassel Detection.
 
 Loads the trained YOLO model and provides a detect() function
-that returns results in the same format as the existing mock data,
-so the /api/predict endpoint can swap between mock and real seamlessly.
+that returns a stable response format for the `/api/predict` endpoint.
 
 Supports SAHI-style tiling: large images are split into overlapping
 640x640 tiles, inference runs on each tile, and results are merged
@@ -17,6 +16,7 @@ Usage:
 from __future__ import annotations
 
 import json
+import hashlib
 import logging
 import time
 from pathlib import Path
@@ -93,6 +93,7 @@ class YOLOPredictor:
         self._model_path = model_path or DEFAULT_MODEL_PATH
         self._model: Any = None  # ultralytics.YOLO or None
         self._available: bool | None = None
+        self._cache: dict[str, dict[str, Any]] = {}
 
     @property
     def available(self) -> bool:
@@ -101,11 +102,27 @@ class YOLOPredictor:
             self._available = self._model is not None
         return self._available
 
-    def _detect_single(self, image: np.ndarray) -> list[dict]:
+    def _detect_single(
+        self,
+        image: np.ndarray,
+        image_size: int = 640,
+        confidence_threshold: float = CONF_THRESHOLD,
+    ) -> list[dict]:
         """Run inference on a single image array (no tiling)."""
         from PIL import Image as PILImage
         tmp = PILImage.fromarray(image)
-        results = self._model.predict(tmp, verbose=False, conf=CONF_THRESHOLD, device="cpu")
+        try:
+            import torch
+            device = 0 if torch.cuda.is_available() else "cpu"
+        except ImportError:
+            device = "cpu"
+        results = self._model.predict(
+            tmp,
+            verbose=False,
+            conf=confidence_threshold,
+            device=device,
+            imgsz=image_size,
+        )
         result = results[0]
 
         boxes = []
@@ -121,18 +138,32 @@ class YOLOPredictor:
                 })
         return boxes
 
-    def detect(self, image_path: Path | str) -> dict[str, Any]:
-        """Run inference with automatic SAHI tiling for large images."""
+    def detect(self, image_path: Path | str, mode: str = "fast") -> dict[str, Any]:
+        """Run fast web inference or accurate SAHI research inference."""
         if not self.available:
             raise RuntimeError("YOLO model is not available for inference")
+
+        image_path = Path(image_path)
+        cache_key = hashlib.sha256(image_path.read_bytes()).hexdigest() + f":{mode}"
+        if cache_key in self._cache:
+            cached = dict(self._cache[cache_key])
+            cached["processing_time"] = 0.0
+            cached["cache_hit"] = True
+            return cached
 
         t0 = time.perf_counter()
 
         img = np.array(Image.open(str(image_path)).convert("RGB"))
         H, W = img.shape[:2]
 
+        if mode == "fast":
+            all_boxes = self._detect_single(
+                img,
+                image_size=2560,
+                confidence_threshold=0.15,
+            )
         # If image is small enough, run single inference
-        if W <= TILE_SIZE * 1.5 and H <= TILE_SIZE * 1.5:
+        elif W <= TILE_SIZE * 1.5 and H <= TILE_SIZE * 1.5:
             all_boxes = self._detect_single(img)
         else:
             # SAHI tiling
@@ -174,7 +205,7 @@ class YOLOPredictor:
         avg_conf = round(float(np.mean([b["confidence"] for b in all_boxes]))
                          if all_boxes else 0.0, 4)
 
-        return {
+        output = {
             "tassel_count": len(all_boxes),
             "confidence_score": avg_conf,
             "bbox_data": {
@@ -184,7 +215,11 @@ class YOLOPredictor:
                 "image_height": H,
             },
             "processing_time": processing_time,
+            "cache_hit": False,
+            "inference_mode": mode,
         }
+        self._cache[cache_key] = dict(output)
+        return output
 
 
 # Singleton — initialised once per process
@@ -196,3 +231,13 @@ def get_predictor(model_path: Path | None = None) -> YOLOPredictor:
     if _predictor is None:
         _predictor = YOLOPredictor(model_path)
     return _predictor
+
+
+def activate_predictor(model_path: Path | str) -> YOLOPredictor:
+    """Load and activate a model only after its weights pass a health check."""
+    global _predictor
+    candidate = YOLOPredictor(Path(model_path))
+    if not candidate.available:
+        raise RuntimeError(f"Model could not be loaded from {model_path}")
+    _predictor = candidate
+    return candidate

@@ -11,8 +11,10 @@
 <nav class="nav" id="mainNav"></nav>
 
 <div class="container">
+  <!-- USER STORY A.3 Boundary: show a clear count, confidence, and processing time. -->
   <h2 class="page-title">Detection Result</h2>
   <p class="page-subtitle" id="imageNameLabel">Image: -</p>
+  <div id="sourceNotice" class="alert" style="margin-bottom:1rem;"></div>
 
   <div class="card" style="text-align:center;">
     <div style="font-size:4rem;font-weight:800;color:var(--green);" id="countDisplay">-</div>
@@ -30,6 +32,7 @@
     </div>
   </div>
 
+  <!-- USER STORY A.4 Boundary: display highlighted tassels and compare images. -->
   <div class="card" style="margin-top:1rem;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
       <h3 style="color:var(--green);">Image View</h3>
@@ -71,6 +74,7 @@ const uploadedImageDataUrl = sessionStorage.getItem('lastImageDataUrl');
 const params = new URLSearchParams(location.search);
 const resultId = params.get('id');
 
+// USER STORY A.3 Control call: retrieve one persisted detection result.
 async function loadResult() {
   if (stored) {
     try { resultData = normalizeResult(JSON.parse(stored)); } catch (e) { resultData = null; }
@@ -81,25 +85,29 @@ async function loadResult() {
     if (response.ok) resultData = normalizeResult(response.data);
   }
 
-  if (!resultData && resultId) {
-    const found = MockData.results.find(r => r.resultId === parseInt(resultId, 10));
-    resultData = found ? normalizeResult(found) : null;
+  if (!resultData) {
+    document.getElementById('sourceNotice').className = 'alert alert-error';
+    document.getElementById('sourceNotice').textContent =
+      'Result data is unavailable. Return to Upload and run a new detection.';
+    return;
   }
-
-  if (!resultData) resultData = normalizeResult(MockData.results[0]);
   displayResult(resultData);
   renderResultActions();
 }
 
 function displayResult(data) {
-  if (!data.bboxData && typeof mockBboxData === 'function') data.bboxData = mockBboxData();
+  const sourceNotice = document.getElementById('sourceNotice');
+  sourceNotice.className = 'alert alert-success';
+  sourceNotice.innerHTML =
+    '<strong>Real result:</strong> loaded from PostgreSQL and backend/models/best.pt.';
   document.getElementById('imageNameLabel').textContent = 'Image: ' + data.imageName;
   document.getElementById('countDisplay').textContent = data.tasselCount;
   document.getElementById('confidenceDisplay').textContent = formatPercent(data.confidenceScore);
   document.getElementById('timeDisplay').textContent = Number(data.processingTime || 0).toFixed(1) + 's';
 
   var imageId = data.imageId;
-  var dbUrl = imageId ? API_BASE + '/api/images/' + imageId + '/file/original' : null;
+  var token = sessionStorage.getItem('maize_access_token');
+  var dbUrl = imageId ? API_BASE + '/api/images/' + imageId + '/file/original?access_token=' + encodeURIComponent(token || '') : null;
   var fileUrl = (!resultId && uploadedImageDataUrl) || resolveAssetUrl(data.originalImagePath || data.imagePath);
   var imgUrl = dbUrl || fileUrl;
   var fallbackMsg = 'Maize Field Image - ' + data.tasselCount + ' Tassels Detected';
@@ -150,6 +158,7 @@ function displayResult(data) {
   document.getElementById('compareToggle').checked = false;
 }
 
+// USER STORY A.4 Boundary rendering: draw model bbox_data over the image.
 function renderAnnotationOverlay(data, hasRealImage) {
   const overlay = document.getElementById('annotationOverlay');
   const bbox = data.bboxData;
@@ -194,6 +203,7 @@ function saveResult() {
   location.href = currentRole() === 'Researcher' ? 'history.html' : 'dashboard.html';
 }
 
+// USER STORY B.1 Boundary: Researchers can flag a result for review.
 function renderResultActions() {
   const role = currentRole();
   const el = document.getElementById('resultActions');
@@ -201,6 +211,7 @@ function renderResultActions() {
     el.innerHTML =
       '<a href="history.html" class="btn btn-primary">View History</a>' +
       '<a href="export.html" class="btn btn-outline">Export Result</a>' +
+      '<button class="btn btn-outline" onclick="flagResult()">Flag for Review</button>' +
       '<a href="researcher.html" class="btn btn-outline">Researcher Dashboard</a>';
     return;
   }
@@ -208,6 +219,14 @@ function renderResultActions() {
     '<button class="btn btn-primary" onclick="saveResult()">Save Result</button>' +
     '<a href="upload.html" class="btn btn-outline">Upload Another</a>' +
     '<a href="dashboard.html" class="btn btn-outline">Farmer Dashboard</a>';
+}
+
+// USER STORY B.1 Control call: persist the quality review note.
+async function flagResult() {
+  const note = prompt('Why should this result be reviewed?');
+  if (!note || !resultData.resultId) return;
+  const response = await apiPost('/api/results/' + resultData.resultId + '/flag', { note });
+  alert(response.ok ? 'Result flagged for review.' : 'Could not flag this result.');
 }
 
 loadResult();

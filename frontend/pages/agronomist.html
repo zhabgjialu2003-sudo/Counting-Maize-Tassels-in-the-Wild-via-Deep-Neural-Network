@@ -3,87 +3,201 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Maize Detector — Agronomist Dashboard</title>
+<title>Maize Detector - Agronomist Dashboard</title>
 <link rel="stylesheet" href="../css/style.css">
 </head>
 <body>
-
 <nav class="nav" id="mainNav"></nav>
-
 <div class="container">
+  <!-- AGRONOMIST BOUNDARY: all Agronomist stories appear below in BCE order. -->
   <h2 class="page-title">Agronomist Dashboard</h2>
-  <p class="page-subtitle">Multi-field monitoring, health evaluation, and insights</p>
-
-  <!-- Tabs for different BCE AgronomistPage functions -->
-  <div class="tabs">
-    <button class="tab active" onclick="switchTab(this, 'dashboard')">Multi-Field (C.4)</button>
-    <button class="tab" onclick="switchTab(this, 'health')">Health (C.1)</button>
-    <button class="tab" onclick="switchTab(this, 'growth')">Growth (C.2)</button>
-    <button class="tab" onclick="switchTab(this, 'alerts')">Alerts (C.3)</button>
-    <button class="tab" onclick="switchTab(this, 'insights')">Insights (C.5)</button>
+  <p class="page-subtitle">Multi-field monitoring, health evaluation, and actionable insights</p>
+  <div class="tabs" id="tabs">
+    <button class="tab active" data-tab="health">Health (C.1)</button>
+    <button class="tab" data-tab="growth">Growth (C.2)</button>
+    <button class="tab" data-tab="alerts">Alerts (C.3)</button>
+    <button class="tab" data-tab="dashboard">Multi-Field (C.4)</button>
+    <button class="tab" data-tab="insights">Insights (C.5)</button>
   </div>
-
   <div id="tabContent"></div>
 </div>
-
 <script src="../js/api.js"></script>
 <script src="../js/auth.js"></script>
 <script>
-setActiveNav();
-
 if (!requireRole(["Agronomist"])) throw new Error('Access denied');
 initNav();
 
+let fields = [];
+let latestInsights = null;
 
-let fields = MockData.fields;
+document.getElementById('tabs').addEventListener('click', function(event) {
+  const tab = event.target.closest('.tab');
+  if (!tab) return;
+  document.querySelectorAll('.tab').forEach(item => item.classList.remove('active'));
+  tab.classList.add('active');
+  renderTab(tab.dataset.tab);
+});
 
 async function loadFields() {
-  const res = await apiGet('/api/fields');
-  if (res.ok && Array.isArray(res.data.fields)) {
-    fields = res.data.fields.map(f => ({
-      fieldId: f.field_id, fieldName: f.field_name,
-      location: f.location, status: f.health_status === 'At-Risk' ? 'Warning' : 'Healthy',
-      latestAvgCount: f.latest_avg_count, baselineCount: f.baseline_count || 30,
-      healthStatus: f.health_status || 'Healthy'
-    }));
-  }
-  renderTab('dashboard');
+  const result = await apiGet('/api/fields');
+  fields = result.ok && Array.isArray(result.data.fields)
+    ? result.data.fields.map(normalizeField)
+    : [];
+  renderTab('health');
 }
 
-function switchTab(tab, type) {
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  tab.classList.add('active');
-  renderTab(type);
+function normalizeField(field) {
+  return {
+    fieldId: field.field_id ?? field.fieldId,
+    fieldName: field.field_name ?? field.fieldName,
+    location: field.location,
+    latestAvgCount: Number(field.latest_avg_count ?? field.latestAvgCount ?? 0),
+    baselineCount: Number(field.baseline_count ?? field.baselineCount ?? 0),
+    healthStatus: field.health_status ?? field.healthStatus ?? 'Healthy',
+    anomalyFlag: Boolean(field.anomaly_flag ?? field.anomalyFlag),
+  };
 }
 
 function renderTab(type) {
   const el = document.getElementById('tabContent');
   if (type === 'dashboard') {
-    // C.4 BCE: AgronomistPage — showFieldGrid + showStatusBadge + filterByRegion
-    el.innerHTML = `<div><div class="form-group" style="max-width:250px;margin-bottom:1rem;"><label>Filter by Region</label><select onchange="filterFields(this.value)"><option value="">All Regions</option><option>North Region</option><option>East Region</option><option>South Region</option></select></div><div class="field-grid" id="fieldGrid">${renderFieldCards(fields)}</div></div>`;
-  } else if (type === 'health') {
-    // C.1 BCE: AgronomistPage — showHealthIndicator + showTasselCount + addRecommendation
-    const f = fields[1]; // default to Field B (at-risk)
-    el.innerHTML = `<div class="card"><h3 style="color:var(--green);">${f.fieldName} — Health Evaluation</h3><div class="card-grid" style="margin-top:1rem;"><div class="stat-card"><div class="value">${f.latestAvgCount}</div><div class="label">Latest Tassel Count</div></div><div class="stat-card"><div class="value">${f.baselineCount}</div><div class="label">Baseline Count</div></div><div class="stat-card"><div class="value" style="color:${f.healthStatus==='Healthy'?'var(--green)':'var(--red)'};">${f.healthStatus}</div><div class="label">Health Status</div></div></div><div class="form-group" style="margin-top:1rem;"><label>Recommendation</label><textarea rows="3" placeholder="Enter farming recommendation..."></textarea></div><button class="btn btn-primary" onclick="alert('Evaluation saved! Notification sent to farmer.')">Submit Evaluation</button></div>`;
-  } else if (type === 'growth') {
-    // C.2 BCE: AgronomistPage — showGrowthChart + selectTimeRange + showWeeklyAverage
-    el.innerHTML = `<div class="card"><div style="display:flex;gap:0.75rem;align-items:end;margin-bottom:1rem;"><div class="form-group" style="margin-bottom:0;"><label>Select Field</label><select>${fields.map(f=>`<option>${f.fieldName}</option>`).join('')}</select></div><div class="form-group" style="margin-bottom:0;"><label>Period (weeks)</label><select><option>2</option><option selected>4</option><option>8</option></select></div></div><h4>Weekly Average Tassel Counts</h4><div style="display:flex;align-items:end;gap:1.5rem;height:220px;padding:1rem;background:var(--gray-50);border-radius:6px;"><div style="text-align:center;"><div style="width:60px;height:80px;background:var(--green-light);border-radius:6px 6px 0 0;"></div><small>Wk1 (20)</small></div><div style="text-align:center;"><div style="width:60px;height:100px;background:var(--green-light);border-radius:6px 6px 0 0;"></div><small>Wk2 (25)</small></div><div style="text-align:center;"><div style="width:60px;height:124px;background:var(--green-light);border-radius:6px 6px 0 0;"></div><small>Wk3 (31)</small></div><div style="text-align:center;"><div style="width:60px;height:140px;background:var(--green);border-radius:6px 6px 0 0;"></div><small>Wk4 (35)</small></div></div><p class="info-text" style="margin-top:1rem;">Growth Rate: <strong style="color:var(--green)">+15/week</strong> | Stage: <strong>VT Tasseling</strong></p></div>`;
-  } else if (type === 'alerts') {
-    // C.3 BCE: AgronomistPage — highlightAnomaly + showWarningBadge + requestReview
-    el.innerHTML = `<div class="card"><div class="alert alert-warning" style="display:flex;align-items:center;gap:0.5rem;"><span style="font-size:1.5rem;">&#9888;</span><div><strong>Abnormal Pattern Detected — Field B (East)</strong><br>Tassel count: 18 (Baseline: 30). Drop of 40% on Mon/Tue. Possible irrigation issue.</div></div>${fields.map(f=>`<div class="card" style="display:flex;justify-content:space-between;align-items:center;border:1px solid var(--gray-100);margin-bottom:0.5rem;"><div><strong>${f.fieldName}</strong> — ${f.location}<br><small>Baseline: ${f.baselineCount} | Latest: ${f.latestAvgCount}</small></div><span class="badge ${f.healthStatus==='Healthy'?'badge-green':'badge-red'}">${f.healthStatus==='Healthy'?'Normal':'Anomaly'}</span><button class="btn btn-sm btn-outline" onclick="alert('Review requested for ${f.fieldName}')">Review</button></div>`).join('')}</div>`;
-  } else if (type === 'insights') {
-    // C.5 BCE: AgronomistPage — showInsightCards + showRecommendation + exportSummary
-    el.innerHTML = `<div class="card"><h3 style="color:var(--green);">Key Takeaways</h3><div class="card" style="border-left:4px solid var(--green);">All fields show healthy tassel counts except Field B</div><div class="card" style="border-left:4px solid var(--red);">Field B: 20% tassel deficit detected — inspect irrigation before next survey</div><div class="card" style="border-left:4px solid var(--gold);">Field A: Growth rate consistent with VT tasseling stage</div><button class="btn btn-outline" style="margin-top:1rem;" onclick="alert('Summary exported!')">Export Summary</button></div>`;
+    el.innerHTML = '<div class="form-group" style="max-width:260px;"><label>Filter by Region</label>' +
+      '<select id="regionFilter"><option value="">All Regions</option><option>North Region</option><option>East Region</option><option>South Region</option></select></div>' +
+      '<div class="field-grid" id="fieldGrid">' + renderFieldCards(fields) + '</div>';
+    el.querySelector('#regionFilter').onchange = async function() {
+      const selected = this.value;
+      const response = await apiGet('/api/fields' + (selected ? '?region=' + encodeURIComponent(selected) : ''));
+      const visible = response.ok ? response.data.fields.map(normalizeField) : fields;
+      el.querySelector('#fieldGrid').innerHTML = renderFieldCards(visible);
+    };
+    return;
   }
+  if (type === 'health') {
+    el.innerHTML = '<div class="card"><div class="form-group"><label>Select Field</label><select id="healthField">' +
+      fields.map(field => '<option value="' + field.fieldId + '">' + esc(field.fieldName) + '</option>').join('') +
+      '</select></div><div id="healthResult"></div></div>';
+    el.querySelector('#healthField').onchange = loadHealth;
+    loadHealth();
+    return;
+  }
+  if (type === 'growth') {
+    el.innerHTML = '<div class="card"><div style="display:flex;gap:0.75rem;flex-wrap:wrap;align-items:end;">' +
+      '<div class="form-group"><label>Field</label><select id="growthField">' +
+      fields.map(field => '<option value="' + field.fieldId + '">' + esc(field.fieldName) + '</option>').join('') +
+      '</select></div><div class="form-group"><label>Weeks</label><select id="growthWeeks"><option>2</option><option selected>4</option><option>8</option></select></div>' +
+      '<button class="btn btn-primary" id="loadGrowth">Load Trend</button></div><div id="growthChart"></div></div>';
+    el.querySelector('#loadGrowth').onclick = loadGrowth;
+    loadGrowth();
+    return;
+  }
+  if (type === 'alerts') {
+    el.innerHTML = '<div class="card"><h3 style="color:var(--green);">Abnormal Pattern Review</h3>' +
+      '<div id="alertList"><span class="spinner"></span> Scanning all fields...</div></div>';
+    loadAlerts();
+    return;
+  }
+  el.innerHTML = '<div class="card"><h3 style="color:var(--green);">Summarized Insights</h3><div id="insights"><span class="spinner"></span> Loading...</div>' +
+    '<button class="btn btn-outline" id="exportInsights">Export Summary</button></div>';
+  el.querySelector('#exportInsights').onclick = exportInsights;
+  loadInsights();
 }
 
-function renderFieldCards(fields) {
-  return fields.map(f => `<div class="card" style="text-align:center;border:2px solid ${f.status==='Warning'?'var(--red)':'var(--green-light)'};"><h3>${f.fieldName}</h3><p class="info-text">${f.location}</p><div style="font-size:2rem;font-weight:700;color:${f.status==='Warning'?'var(--red)':'var(--green)'};">${f.latestAvgCount}</div><div>Avg Tassel Count</div><span class="badge ${f.status==='Healthy'?'badge-green':'badge-red'}" style="margin-top:0.5rem;">${f.status}</span></div>`).join('');
+function renderFieldCards(items) {
+  return items.map(field => {
+    const warning = field.anomalyFlag || field.healthStatus !== 'Healthy';
+    return '<div class="card" style="text-align:center;border:2px solid ' + (warning ? 'var(--red)' : 'var(--green-light)') + ';">' +
+      '<h3>' + esc(field.fieldName) + '</h3><p class="info-text">' + esc(field.location) + '</p>' +
+      '<div style="font-size:2rem;font-weight:700;color:' + (warning ? 'var(--red)' : 'var(--green)') + ';">' + field.latestAvgCount + '</div>' +
+      '<div>Average Tassel Count</div><span class="badge ' + (warning ? 'badge-red' : 'badge-green') + '">' +
+      (warning ? 'Review' : 'Healthy') + '</span></div>';
+  }).join('');
 }
 
-function filterFields(region) {
-  const filtered = region ? fields.filter(f => f.location === region) : fields;
-  document.getElementById('fieldGrid').innerHTML = renderFieldCards(filtered);
+// USER STORY C.1 Control call: evaluate field health.
+async function loadHealth() {
+  const fieldId = document.getElementById('healthField').value;
+  const result = await apiGet('/api/fields/' + fieldId + '/health');
+  if (!result.ok) return;
+  const data = result.data;
+  document.getElementById('healthResult').innerHTML =
+    '<div class="card-grid"><div class="stat-card"><div class="value">' + data.field.latest_avg_count + '</div><div class="label">Latest Count</div></div>' +
+    '<div class="stat-card"><div class="value">' + data.field.baseline_count + '</div><div class="label">Baseline</div></div>' +
+    '<div class="stat-card"><div class="value">' + esc(data.health) + '</div><div class="label">Health Status</div></div></div>' +
+    '<div class="alert alert-warning">' + esc(data.recommendation) + '</div>' +
+    '<div class="form-group"><label>Recommendation Note</label><textarea id="recommendationNote" rows="3"></textarea></div>' +
+    '<button class="btn btn-primary" onclick="saveRecommendation(' + fieldId + ')">Save Recommendation</button> <span id="recommendationMsg"></span>';
+}
+
+// USER STORY C.1 Control call: persist an agronomist recommendation.
+async function saveRecommendation(fieldId) {
+  const note = document.getElementById('recommendationNote').value.trim();
+  if (!note) return;
+  const result = await apiPost('/api/fields/' + fieldId + '/recommendations', { note });
+  document.getElementById('recommendationMsg').textContent = result.ok ? 'Saved.' : 'Save failed.';
+}
+
+function openHealth(fieldId) {
+  document.querySelector('[data-tab="health"]').click();
+  document.getElementById('healthField').value = String(fieldId);
+  loadHealth();
+}
+
+// USER STORY C.2 Control call: load weekly field growth.
+async function loadGrowth() {
+  const fieldId = document.getElementById('growthField').value;
+  const weeks = document.getElementById('growthWeeks').value;
+  const result = await apiGet('/api/fields/' + fieldId + '/growth?weeks=' + weeks);
+  if (!result.ok) return;
+  const trend = result.data.trend;
+  const max = Math.max(...trend, 1);
+  document.getElementById('growthChart').innerHTML =
+    '<div style="display:flex;align-items:end;gap:1rem;height:220px;padding:1rem;background:var(--gray-50);">' +
+    trend.map((value, index) => '<div style="text-align:center;flex:1;"><div style="height:' +
+      Math.max(20, value / max * 160) + 'px;background:var(--green);border-radius:6px 6px 0 0;"></div><small>' +
+      esc((result.data.labels || [])[index] || String(index + 1)) + ' (' + value + ')</small></div>').join('') + '</div><p>Growth rate: <strong>' +
+    result.data.growth_rate + ' tassels/week</strong></p>';
+}
+
+// USER STORY C.3 Control call: scan abnormal field patterns.
+async function loadAlerts() {
+  const result = await apiGet('/api/fields/anomalies');
+  if (!result.ok) return;
+  const alerts = result.data.anomalies.map(normalizeField);
+  document.getElementById('alertList').innerHTML = alerts.length ? alerts.map(field =>
+    '<div class="alert alert-warning"><strong>' + esc(field.fieldName) + '</strong>: latest ' +
+    field.latestAvgCount + ', baseline ' + field.baselineCount +
+    '. <button class="btn btn-sm btn-outline" onclick="requestAnomalyReview(' + field.fieldId + ')">Request Review</button></div>'
+  ).join('') : '<div class="alert alert-success">No abnormal fields detected.</div>';
+}
+
+// USER STORY C.3 Control call: save the anomaly review reason.
+async function requestAnomalyReview(fieldId) {
+  const reason = prompt('Reason for anomaly review:', 'Count is below the configured field threshold.');
+  if (!reason) return;
+  const result = await apiPost('/api/fields/' + fieldId + '/anomaly', { reason });
+  alert(result.ok ? 'Field flagged and review request saved.' : 'Could not save review request.');
+  if (result.ok) loadAlerts();
+}
+
+// USER STORY C.5 Control call: load summarized agronomy insights.
+async function loadInsights() {
+  const result = await apiGet('/api/fields/insights');
+  if (!result.ok) return;
+  latestInsights = result.data;
+  document.getElementById('insights').innerHTML = result.data.insights.map(text =>
+    '<div class="card" style="border-left:4px solid var(--green);">' + esc(text) + '</div>'
+  ).join('') + '<div class="alert alert-warning"><strong>Recommendation:</strong> ' + esc(result.data.recommendation) + '</div>';
+}
+
+function exportInsights() {
+  if (!latestInsights) return;
+  const text = latestInsights.insights.join('\n') + '\n\nRecommendation: ' + latestInsights.recommendation;
+  const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = 'agronomist-insights.txt';
+  anchor.click();
+  URL.revokeObjectURL(url);
 }
 
 loadFields();

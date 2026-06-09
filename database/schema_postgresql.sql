@@ -6,8 +6,14 @@
 
 -- 1. Drop existing types/tables (safe cleanup for re-run)
 DROP TABLE IF EXISTS datasets       CASCADE;
+DROP TABLE IF EXISTS training_runs  CASCADE;
+DROP TABLE IF EXISTS models         CASCADE;
+DROP TABLE IF EXISTS recommendations CASCADE;
+DROP TABLE IF EXISTS fields         CASCADE;
+DROP TABLE IF EXISTS access_policies CASCADE;
 DROP TABLE IF EXISTS system_logs    CASCADE;
 DROP TABLE IF EXISTS reports        CASCADE;
+DROP TABLE IF EXISTS image_files    CASCADE;
 DROP TABLE IF EXISTS detection_results CASCADE;
 DROP TABLE IF EXISTS images         CASCADE;
 DROP TABLE IF EXISTS users          CASCADE;
@@ -16,6 +22,8 @@ DROP TYPE  IF EXISTS user_status    CASCADE;
 DROP TYPE  IF EXISTS report_type    CASCADE;
 DROP TYPE  IF EXISTS annotation_status CASCADE;
 DROP TYPE  IF EXISTS image_status   CASCADE;
+DROP TYPE  IF EXISTS model_status   CASCADE;
+DROP TYPE  IF EXISTS training_status CASCADE;
 
 -- ============================================================
 -- 2. Custom ENUM Types
@@ -24,6 +32,8 @@ CREATE TYPE user_status       AS ENUM ('active', 'disabled');
 CREATE TYPE report_type       AS ENUM ('daily', 'weekly', 'monthly');
 CREATE TYPE annotation_status AS ENUM ('not_started', 'in_progress', 'completed');
 CREATE TYPE image_status      AS ENUM ('pending', 'processing', 'completed', 'failed');
+CREATE TYPE model_status      AS ENUM ('registered', 'training', 'trained', 'active', 'archived', 'failed');
+CREATE TYPE training_status   AS ENUM ('queued', 'running', 'completed', 'failed');
 
 -- ============================================================
 -- 3. Tables (matching BCE Entities)
@@ -44,6 +54,7 @@ CREATE TABLE users (
     password_hash VARCHAR(255) NOT NULL,
     role_id       INTEGER NOT NULL REFERENCES roles(role_id),
     status        user_status DEFAULT 'active',
+    permissions   JSONB,
     created_at    TIMESTAMP   DEFAULT CURRENT_TIMESTAMP
 );
 COMMENT ON TABLE users IS 'System users across all roles';
@@ -60,7 +71,9 @@ CREATE TABLE images (
     upload_time TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
     status      image_status DEFAULT 'pending',
     file_size   INTEGER,            -- bytes
-    access_level VARCHAR(50) DEFAULT 'private'  -- D.2: secure storage access control
+    access_level VARCHAR(50) DEFAULT 'private',  -- D.2: secure storage access control
+    preprocessed BOOLEAN NOT NULL DEFAULT FALSE,
+    preprocessed_path VARCHAR(500)
 );
 COMMENT ON TABLE images IS 'Uploaded maize field images';
 CREATE INDEX idx_images_user   ON images(user_id);
@@ -76,6 +89,8 @@ CREATE TABLE detection_results (
     annotated_image_path  VARCHAR(500),
     processing_time       NUMERIC(5,2),       -- seconds
     bbox_data             JSONB,              -- bounding boxes array
+    quality_status        VARCHAR(30) DEFAULT 'unreviewed',
+    review_note           TEXT,
     created_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 COMMENT ON TABLE detection_results IS 'AI detection output -- also serves as history via created_at';
@@ -121,6 +136,7 @@ CREATE TABLE image_files (
     mime_type  VARCHAR(100) NOT NULL,
     file_size  INTEGER      NOT NULL,
     image_data BYTEA        NOT NULL,
+    encrypted  BOOLEAN      NOT NULL DEFAULT TRUE,
     created_at TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (image_id, file_type)
 );
@@ -139,6 +155,67 @@ CREATE TABLE datasets (
     created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 COMMENT ON TABLE datasets IS 'AI training datasets -- managed by Admin (D.4), accessed by Researcher (B.5)';
+
+CREATE TABLE access_policies (
+    policy_id    SERIAL PRIMARY KEY,
+    role_name    VARCHAR(50) NOT NULL UNIQUE,
+    access_level VARCHAR(50) NOT NULL,
+    updated_by   INTEGER REFERENCES users(user_id),
+    updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE fields (
+    field_id          SERIAL PRIMARY KEY,
+    field_name        VARCHAR(150) NOT NULL,
+    location          VARCHAR(150) NOT NULL,
+    baseline_count    INTEGER NOT NULL DEFAULT 0,
+    threshold_low     INTEGER NOT NULL DEFAULT 0,
+    latest_avg_count  NUMERIC(8,2) DEFAULT 0,
+    health_status     VARCHAR(30) DEFAULT 'Healthy',
+    anomaly_flag      BOOLEAN DEFAULT FALSE,
+    anomaly_reason    TEXT,
+    created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+ALTER TABLE images
+    ADD COLUMN field_id INTEGER REFERENCES fields(field_id);
+
+CREATE TABLE recommendations (
+    recommendation_id SERIAL PRIMARY KEY,
+    field_id           INTEGER NOT NULL REFERENCES fields(field_id) ON DELETE CASCADE,
+    user_id            INTEGER REFERENCES users(user_id),
+    note               TEXT NOT NULL,
+    created_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE models (
+    model_id        SERIAL PRIMARY KEY,
+    model_name      VARCHAR(150) NOT NULL,
+    model_version   VARCHAR(50) NOT NULL UNIQUE,
+    weights_path    VARCHAR(500) NOT NULL,
+    status          model_status DEFAULT 'registered',
+    map50           NUMERIC(6,4),
+    precision_score NUMERIC(6,4),
+    recall_score    NUMERIC(6,4),
+    iou_threshold   NUMERIC(4,2) DEFAULT 0.50,
+    parent_model_id INTEGER REFERENCES models(model_id),
+    changelog       TEXT,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    activated_at    TIMESTAMP
+);
+
+CREATE TABLE training_runs (
+    run_id           SERIAL PRIMARY KEY,
+    model_id         INTEGER NOT NULL REFERENCES models(model_id),
+    dataset_id       INTEGER NOT NULL REFERENCES datasets(dataset_id),
+    status           training_status DEFAULT 'queued',
+    hyperparameters  JSONB NOT NULL,
+    loss_curve       JSONB,
+    metrics          JSONB,
+    started_at       TIMESTAMP,
+    completed_at     TIMESTAMP,
+    error_message    TEXT
+);
 
 -- ============================================================
 -- 4. Sample Data (matches Frontend MockData in js/api.js)
@@ -225,6 +302,24 @@ INSERT INTO datasets (dataset_name, total_images, annotation_status, annotation_
     ('Maize Tassel Train v1',      200, 'completed',    'YOLO'),
     ('Maize Tassel Train v2',      500, 'in_progress',  'COCO'),
     ('Batch 3 - North Fields',     320, 'not_started',  NULL);
+
+INSERT INTO access_policies (role_name, access_level, updated_by) VALUES
+    ('Farmer', 'own_images', 4),
+    ('Researcher', 'all_research_images', 4),
+    ('Agronomist', 'aggregated_field_data', 4),
+    ('Admin', 'full_access', 4);
+
+INSERT INTO fields (field_name, location, baseline_count, threshold_low, latest_avg_count, health_status, anomaly_flag) VALUES
+    ('Field A - North', 'North Region', 30, 20, 35, 'Healthy', FALSE),
+    ('Field B - East', 'East Region', 30, 20, 18, 'At-Risk', TRUE),
+    ('Field C - South', 'South Region', 40, 28, 42, 'Healthy', FALSE);
+
+INSERT INTO models (
+    model_name, model_version, weights_path, status, map50,
+    precision_score, recall_score, iou_threshold, changelog, activated_at
+) VALUES
+    ('YOLO26s Tassel Detector', 'v1.0', 'backend/models/best.pt', 'active', 0.899, 0.885, 0.803, 0.50, 'Team-trained best.pt; mAP50-95=0.511', CURRENT_TIMESTAMP),
+    ('Baseline Model Record', 'v0.9', 'models/baseline-not-provided.pt', 'archived', NULL, NULL, NULL, 0.50, 'Awaiting a second trained weight file and evaluation record', NULL);
 
 -- System Logs (sample admin actions)
 INSERT INTO system_logs (user_id, action, details, created_at) VALUES

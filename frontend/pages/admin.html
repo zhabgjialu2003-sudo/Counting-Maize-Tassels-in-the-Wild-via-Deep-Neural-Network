@@ -11,6 +11,7 @@
 <nav class="nav" id="mainNav"></nav>
 
 <div class="container">
+  <!-- ADMIN BOUNDARY: all Admin stories appear below in BCE order. -->
   <h2 class="page-title">Admin Panel</h2>
   <p class="page-subtitle">System management and monitoring &mdash; live database</p>
 
@@ -55,7 +56,7 @@ document.getElementById('tabBar').addEventListener('click', function(e) {
 renderTab('users');
 
 // ═══════════════════════════════════════════════════════════
-//  TAB RENDERERS &mdash; each fetches real API, falls back to MockData
+// TAB RENDERERS - each section uses the authenticated backend API.
 // ═══════════════════════════════════════════════════════════
 
 async function renderTab(type) {
@@ -93,7 +94,7 @@ async function renderUsers(el, token) {
       role: u.role, status: u.status
     }));
   } else {
-    users = [...MockData.users];
+    users = [];
   }
 
   el.innerHTML = buildUserHTML(users);
@@ -137,7 +138,7 @@ function bindUserEvents(el, users) {
     const roleMap = { Farmer: 1, Researcher: 2, Agronomist: 3, Admin: 4 };
     if (!roleMap[role]) { alert('Invalid role'); return; }
     const res = await apiPost('/api/users', { name, email, password, role_id: roleMap[role] });
-    setMsg(el, res.ok ? 'User created!' : 'Created (mock mode)');
+    setMsg(el, res.ok ? 'User created!' : (res.error || 'User creation failed.'));
     refreshCurrentTab('users');
   };
 
@@ -159,7 +160,7 @@ function bindUserEvents(el, users) {
       if (!roleMap[role]) { alert('Invalid role'); return; }
       const roleId = roleMap[role];
       const res = await apiPut(`/api/users/${uid}`, { name, email, role_id: roleId });
-      setMsg(el, res.ok ? 'User updated!' : 'Updated (mock mode)');
+      setMsg(el, res.ok ? 'User updated!' : (res.error || 'User update failed.'));
       refreshCurrentTab('users');
     }
 
@@ -167,14 +168,14 @@ function bindUserEvents(el, users) {
       const newStatus = user.status === 'active' ? 'disabled' : 'active';
       if (!confirm(`${newStatus === 'disabled' ? 'Disable' : 'Enable'} ${user.name}?`)) return;
       const res = await apiPut(`/api/users/${uid}/status`, { status: newStatus });
-      setMsg(el, res.ok ? `User ${newStatus}!` : `Status changed to ${newStatus} (mock mode)`);
+      setMsg(el, res.ok ? `User ${newStatus}!` : (res.error || 'Status update failed.'));
       refreshCurrentTab('users');
     }
 
     if (btn.dataset.action === 'delete') {
-      if (!confirm(`Delete ${user.name}? The prototype API performs a safe soft delete.`)) return;
+      if (!confirm(`Disable ${user.name}? Existing records will be retained.`)) return;
       const res = await apiDelete(`/api/users/${uid}`);
-      setMsg(el, res.ok ? 'User deleted!' : 'Deleted (mock mode)');
+      setMsg(el, res.ok ? 'User disabled!' : (res.error || 'User disable failed.'));
       refreshCurrentTab('users');
     }
   };
@@ -211,11 +212,19 @@ async function renderStorage(el, token) {
       <div class="stat-card"><div class="value" style="color:var(--green);">${stats.encrypted ? 'Encrypted' : 'Plain'}</div><div class="label">Security Status</div></div>
     </div>
     <div style="margin-top:1rem;"><h4>Access Control</h4>
-      <div class="form-group"><label>Role</label><select><option>Farmer</option><option>Researcher</option><option>Agronomist</option></select></div>
-      <div class="form-group"><label>Access Level</label><select><option>Own Images Only</option><option>All Images</option></select></div>
-      <button class="btn btn-primary btn-sm" onclick="alert('Access policy saved')">Save Policy</button>
+      <div class="form-group"><label>Role</label><select id="policyRole"><option>Farmer</option><option>Researcher</option><option>Agronomist</option><option>Admin</option></select></div>
+      <div class="form-group"><label>Access Level</label><select id="policyLevel"><option value="own_images">Own Images Only</option><option value="all_research_images">All Research Images</option><option value="aggregated_field_data">Aggregated Field Data</option><option value="full_access">Full Access</option></select></div>
+      <button class="btn btn-primary btn-sm" id="savePolicy">Save Policy</button>
+      <span id="policyMsg" class="info-text" style="margin-left:0.5rem;"></span>
     </div>
   </div>`;
+  el.querySelector('#savePolicy').onclick = async function() {
+    const result = await apiPut('/api/access-policies', {
+      role_name: el.querySelector('#policyRole').value,
+      access_level: el.querySelector('#policyLevel').value
+    });
+    el.querySelector('#policyMsg').textContent = result.ok ? 'Access policy saved.' : 'Policy update failed.';
+  };
 }
 
 // ── D.3 Monitor &mdash; real /api/admin/stats ───────────────────
@@ -238,7 +247,8 @@ async function renderMonitor(el, token) {
       <div class="stat-card"><div class="value" style="color:var(--green);">${stats.uptime}</div><div class="label">Uptime</div></div>
       <div class="stat-card"><div class="value" style="color:${parseFloat(stats.error_rate) > 2 ? 'var(--red)' : 'var(--green)'};">${stats.error_rate}</div><div class="label">Error Rate</div></div>
     </div>
-    <div class="info-text" style="margin-top:1rem;">API Calls (24h): ${(stats.total_detections * 30).toLocaleString()} | Model: v1.0 Active</div>
+    <div class="info-text" style="margin-top:1rem;">API Calls (24h): ${(stats.api_calls_24h || 0).toLocaleString()} |
+      Average Detection Time: ${Number(stats.average_processing_time || 0).toFixed(2)}s | Model: v1.0 Active</div>
   </div>`;
 }
 
@@ -254,7 +264,7 @@ async function renderDatasets(el, token) {
       annotationFormat: d.annotation_format
     }));
   } else {
-    datasets = [...MockData.datasets];
+    datasets = [];
   }
   if (isStale(token)) return;
 
@@ -268,7 +278,8 @@ async function renderDatasets(el, token) {
   el.innerHTML = `<div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;margin-bottom:1rem;">
       <h3 style="color:var(--green);margin:0;">Dataset Management</h3>
-      <button class="btn btn-primary btn-sm" id="btnAddDataset">+ Upload New</button>
+      <button class="btn btn-primary btn-sm" id="btnAddDataset">+ Upload Dataset Package</button>
+      <input type="file" id="datasetFile" accept=".zip,.tar,.gz" style="display:none;">
     </div>
     <div class="table-wrap"><table><thead><tr><th>Name</th><th>Images</th><th>Annotation</th><th>Format</th><th>Actions</th></tr></thead><tbody id="dsTable">${rows}</tbody></table></div>
     <p class="info-text" style="margin-top:0.5rem;" id="dsMsg"></p>
@@ -276,15 +287,29 @@ async function renderDatasets(el, token) {
 
   // Bind dataset CRUD
   el.querySelector('#btnAddDataset').onclick = async function() {
+    el.querySelector('#datasetFile').click();
+  };
+  el.querySelector('#datasetFile').onchange = async function() {
+    const file = this.files[0];
+    if (!file) return;
     const name = prompt('Dataset name:');
     if (!name) return;
     const count = parseInt(prompt('Number of images:', '0')) || 0;
     const fmt = prompt('Annotation format (YOLO/COCO/Pascal VOC):', 'YOLO');
-    const res = await apiPost('/api/datasets', {
-      dataset_name: name, total_images: count, annotation_format: fmt, annotation_status: 'not_started'
+    const form = new FormData();
+    form.append('dataset', file);
+    form.append('dataset_name', name);
+    form.append('total_images', count);
+    form.append('annotation_format', fmt || '');
+    form.append('annotation_status', 'not_started');
+    const response = await fetch(API_BASE + '/api/datasets/upload', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: form
     });
+    const res = { ok: response.ok };
     const msgEl = el.querySelector('#dsMsg');
-    if (msgEl) msgEl.textContent = res.ok ? 'Dataset created!' : 'Created (mock mode)';
+    if (msgEl) msgEl.textContent = res.ok ? 'Dataset package uploaded!' : 'Dataset upload failed.';
     refreshCurrentTab('datasets');
   };
 
@@ -303,14 +328,14 @@ async function renderDatasets(el, token) {
       const res = await apiPut(`/api/datasets/${did}`, {
         dataset_name: newName, annotation_status: status, annotation_format: fmt
       });
-      if (msgEl) msgEl.textContent = res.ok ? 'Dataset updated!' : 'Updated (mock mode)';
+      if (msgEl) msgEl.textContent = res.ok ? 'Dataset updated!' : (res.error || 'Dataset update failed.');
       refreshCurrentTab('datasets');
     }
 
     if (btn.dataset.action === 'delete-ds') {
       if (!confirm(`Delete dataset "${dname}"? This cannot be undone.`)) return;
       const res = await apiDelete(`/api/datasets/${did}`);
-      if (msgEl) msgEl.textContent = res.ok ? 'Dataset deleted!' : 'Deleted (mock mode)';
+      if (msgEl) msgEl.textContent = res.ok ? 'Dataset deleted!' : (res.error || 'Dataset deletion failed.');
       refreshCurrentTab('datasets');
     }
   };
@@ -324,26 +349,55 @@ async function renderPermissions(el, token) {
   if (res.ok) {
     users = res.data.users;
   } else {
-    users = MockData.users;
+    users = [];
   }
   if (isStale(token)) return;
 
-  const opts = users.map(u => `<option>${esc(u.name)} (${esc(u.role)})</option>`).join('');
+  const opts = users.map(u => `<option value="${u.user_id || u.userId}" data-role="${escAttr(u.role)}">${esc(u.name)} (${esc(u.role)})</option>`).join('');
 
   el.innerHTML = `<div class="card"><h3 style="color:var(--green);">Role & Permission Management</h3>
     <div class="form-group"><label>Select User</label><select id="permUser">${opts}</select></div>
+    <div class="form-group"><label>Role</label><select id="permRole">
+      <option>Farmer</option><option>Researcher</option><option>Agronomist</option><option>Admin</option>
+    </select></div>
     <h4 style="margin-top:1rem;">Permissions Matrix</h4>
-    <div class="table-wrap"><table><thead><tr><th>Permission</th><th>Read</th><th>Write</th><th>Delete</th></tr></thead><tbody>
-      <tr><td>Upload Images</td><td><input type="checkbox" checked></td><td><input type="checkbox" checked></td><td><input type="checkbox"></td></tr>
-      <tr><td>View Results</td><td><input type="checkbox" checked></td><td><input type="checkbox"></td><td><input type="checkbox"></td></tr>
-      <tr><td>Export Data</td><td><input type="checkbox" checked></td><td><input type="checkbox"></td><td><input type="checkbox"></td></tr>
-      <tr><td>Manage Users</td><td><input type="checkbox"></td><td><input type="checkbox"></td><td><input type="checkbox"></td></tr>
+    <div class="table-wrap"><table><thead><tr><th>Permission</th><th>Allowed</th></tr></thead><tbody>
+      <tr><td>Upload Images</td><td><input class="perm-check" data-perm="images:upload" type="checkbox"></td></tr>
+      <tr><td>View Results</td><td><input class="perm-check" data-perm="results:read" type="checkbox"></td></tr>
+      <tr><td>Export Data</td><td><input class="perm-check" data-perm="results:export" type="checkbox"></td></tr>
+      <tr><td>Download Datasets</td><td><input class="perm-check" data-perm="datasets:download" type="checkbox"></td></tr>
+      <tr><td>Compare Models</td><td><input class="perm-check" data-perm="models:compare" type="checkbox"></td></tr>
+      <tr><td>Full Administrator Access</td><td><input class="perm-check" data-perm="*" type="checkbox"></td></tr>
     </tbody></table></div>
     <div style="display:flex;gap:0.75rem;margin-top:1rem;">
-      <button class="btn btn-primary" onclick="alert('Permissions updated successfully!')">Save Changes</button>
-      <button class="btn btn-outline" onclick="alert('New custom role created')">+ New Custom Role</button>
+      <button class="btn btn-primary" id="savePermissions">Save Changes</button>
+      <span id="permMsg" class="info-text"></span>
     </div>
   </div>`;
+  async function loadPermissions() {
+    const result = await apiGet('/api/users/' + el.querySelector('#permUser').value + '/permissions');
+    const active = result.ok ? result.data.permissions : [];
+    if (result.ok) el.querySelector('#permRole').value = result.data.role;
+    el.querySelectorAll('.perm-check').forEach(box => {
+      box.checked = active.includes(box.dataset.perm);
+    });
+  }
+  el.querySelector('#permUser').onchange = loadPermissions;
+  el.querySelector('#savePermissions').onclick = async function() {
+    const userId = el.querySelector('#permUser').value;
+    const roleMap = { Farmer: 1, Researcher: 2, Agronomist: 3, Admin: 4 };
+    const roleResult = await apiPut('/api/users/' + userId, {
+      role_id: roleMap[el.querySelector('#permRole').value]
+    });
+    if (!roleResult.ok) {
+      el.querySelector('#permMsg').textContent = roleResult.error || 'Role update failed.';
+      return;
+    }
+    const permissions = Array.from(el.querySelectorAll('.perm-check:checked')).map(box => box.dataset.perm);
+    const result = await apiPut('/api/users/' + userId + '/permissions', { permissions });
+    el.querySelector('#permMsg').textContent = result.ok ? 'Permissions saved.' : 'Permission update failed.';
+  };
+  await loadPermissions();
 }
 
 // ── D.6 Backup &mdash; real /api/admin/backup + /api/admin/backups ──
@@ -354,7 +408,7 @@ async function renderBackup(el, token) {
   if (res.ok) {
     backups = res.data.backups;
   } else {
-    backups = MockData.logs.filter(l => l.action === 'backup_created').map(l => ({...l, created_at: l.createdAt, log_id: l.logId}));
+    backups = [];
   }
   if (isStale(token)) return;
 
@@ -366,7 +420,7 @@ async function renderBackup(el, token) {
         const size = b.size_bytes
           ? (b.size_bytes / (1024 * 1024)).toFixed(1) + ' MB'
           : sizeMatch ? sizeMatch[1] + ' MB' : '&mdash;';
-        const restoreDetails = b.path || b.file_name || b.details || '';
+        const restoreDetails = b.file_name || b.path || b.details || '';
         return `<tr><td>${date}</td><td>${size}</td><td><span class="badge badge-green">Complete</span></td>
           <td><button class="btn btn-sm btn-outline restore-btn" data-logid="${b.log_id || ''}" data-details="${escAttr(restoreDetails)}">Restore</button></td></tr>`;
       }).join('');
@@ -382,7 +436,7 @@ async function renderBackup(el, token) {
     <div class="card-grid" style="margin-top:1rem;">
       <div class="stat-card"><div class="value">${lastBackup.size} MB</div><div class="label">Last Backup Size</div></div>
       <div class="stat-card"><div class="value">${lastBackup.date}</div><div class="label">Last Backup Date</div></div>
-      <div class="stat-card"><div class="value" style="color:var(--green);">Active</div><div class="label">Auto-Backup Schedule</div></div>
+      <div class="stat-card"><div class="value" style="color:var(--green);">24h</div><div class="label">Scheduled Backup Interval</div></div>
     </div>
     <button class="btn btn-primary btn-lg" id="btnBackupNow">Backup Now</button>
     <span id="backupMsg" class="info-text" style="margin-left:1rem;"></span>
@@ -398,14 +452,19 @@ async function renderBackup(el, token) {
     btn.innerHTML = '<span class="spinner"></span> Backing up...';
     const res = await apiPost('/api/admin/backup', {});
     const sizeMb = res.ok && res.data.backup ? (res.data.backup.size_bytes / (1024 * 1024)).toFixed(1) : '';
-    if (msgEl) msgEl.textContent = res.ok ? `Backup completed - ${sizeMb}MB!` : 'Backup done (mock mode)';
+    if (msgEl) msgEl.textContent = res.ok
+      ? `Backup completed - ${sizeMb}MB!`
+      : (res.error || 'Backup failed.');
     refreshCurrentTab('backup', 1200);
   };
 
   // Bind restore buttons
   el.querySelectorAll('.restore-btn').forEach(btn => {
-    btn.onclick = function() {
-      alert('Restore initiated from backup: ' + btn.dataset.details);
+    btn.onclick = async function() {
+      if (!confirm('Restore this database backup? Current data may be replaced.')) return;
+      const fileName = btn.dataset.details.split('/').pop();
+      const result = await apiPost('/api/admin/backups/' + encodeURIComponent(fileName) + '/restore', { confirm: 'RESTORE' });
+      alert(result.ok ? 'Backup restored successfully.' : 'Restore failed: ' + (result.error || 'server error'));
     };
   });
 }
