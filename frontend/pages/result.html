@@ -73,11 +73,22 @@ const stored = sessionStorage.getItem('lastResult');
 const uploadedImageDataUrl = sessionStorage.getItem('lastImageDataUrl');
 const params = new URLSearchParams(location.search);
 const resultId = params.get('id');
+// Track whether this is a fresh result (just predicted) or cached
+const resultTimestamp = params.get('ts');
 
 // USER STORY A.3 Control call: retrieve one persisted detection result.
 async function loadResult() {
+  document.getElementById('countDisplay').textContent = '...';
+  document.getElementById('confidenceDisplay').textContent = '--';
+  document.getElementById('timeDisplay').textContent = 'Calculating...';
+
   if (stored) {
     try { resultData = normalizeResult(JSON.parse(stored)); } catch (e) { resultData = null; }
+    // Only use stored result if it's fresh (< 10 seconds old)
+    if (resultData && resultData.createdAt) {
+      const age = Date.now() - new Date(resultData.createdAt).getTime();
+      if (age > 15000) resultData = null; // stale: fetch from server
+    }
   }
 
   if (resultId && (!resultData || String(resultData.resultId) !== resultId || !resultData.imagePath)) {
@@ -89,6 +100,8 @@ async function loadResult() {
     document.getElementById('sourceNotice').className = 'alert alert-error';
     document.getElementById('sourceNotice').textContent =
       'Result data is unavailable. Return to Upload and run a new detection.';
+    document.getElementById('countDisplay').textContent = '--';
+    document.getElementById('timeDisplay').textContent = '--';
     return;
   }
   displayResult(resultData);
@@ -103,7 +116,8 @@ function displayResult(data) {
   document.getElementById('imageNameLabel').textContent = 'Image: ' + data.imageName;
   document.getElementById('countDisplay').textContent = data.tasselCount;
   document.getElementById('confidenceDisplay').textContent = formatPercent(data.confidenceScore);
-  document.getElementById('timeDisplay').textContent = Number(data.processingTime || 0).toFixed(1) + 's';
+  document.getElementById('timeDisplay').textContent =
+    data.processingTime > 0 ? Number(data.processingTime).toFixed(1) + 's' : '< 0.1s';
 
   var imageId = data.imageId;
   var token = sessionStorage.getItem('maize_access_token');

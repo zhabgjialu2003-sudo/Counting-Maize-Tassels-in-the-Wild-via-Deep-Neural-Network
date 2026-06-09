@@ -153,7 +153,7 @@ async function submitUpload() {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Analyzing...';
   document.getElementById('estimateText').textContent =
-    `Estimated time: ${selectedFiles.length * 3}-${selectedFiles.length * 6} seconds`;
+    `Processing ${selectedFiles.length} image(s)...`;
 
   if (selectedFiles.length > 1) {
     const progDiv = document.getElementById('batchProgress');
@@ -165,7 +165,6 @@ async function submitUpload() {
     for (let i = 0; i < selectedFiles.length; i++) {
       document.getElementById('progressText').textContent = `${i + 1}/${selectedFiles.length}`;
       document.getElementById('progressFill').style.width = ((i + 1) / selectedFiles.length * 100) + '%';
-      await new Promise(r => setTimeout(r, 600 + Math.random() * 400));
       const outcome = await uploadAndPredict(selectedFiles[i]);
       if (outcome.ok) {
         lastResult = outcome.result;
@@ -186,7 +185,6 @@ async function submitUpload() {
       `<div class="alert ${failed ? 'alert-warning' : 'alert-success'}"><strong>Batch complete:</strong> ${success} successful, ${failed} failed.</div>`;
     if (lastResult) setTimeout(() => location.href = 'result.html', 1500);
   } else {
-    await new Promise(r => setTimeout(r, 800 + Math.random() * 500));
     const outcome = await uploadAndPredict(selectedFiles[0]);
     if (!outcome.ok) {
       showError(outcome.error);
