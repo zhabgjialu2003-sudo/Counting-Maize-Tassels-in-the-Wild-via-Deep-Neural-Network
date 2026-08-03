@@ -106,7 +106,7 @@ INSERT INTO models (
     precision_score, recall_score, iou_threshold, changelog, activated_at
 )
 VALUES (
-    'YOLO26s Tassel Detector', 'v1.0', 'backend/models/best.pt',
+    'YOLO26s Tassel Detector', 'v1.0', 'models/deployment/tassel-best.pt',
     'active', 0.899, 0.885, 0.803, 0.50,
     'Team-trained best.pt; validation mAP50-95=0.511', CURRENT_TIMESTAMP
 )
@@ -118,7 +118,7 @@ INSERT INTO models (
 )
 VALUES (
     'Historical Baseline (Metrics Only)', 'v0.9',
-    'backend/models/baseline-not-available.pt',
+    'models/deployment/baseline-not-available.pt',
     'archived', 0.820, 0.790, 0.740, 0.50,
     'Comparison-only historical metrics; no deployable weights are stored.'
 )

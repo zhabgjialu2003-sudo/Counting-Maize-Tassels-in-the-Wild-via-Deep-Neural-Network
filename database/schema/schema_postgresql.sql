@@ -318,7 +318,7 @@ INSERT INTO models (
     model_name, model_version, weights_path, status, map50,
     precision_score, recall_score, iou_threshold, changelog, activated_at
 ) VALUES
-    ('YOLO26s Tassel Detector', 'v1.0', 'backend/models/best.pt', 'active', 0.899, 0.885, 0.803, 0.50, 'Team-trained best.pt; mAP50-95=0.511', CURRENT_TIMESTAMP),
+    ('YOLO26s Tassel Detector', 'v1.0', 'models/deployment/tassel-best.pt', 'active', 0.899, 0.885, 0.803, 0.50, 'Team-trained best.pt; mAP50-95=0.511', CURRENT_TIMESTAMP),
     ('Baseline Model Record', 'v0.9', 'models/baseline-not-provided.pt', 'archived', NULL, NULL, NULL, 0.50, 'Awaiting a second trained weight file and evaluation record', NULL);
 
 -- System Logs (sample admin actions)

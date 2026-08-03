@@ -57,7 +57,7 @@
     <h3 style="color:var(--green);">E.5 Register System / Model Update</h3>
     <div class="card-grid">
       <div class="form-group"><label>Version</label><input id="newVersion" value="v1.1"></div>
-      <div class="form-group"><label>Weights Path</label><input id="weightsPath" value="backend/models/best.pt"></div>
+      <div class="form-group"><label>Weights Path</label><input id="weightsPath" value="models/deployment/tassel-best.pt"></div>
     </div>
     <div class="form-group"><label>Changelog</label><textarea id="changelog">Improved maize tassel detector.</textarea></div>
     <button class="btn btn-primary" id="registerModel">Register Version</button>
@@ -84,7 +84,7 @@ async function loadSystem() {
   models = modelResult.ok ? modelResult.data.models : [];
   const datasets = datasetResult.ok ? datasetResult.data.datasets : [];
   document.getElementById('systemCards').innerHTML =
-    '<div class="stat-card"><div class="value">' + (status.model_file_exists ? 'Found' : 'Missing') + '</div><div class="label">best.pt</div></div>' +
+    '<div class="stat-card"><div class="value">' + (status.model_file_exists ? 'Found' : 'Missing') + '</div><div class="label">Tassel model</div></div>' +
     '<div class="stat-card"><div class="value">' + (status.inference_available ? 'Ready' : 'Fallback') + '</div><div class="label">Inference Service</div></div>' +
     '<div class="stat-card"><div class="value">' + esc(status.active_model_version || '-') + '</div><div class="label">Active Version</div></div>';
   document.getElementById('modelRows').innerHTML = models.map(model =>

@@ -129,8 +129,8 @@ function displayResult(data) {
   sourceNotice.className = 'alert alert-success';
   const mobileZh = window.matchMedia('(max-width: 768px)').matches && mobileLanguage() === 'zh-CN';
   sourceNotice.innerHTML = mobileZh
-    ? '<strong>真实结果：</strong>由 PostgreSQL 和 backend/models/best.pt 返回。'
-    : '<strong>Real result:</strong> loaded from PostgreSQL and backend/models/best.pt.';
+    ? '<strong>真实结果：</strong>由 PostgreSQL 和已部署的玉米穗模型返回。'
+    : '<strong>Real result:</strong> loaded from PostgreSQL and the deployed tassel model.';
   document.getElementById('imageNameLabel').textContent =
     (mobileZh ? '图片：' : 'Image: ') + data.imageName;
   document.getElementById('countDisplay').textContent = data.tasselCount;

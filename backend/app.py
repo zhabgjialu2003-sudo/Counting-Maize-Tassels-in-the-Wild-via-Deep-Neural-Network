@@ -3222,11 +3222,14 @@ def preprocess_image(image_id: int):
 @app.route("/api/system/status", methods=["GET"])
 @require_roles("Admin", "Researcher")
 def system_status():
-    weights = Path(__file__).resolve().parent / "models" / "best.pt"
+    predictor = get_predictor() if get_predictor is not None else None
+    weights = predictor.model_path if predictor is not None else Path(
+        "models/deployment/tassel-best.pt"
+    )
     predictor_available = False
-    if get_predictor is not None:
+    if predictor is not None:
         try:
-            predictor_available = get_predictor().available
+            predictor_available = predictor.available
         except Exception:
             predictor_available = False
     active_version = None
@@ -3240,12 +3243,17 @@ def system_status():
                 active_version = active["model_version"] if active else None
     except Exception:
         active_version = None
+    project_root = Path(__file__).resolve().parents[1]
+    model_display = str(weights.relative_to(project_root)) if weights.is_relative_to(project_root) else weights.name
     return ok({
-        "model_file": str(weights.relative_to(Path(__file__).resolve().parents[1])),
+        "model_file": model_display,
         "model_file_exists": weights.exists(),
         "inference_available": predictor_available,
         "active_model_version": active_version,
-        "training_notebooks": ["maize_yolo26_colab.ipynb", "maize_yolo26_final (4).ipynb"],
+        "training_notebooks": [
+            "training/notebooks/tassel/maize_yolo26_colab.ipynb",
+            "training/notebooks/tassel/maize_yolo26_final.ipynb",
+        ],
     })
 
 
@@ -3255,9 +3263,9 @@ if __name__ == "__main__":
     if not ready:
         raise SystemExit(f"PostgreSQL startup check failed: {error}")
     if get_predictor is None or not get_predictor().available:
-        raise SystemExit("AI startup check failed: backend/models/best.pt is unavailable")
+        raise SystemExit("AI startup check failed: the configured tassel model is unavailable")
     print("Database: PostgreSQL connected")
-    print("AI Inference: backend/models/best.pt loaded")
+    print(f"AI Inference: {get_predictor().model_path.name} loaded")
     from wsgiref.simple_server import make_server
     httpd = make_server("127.0.0.1", 5000, app)
     try:

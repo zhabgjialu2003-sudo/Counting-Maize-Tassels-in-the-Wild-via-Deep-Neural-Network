@@ -16,7 +16,19 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 
 
 logger = logging.getLogger(__name__)
-DEFAULT_ARTIFACT_DIR = Path(__file__).resolve().parent / "models" / "disease"
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _configured_path(environment_name: str, default: str) -> Path:
+    configured = Path(os.getenv(environment_name, default)).expanduser()
+    return configured if configured.is_absolute() else PROJECT_ROOT / configured
+
+
+DEFAULT_METADATA_DIR = PROJECT_ROOT / "models" / "disease"
+DEFAULT_MODEL_PATH = _configured_path(
+    "DISEASE_MODEL_PATH",
+    "models/deployment/maize-disease.torchscript.pt",
+)
 REQUIRED_CLASSES = (
     "healthy",
     "common_rust",
@@ -110,17 +122,23 @@ def validate_metadata(metadata: dict[str, Any], allow_candidate: bool = False) -
 class DiseasePredictor:
     def __init__(
         self,
-        artifact_dir: Path | str = DEFAULT_ARTIFACT_DIR,
+        artifact_dir: Path | str | None = None,
+        model_path: Path | str | None = None,
         allow_candidate: bool | None = None,
     ):
-        self.artifact_dir = Path(artifact_dir)
+        self.artifact_dir = Path(artifact_dir) if artifact_dir is not None else DEFAULT_METADATA_DIR
         self.allow_candidate = (
             os.getenv("DISEASE_ALLOW_CANDIDATE", "false").lower() == "true"
             if allow_candidate is None
             else allow_candidate
         )
         self.metadata_path = self.artifact_dir / "metadata.json"
-        self.model_path = self.artifact_dir / "maize_disease.torchscript.pt"
+        if model_path is not None:
+            self.model_path = Path(model_path)
+        elif artifact_dir is not None:
+            self.model_path = self.artifact_dir / "maize_disease.torchscript.pt"
+        else:
+            self.model_path = DEFAULT_MODEL_PATH
         self._metadata: dict[str, Any] | None = None
         self._model: Any = None
         self._load_error: str | None = None
@@ -168,6 +186,12 @@ class DiseasePredictor:
             if not self.model_path.exists():
                 raise DiseaseModelUnavailable(
                     f"Disease TorchScript model was not found at {self.model_path}"
+                )
+            if self.model_path.stat().st_size < 1024 and self.model_path.read_bytes().startswith(
+                b"version https://git-lfs.github.com/spec/v1"
+            ):
+                raise DiseaseModelUnavailable(
+                    f"Disease model path contains a Git LFS pointer: {self.model_path}"
                 )
             try:
                 import torch
@@ -275,5 +299,5 @@ def get_disease_predictor(
 ) -> DiseasePredictor:
     global _predictor
     if _predictor is None or artifact_dir is not None:
-        _predictor = DiseasePredictor(artifact_dir or DEFAULT_ARTIFACT_DIR)
+        _predictor = DiseasePredictor(artifact_dir)
     return _predictor
