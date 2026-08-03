@@ -18,7 +18,7 @@ demo does not silently replace failed operations with fabricated results.
 | 1 | Open the project website | Week 11 status, team, documentation, GitHub |
 | 2 | Sign in as Farmer | Signed session and role-specific dashboard |
 | 3 | Upload one or multiple JPG/PNG images | Validation, preview, progress, encrypted persistence |
-| 4 | Run analysis | Real YOLO26s inference from `backend/models/best.pt` |
+| 4 | Run analysis | Real YOLO26s inference from `models/deployment/tassel-best.pt` |
 | 5 | Open the result | Count, confidence, processing time, bounding boxes |
 | 6 | Open history and export | PostgreSQL records, filtering, CSV/JSON export |
 | 7 | Sign in as Researcher | Result review, model comparison, datasets, reports |
@@ -41,8 +41,8 @@ demo does not silently replace failed operations with fabricated results.
 If the live display fails, show evidence without claiming that a failed service
 is working:
 
-- screenshots in `docs/screenshots/`
-- BCE and sequence diagrams in `docs/diagrams/`
+- screenshots in `docs/evidence/ui/`
+- BCE and sequence diagrams in `docs/design/uml/`
 - the User Story code guide
 - the Week 11 compliance audit and test output
 - sample annotated model results

@@ -20,7 +20,7 @@ python backend/server.py
 
 The API runs at `http://127.0.0.1:5000`.
 
-`server.py` requires both PostgreSQL and `models/best.pt` to load successfully.
+`server.py` requires both PostgreSQL and `models/deployment/tassel-best.pt` to load successfully.
 It exits on startup failure instead of switching to fabricated data.
 
 ## Capabilities
@@ -34,7 +34,7 @@ It exits on startup failure instead of switching to fabricated data.
 - health and system status endpoints for demo verification
 
 The complete route-to-User-Story mapping is documented in
-`docs/other/FYP-26-S2-7_User_Story_Code_Guide.md`.
+`docs/requirements/user-story-code-guide.md`.
 
 ## Verify
 

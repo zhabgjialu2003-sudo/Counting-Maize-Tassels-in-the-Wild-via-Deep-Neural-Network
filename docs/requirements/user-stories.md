@@ -64,10 +64,10 @@ The frontend, backend, database, and AI code for each story is organized in
 
 ## Model Artifact
 
-`backend/models/best.pt` is the team's trained model result. It is the active
+`models/deployment/tassel-best.pt` is the team's trained model result. It is the active
 inference artifact and is never replaced by mock weights. Baseline models
 without a repository weight file are labelled `metrics-only`.
 
-The final validation output stored in `maize_yolo26_final (4).ipynb` reports:
+The final validation output stored in `training/notebooks/tassel/maize_yolo26_final.ipynb` reports:
 Precision `0.885`, Recall `0.803`, mAP@0.5 `0.899`, and mAP@0.5:0.95 `0.511`
 over 55 validation images containing 2,210 instances.

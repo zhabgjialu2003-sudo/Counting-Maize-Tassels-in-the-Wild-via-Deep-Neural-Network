@@ -20,9 +20,9 @@ These modules are reused by several User Stories:
 | Backend authentication and RBAC | `backend/app.py:270-327` |
 | Secure image storage | `backend/app.py:328-375` |
 | Database connection helpers | `backend/db.py:18-48` |
-| PostgreSQL schema | `database/schema_postgresql.sql` |
-| Non-destructive migration | `database/migrate_user_story_compliance.sql` |
-| Active trained weights | `backend/models/best.pt` |
+| PostgreSQL schema | `database/schema/schema_postgresql.sql` |
+| Non-destructive migration | `database/migrations/001_user_story_compliance.sql` |
+| Active trained weights | `models/deployment/tassel-best.pt` |
 
 # Farmer User Stories
 
@@ -58,8 +58,8 @@ def upload():
 
 **Entity**
 
-- `images`: `database/schema_postgresql.sql:65-80`
-- `image_files`: `database/schema_postgresql.sql:129-145`
+- `images`: `database/schema/schema_postgresql.sql:65-80`
+- `image_files`: `database/schema/schema_postgresql.sql:129-145`
 
 ## User Story A.2 - Automatically Count Tassels
 
@@ -87,8 +87,8 @@ prediction = predictor.detect(image_path, mode=mode)
 
 **Entity**
 
-- `detection_results`: `database/schema_postgresql.sql:82-99`
-- Trained model: `backend/models/best.pt`
+- `detection_results`: `database/schema/schema_postgresql.sql:82-99`
+- Trained model: `models/deployment/tassel-best.pt`
 
 ## User Story A.3 - View Clear Counting Results
 
@@ -669,7 +669,7 @@ For a demonstration or code walkthrough, use this order:
 1. Open the relevant BCE/sequence diagram.
 2. Show the Boundary section in the frontend page.
 3. Show the API route in `backend/app.py`.
-4. Show the database table in `database/schema_postgresql.sql`.
+4. Show the database table in `database/schema/schema_postgresql.sql`.
 5. For AI stories, finish with `backend/inference.py` or
    `backend/training.py`.
 

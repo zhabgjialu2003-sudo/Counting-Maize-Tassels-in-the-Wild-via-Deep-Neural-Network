@@ -133,7 +133,7 @@ erDiagram
     }
 ```
 
-`database/migrate_user_story_compliance.sql` upgrades an existing installation
-without deleting its data. `database/schema_postgresql.sql` creates a clean
+`database/migrations/001_user_story_compliance.sql` upgrades an existing installation
+without deleting its data. `database/schema/schema_postgresql.sql` creates a clean
 installation. Uploaded image bytes are encrypted before disk/database storage;
 the `encrypted` flag records that storage contract.

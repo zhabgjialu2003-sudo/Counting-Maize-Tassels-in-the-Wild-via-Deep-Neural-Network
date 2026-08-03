@@ -1,9 +1,11 @@
 # Datasets
 
-Store maize tassel training/evaluation datasets here.  
-Large files (>100MB) are excluded from Git via `.gitignore`.
+This directory documents external training and evaluation datasets. Full image
+datasets are not committed. Keep original raw data unchanged and record every
+cleaning, class mapping, split and duplicate-removal decision in the associated
+training evidence.
 
-## Required files
+## Tassel-counting data
 
 | File          | Size  | Source                                                       |
 | ------------- | ----- | ------------------------------------------------------------ |
@@ -16,3 +18,15 @@ python backend/scripts/import_mtdc_demo.py --zip datasets/MTDC-UAV.zip --limit 4
 ```
 
 The importer copies extracted images to `backend/uploads/mtdc-demo/`.
+
+## Disease-screening data
+
+The disease notebook pins and documents:
+
+- PlantVillage for development and internal evaluation;
+- PlantDoc under CC BY 4.0 for an advisory field-image audit;
+- the CDS field dataset for independent evaluation.
+
+Exact source revisions, licence notes, split manifests and duplicate-removal
+records are stored in `training/results/disease/metadata.json` and its companion
+manifests. Verify the applicable licence before redistributing any source image.
