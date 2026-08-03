@@ -44,17 +44,19 @@ if get_predictor is None:
 try:
     predictor = get_predictor()
     if not predictor.available:
-        raise RuntimeError("backend/models/best.pt could not be loaded")
+        raise RuntimeError("the configured tassel model could not be loaded")
 except Exception as exc:
     raise SystemExit(f"AI startup check failed: {exc}") from exc
 
-print("Maize Detector API running at http://localhost:5000")
+host = os.getenv("HOST", "127.0.0.1")
+port = int(os.getenv("PORT", "5000"))
+print(f"Maize Detector API running at http://{host}:{port}")
 print("Database: PostgreSQL connected")
-print("AI Inference: backend/models/best.pt loaded")
+print(f"AI Inference: {predictor.model_path.name} loaded")
 start_backup_scheduler()
 
 # Use a lightweight threaded WSGI server for the local assessment demo.
-httpd = make_server("127.0.0.1", 5000, app, server_class=ThreadingWSGIServer)
+httpd = make_server(host, port, app, server_class=ThreadingWSGIServer)
 try:
     httpd.serve_forever()
 except KeyboardInterrupt:

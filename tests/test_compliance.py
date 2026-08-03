@@ -64,6 +64,14 @@ class ComplianceApiTests(unittest.TestCase):
         self.assertGreaterEqual(len(fields.get_json()["fields"]), 3)
         self.assertIn("recommendation", insights.get_json())
 
+    def test_farmer_can_read_own_leaf_screening_history(self):
+        response = self.client.get(
+            "/api/agronomy/diagnoses?limit=5",
+            headers=self.headers("Farmer", 1),
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIsInstance(response.get_json()["records"], list)
+
     def test_secure_image_storage_round_trip(self):
         old_upload_dir = backend.UPLOAD_DIR
         with tempfile.TemporaryDirectory() as directory:

@@ -1,0 +1,204 @@
+{
+  "schema_version": "1.0",
+  "knowledge_version": "2026.07.24",
+  "safety": {
+    "en": "This is image-assisted screening, not a confirmed diagnosis. Follow local labels and consult a local agronomist before applying crop-protection products.",
+    "zh-CN": "这是基于图片的辅助筛查，并非确诊。使用植保产品前，请遵循当地标签并咨询当地农艺师。"
+  },
+  "quality_issues": {
+    "too_small": {
+      "en": "The image is too small to inspect leaf details. Please move closer and retake it.",
+      "zh-CN": "图片太小，看不清叶片细节。请靠近一些重新拍摄。"
+    },
+    "too_dark": {
+      "en": "The leaf is too dark. Please retake the photo in even daylight without using a harsh flash.",
+      "zh-CN": "叶片看起来太暗。请在光线均匀的地方重拍，尽量不要使用强闪光灯。"
+    },
+    "too_bright": {
+      "en": "Parts of the leaf are overexposed. Please avoid direct glare and retake the photo.",
+      "zh-CN": "叶片有些过曝。请避开强烈反光后重新拍摄。"
+    },
+    "low_contrast": {
+      "en": "Leaf details are difficult to separate from the background. Try a plain background and steadier lighting.",
+      "zh-CN": "叶片细节和背景不太容易区分。可以换成简单背景，并保持光线稳定。"
+    },
+    "blurry": {
+      "en": "The image is blurry. Hold the camera steady, tap the leaf to focus, and try again.",
+      "zh-CN": "图片有些模糊。请拿稳手机，点一下叶片对焦后再拍。"
+    }
+  },
+  "states": {
+    "model_unavailable": {
+      "en": "The disease model is not ready on this server yet. Tassel counting is still available.",
+      "zh-CN": "这台服务器上的病害模型暂时还没准备好，雄穗计数功能仍可正常使用。"
+    },
+    "unsupported": {
+      "en": "I cannot match this image reliably to the supported maize leaf conditions. It may be another crop, another problem, or a view the model has not learned.",
+      "zh-CN": "目前无法把这张图片可靠地对应到已支持的玉米叶片情况。它可能不是玉米，也可能是模型尚未学习的其他问题或拍摄角度。"
+    },
+    "retake_required": {
+      "en": "I need a clearer image before assessing the leaf.",
+      "zh-CN": "需要一张更清楚的照片，才能继续判断叶片情况。"
+    },
+    "uncertain": {
+      "en": "The image has some matching signs, but there is not enough evidence for a reliable result yet.",
+      "zh-CN": "图片里有一些相似迹象，但证据还不够，暂时不能给出可靠结果。"
+    }
+  },
+  "conditions": {
+    "healthy": {
+      "name": {
+        "en": "No supported disease clearly detected",
+        "zh-CN": "暂未发现已支持病害的明显迹象"
+      },
+      "supported_observations": {
+        "en": [
+          "The visible leaf area does not strongly match the three supported disease patterns."
+        ],
+        "zh-CN": [
+          "可见叶片区域与目前支持的三种病害特征都不太相符。"
+        ]
+      },
+      "next_steps": {
+        "en": [
+          "Keep monitoring new leaves and photograph any change from the same distance and lighting.",
+          "Check the whole plant for insects, nutrient stress, wilting, or damage outside the photographed area."
+        ],
+        "zh-CN": [
+          "继续观察新叶；如果症状变化，尽量用相同距离和光线再次拍摄。",
+          "检查整株是否有虫害、缺素、萎蔫，或照片之外的损伤。"
+        ]
+      },
+      "questions": {
+        "en": [
+          "Are symptoms appearing on other leaves or nearby plants?",
+          "Has the affected area changed during the past three days?"
+        ],
+        "zh-CN": [
+          "其他叶片或附近植株也出现类似情况了吗？",
+          "过去三天里，异常区域有没有继续扩大？"
+        ]
+      }
+    },
+    "common_rust": {
+      "name": {
+        "en": "Common rust",
+        "zh-CN": "玉米普通锈病"
+      },
+      "supported_observations": {
+        "en": [
+          "Common rust often forms small cinnamon-brown raised pustules on both leaf surfaces.",
+          "Pustules may be scattered rather than arranged as long rectangular lesions."
+        ],
+        "zh-CN": [
+          "普通锈病常在叶片正反面形成细小、肉桂褐色、略微隆起的孢子堆。",
+          "这些斑点通常较分散，不像长方形病斑那样成片延伸。"
+        ]
+      },
+      "next_steps": {
+        "en": [
+          "Check both sides of several leaves for raised, powdery pustules that rub off slightly.",
+          "Record how widely symptoms occur across the field before deciding on management.",
+          "Discuss local disease pressure, hybrid susceptibility, and crop stage with a local agronomist."
+        ],
+        "zh-CN": [
+          "查看多片叶子的正反面，确认是否有略微隆起、轻擦会掉粉的孢子堆。",
+          "先记录症状在田间的分布范围，再决定是否需要进一步处理。",
+          "结合当地病害压力、品种抗性和生育期，向当地农艺师确认。"
+        ]
+      },
+      "questions": {
+        "en": [
+          "Do the spots feel slightly raised or leave rusty powder when rubbed?",
+          "Are similar spots present on both sides of the leaf?",
+          "Is the crop before or after tasseling?"
+        ],
+        "zh-CN": [
+          "斑点是否略微隆起，轻擦后会留下锈色粉末？",
+          "叶片正反面都有类似斑点吗？",
+          "玉米目前是在抽雄前还是抽雄后？"
+        ]
+      }
+    },
+    "gray_leaf_spot": {
+      "name": {
+        "en": "Gray leaf spot",
+        "zh-CN": "玉米灰斑病"
+      },
+      "supported_observations": {
+        "en": [
+          "Gray leaf spot commonly develops narrow, rectangular gray-to-tan lesions bounded by leaf veins.",
+          "Lesions may merge when disease pressure is high."
+        ],
+        "zh-CN": [
+          "灰斑病常形成狭长、近长方形的灰色或黄褐色病斑，边缘往往受到叶脉限制。",
+          "病害较重时，相邻病斑可能连成较大的坏死区域。"
+        ]
+      },
+      "next_steps": {
+        "en": [
+          "Look for rectangular lesions that stop at the leaf veins on several plants.",
+          "Check whether long periods of leaf wetness or humid weather occurred recently.",
+          "Use field distribution, hybrid susceptibility, and crop stage to decide whether local agronomy support is needed."
+        ],
+        "zh-CN": [
+          "在多株玉米上查看病斑是否呈长方形，并受到叶脉限制。",
+          "确认近期是否有长时间叶面潮湿或高湿天气。",
+          "结合田间分布、品种抗性和生育期，判断是否需要当地农艺师进一步检查。"
+        ]
+      },
+      "questions": {
+        "en": [
+          "Are the lesions rectangular and limited by the leaf veins?",
+          "Has the field recently had humid weather or long leaf-wetness periods?",
+          "Are lower leaves affected first?"
+        ],
+        "zh-CN": [
+          "病斑是否呈长方形，并被叶脉限制住？",
+          "田间近期是否经历高湿天气或叶面长时间潮湿？",
+          "症状是否先从下部叶片开始？"
+        ]
+      }
+    },
+    "northern_leaf_blight": {
+      "name": {
+        "en": "Northern corn leaf blight",
+        "zh-CN": "玉米大斑病"
+      },
+      "supported_observations": {
+        "en": [
+          "Northern corn leaf blight often produces long, cigar-shaped gray-green or tan lesions.",
+          "Lesions can expand well beyond the width of one leaf vein."
+        ],
+        "zh-CN": [
+          "大斑病常形成较长的梭形或雪茄形病斑，颜色可由灰绿色转为黄褐色。",
+          "病斑通常会跨过多条叶脉继续扩展。"
+        ]
+      },
+      "next_steps": {
+        "en": [
+          "Check several leaves for long cigar-shaped lesions rather than small spots.",
+          "Record whether symptoms are moving upward through the canopy.",
+          "Ask a local agronomist to consider crop stage, hybrid resistance, weather, and field severity together."
+        ],
+        "zh-CN": [
+          "检查多片叶子，确认是否存在长梭形或雪茄形病斑，而不是细小斑点。",
+          "记录症状是否正在从下部叶片向上扩展。",
+          "请当地农艺师结合生育期、品种抗性、天气和田间严重程度一起判断。"
+        ]
+      },
+      "questions": {
+        "en": [
+          "Are the lesions long and cigar-shaped?",
+          "Are symptoms moving from lower leaves toward the upper canopy?",
+          "Has the field recently had cool, humid conditions?"
+        ],
+        "zh-CN": [
+          "病斑是否较长，形状像梭子或雪茄？",
+          "症状是否正从下部叶片向上部叶层扩展？",
+          "田间近期是否出现偏凉、高湿的天气？"
+        ]
+      }
+    }
+  }
+}

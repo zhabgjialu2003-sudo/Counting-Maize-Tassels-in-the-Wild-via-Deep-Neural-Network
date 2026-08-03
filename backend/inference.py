@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import hashlib
 import logging
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -27,14 +28,17 @@ from PIL import Image
 
 logger = logging.getLogger(__name__)
 
-# Path to trained model weights (relative to backend/ or absolute)
-DEFAULT_MODEL_PATH = Path(__file__).resolve().parent / "models" / "best.pt"
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
-# Fall back to project root if not in backend/models/
-if not DEFAULT_MODEL_PATH.exists():
-    DEFAULT_MODEL_PATH = (
-        Path(__file__).resolve().parents[1] / "models" / "best.pt"
-    )
+
+def _configured_model_path() -> Path:
+    configured = Path(
+        os.getenv("TASSEL_MODEL_PATH", "models/deployment/tassel-best.pt")
+    ).expanduser()
+    return configured if configured.is_absolute() else PROJECT_ROOT / configured
+
+
+DEFAULT_MODEL_PATH = _configured_model_path()
 
 # SAHI tiling parameters
 TILE_SIZE = 640
@@ -53,6 +57,11 @@ def _load_yolo(model_path: Path) -> Any:
 
     if not model_path.exists():
         logger.warning("Model weights not found at %s — real inference unavailable", model_path)
+        return None
+    if model_path.stat().st_size < 1024 and model_path.read_bytes().startswith(
+        b"version https://git-lfs.github.com/spec/v1"
+    ):
+        logger.warning("Model path contains a Git LFS pointer, not model weights: %s", model_path)
         return None
 
     logger.info("Loading YOLO model from %s ...", model_path)
@@ -94,6 +103,10 @@ class YOLOPredictor:
         self._model: Any = None  # ultralytics.YOLO or None
         self._available: bool | None = None
         self._cache: dict[str, dict[str, Any]] = {}
+
+    @property
+    def model_path(self) -> Path:
+        return self._model_path
 
     @property
     def available(self) -> bool:

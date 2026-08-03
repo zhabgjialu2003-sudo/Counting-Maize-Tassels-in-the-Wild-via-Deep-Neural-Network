@@ -1,0 +1,10 @@
+{
+  "cds_manifest.json": "eb9b2e8cf3f5d83dbfad6bff7b700a039f0332bdfc45d4d5dad357f430a99fd7",
+  "leakage_removals.csv": "c7260f82b90f5d03628a7e29aba8c39f045061b974604e863e0c8464e2a50eaf",
+  "maize_disease.torchscript.pt": "4f48a440e2eb35bef220107f9e777f9a3a10dc8fa0b79e0296a022cba700ef17",
+  "metadata.json": "3bcdec8cd7f940a88f38caec457892b664cd29fdab4b5e3dd44ac542c8f6c04b",
+  "MODEL_CARD.md": "0f22363bf0a9127e4ed55f3a9a3e0dca76bbb148a662a36ded78ddcd82b02037",
+  "partition_manifest.csv": "a4b0c8aab427f99a6aa1e4501c25d15a4a0ab7e6dade9e89746bb737ea53c5b7",
+  "plantdoc_file_map.csv": "d895ba20e9cd0ae07f08fdadf39f7480e45fcc22dc4ec843d06e8f57532d21bd",
+  "training_history.csv": "90410432714d1876bb295cd5f6bae1e57f54cfba9d00ae5160212d6a45e83adf"
+}

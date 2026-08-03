@@ -11,7 +11,10 @@ Farmer
   A.5 Batch upload               -> repeated A.1 + A.2 requests
   A.6 Quick result               -> POST /api/predict (fast mode and cache)
   A.7 Mobile access              -> shared authenticated A.1 + A.2 APIs
-  A.8 Intuitive interface        -> GET  /api/auth/me, GET /api/stats
+  A.8 Intuitive interface        -> GET   /api/auth/me
+                                      PATCH /api/auth/profile
+                                      POST  /api/auth/change-password
+                                      GET   /api/stats
 
 Researcher
   B.1 Accurate result review     -> POST /api/results/<result_id>/flag
@@ -25,6 +28,8 @@ Researcher
 Agronomist
   C.1 Evaluate plant health      -> GET  /api/fields/<field_id>/health
                                       GET/POST /api/fields/<field_id>/recommendations
+                                      POST /api/agronomy/diagnose
+                                      POST /api/agronomy/diagnoses/<diagnosis_id>/review
   C.2 Monitor growth             -> GET  /api/fields/<field_id>/growth
   C.3 Detect anomalies           -> GET  /api/fields/anomalies
                                       POST /api/fields/<field_id>/anomaly
@@ -73,7 +78,7 @@ from functools import wraps
 from pathlib import Path
 from typing import Any
 
-from flask import Flask, jsonify, request, Response, send_from_directory
+from flask import Flask, jsonify, request, Response, redirect, send_from_directory
 from flask_cors import CORS
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -95,6 +100,28 @@ except ImportError:
     except ImportError:
         activate_predictor = None
         get_predictor = None
+
+try:
+    from .advice_engine import build_advice, normalize_language
+    from .disease_inference import (
+        DiseaseModelUnavailable,
+        InvalidDiseaseImage,
+        get_disease_predictor,
+    )
+except ImportError:
+    try:
+        from advice_engine import build_advice, normalize_language
+        from disease_inference import (
+            DiseaseModelUnavailable,
+            InvalidDiseaseImage,
+            get_disease_predictor,
+        )
+    except ImportError:
+        build_advice = None
+        normalize_language = None
+        DiseaseModelUnavailable = RuntimeError
+        InvalidDiseaseImage = ValueError
+        get_disease_predictor = None
 
 try:
     from .training import evaluate_model, train_model
@@ -127,6 +154,7 @@ app.config["SECRET_KEY"] = os.getenv(
 
 UPLOAD_DIR = Path(__file__).resolve().parent / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
+FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 BACKUP_DIR = Path(__file__).resolve().parent / "backups"
 BACKUP_DIR.mkdir(exist_ok=True)
 
@@ -135,19 +163,21 @@ ALLOWED_IMAGE_MIME_TYPES = {"image/jpeg", "image/png"}
 VALID_USER_STATUSES = {"active", "disabled"}
 TOKEN_MAX_AGE_SECONDS = int(os.getenv("TOKEN_MAX_AGE_SECONDS", "28800"))
 ROLE_PERMISSIONS = {
-    "Farmer": ["images:upload", "results:read-own"],
+    "Farmer": ["images:upload", "results:read-own", "agronomy:diagnose"],
     "Researcher": [
         "results:read",
         "results:export",
         "datasets:download",
         "models:compare",
         "reports:generate",
+        "agronomy:diagnose",
     ],
     "Agronomist": [
         "fields:read",
         "fields:evaluate",
         "fields:recommend",
         "insights:generate",
+        "agronomy:diagnose",
     ],
     "Admin": ["*"],
 }
@@ -722,6 +752,27 @@ def detection_for_result(conn, result_id: int) -> dict[str, Any] | None:
 
 
 # Shared secure file compatibility route (A.4, D.2).
+@app.route("/", methods=["GET"])
+def frontend_entry():
+    """Use one origin for the installable PWA and API in HTTPS deployments."""
+    return redirect("/frontend/pages/login.html")
+
+
+@app.route("/frontend/<path:filename>", methods=["GET"])
+def frontend_asset(filename):
+    """Serve only the versioned frontend tree; API and uploads stay separate."""
+    return send_from_directory(FRONTEND_DIR, filename)
+
+
+@app.route("/favicon.ico", methods=["GET"])
+def frontend_favicon():
+    return send_from_directory(
+        FRONTEND_DIR / "icons",
+        "maize-icon-192.png",
+        mimetype="image/png",
+    )
+
+
 @app.route("/uploads/<path:filename>", methods=["GET"])
 @require_roles("Farmer", "Researcher", "Agronomist", "Admin")
 def uploaded_file(filename: str):
@@ -751,12 +802,25 @@ def uploaded_file(filename: str):
 @app.route("/api/health", methods=["GET"])
 def health():
     ready, error = db_ready()
+    disease_health = {
+        "available": False,
+        "status": "unavailable",
+        "model_version": None,
+        "deployment_ready": False,
+        "error": "Disease inference module could not be imported",
+    }
+    if get_disease_predictor is not None:
+        try:
+            disease_health = get_disease_predictor().health()
+        except Exception as exc:
+            disease_health["error"] = str(exc)
     payload = {
         "status": "ok" if ready else "degraded",
         "service": "Maize Detector API",
-        "version": "1.0.0",
+        "version": "1.1.0",
         "database": "connected" if ready else "unavailable",
         "database_error": error if not ready else None,
+        "disease_model": disease_health,
     }
     return ok(payload, 200 if ready else 503)
 
@@ -869,10 +933,118 @@ def auth_register():
 @require_roles("Farmer", "Researcher", "Agronomist", "Admin")
 def auth_me():
     """Validate the signed session and return the current BCE User entity."""
-    return ok({
-        "user": request.auth_user,
-        "permissions": request.auth_user.get("permissions", []),
-    })
+    try:
+        with db_connection() as conn:
+            user = fetch_user(conn, int(request.auth_user["user_id"]))
+        if not user or user.get("status") != "active":
+            return fail("Account is unavailable", 401)
+        user["permissions"] = request.auth_user.get("permissions", [])
+        return ok({"user": user, "permissions": user["permissions"]})
+    except Exception as exc:
+        return db_error_response(exc, 503)
+
+
+@app.route("/api/auth/profile", methods=["PATCH"])
+@require_roles("Farmer", "Researcher", "Agronomist", "Admin")
+def auth_update_profile():
+    """Update the signed-in user's name/email after password verification."""
+    payload = request.get_json(silent=True) or {}
+    name = str(payload.get("name") or "").strip()
+    email = str(payload.get("email") or "").strip().lower()
+    current_password = str(payload.get("current_password") or payload.get("currentPassword") or "")
+
+    if not name:
+        return fail("Name is required", 400)
+    if len(name) > 100:
+        return fail("Name must be 100 characters or fewer", 400)
+    if len(email) > 150 or "@" not in email or "." not in email.rsplit("@", 1)[-1]:
+        return fail("A valid email address is required", 400)
+    if not current_password:
+        return fail("Current password is required", 400)
+
+    user_id = int(request.auth_user["user_id"])
+    try:
+        with db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT password_hash FROM users WHERE user_id = %s AND status = 'active'",
+                    (user_id,),
+                )
+                current_user = cur.fetchone()
+                if not current_user or not verify_password(current_user["password_hash"], current_password):
+                    return fail("Current password is incorrect", 401)
+
+                cur.execute(
+                    "SELECT user_id FROM users WHERE LOWER(email) = LOWER(%s) AND user_id <> %s",
+                    (email, user_id),
+                )
+                if cur.fetchone():
+                    return fail("Email already exists", 409)
+
+                cur.execute(
+                    "UPDATE users SET name = %s, email = %s WHERE user_id = %s",
+                    (name, email, user_id),
+                )
+            user = fetch_user(conn, user_id)
+
+        if not user:
+            return fail("User not found", 404)
+        user["permissions"] = request.auth_user.get("permissions", [])
+        return ok({
+            "status": "success",
+            "message": "Profile updated",
+            "user": user,
+            "access_token": issue_access_token(user),
+            "expires_in": TOKEN_MAX_AGE_SECONDS,
+        })
+    except Exception as exc:
+        message = str(exc).lower()
+        if "users_email_key" in message or "duplicate key" in message or "unique" in message:
+            return fail("Email already exists", 409)
+        return db_error_response(exc)
+
+
+@app.route("/api/auth/change-password", methods=["POST"])
+@require_roles("Farmer", "Researcher", "Agronomist", "Admin")
+def auth_change_password():
+    """Change the signed-in user's password after verifying the current password."""
+    payload = request.get_json(silent=True) or {}
+    current_password = str(payload.get("current_password") or payload.get("currentPassword") or "")
+    new_password = str(payload.get("new_password") or payload.get("newPassword") or "")
+    confirm_password = str(payload.get("confirm_password") or payload.get("confirmPassword") or "")
+
+    if not current_password:
+        return fail("Current password is required", 400)
+    if len(new_password) < 6:
+        return fail("New password must be at least 6 characters", 400)
+    if len(new_password) > 128:
+        return fail("New password must be 128 characters or fewer", 400)
+    if new_password != confirm_password:
+        return fail("New passwords do not match", 400)
+
+    user_id = int(request.auth_user["user_id"])
+    try:
+        with db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT password_hash FROM users WHERE user_id = %s AND status = 'active'",
+                    (user_id,),
+                )
+                current_user = cur.fetchone()
+                if not current_user or not verify_password(current_user["password_hash"], current_password):
+                    return fail("Current password is incorrect", 401)
+                if verify_password(current_user["password_hash"], new_password):
+                    return fail("New password must be different from the current password", 400)
+                cur.execute(
+                    "UPDATE users SET password_hash = %s WHERE user_id = %s",
+                    (hash_password(new_password), user_id),
+                )
+        return ok({
+            "status": "success",
+            "message": "Password changed. Please sign in again with your new password.",
+        })
+    except Exception as exc:
+        return db_error_response(exc)
 
 
 # USER STORIES A.1, A.5, A.7 - Upload one validated image per request.
@@ -1025,6 +1197,7 @@ def predict():
                     return fail("Detection result could not be saved", 500, database_error=str(db_err))
 
                 return ok({
+                    "result_id": ai_result["result_id"],
                     "image_id": image_id,
                     "image_name": image_name,
                     "image_path": f"uploads/{image_name}",
@@ -2524,6 +2697,295 @@ def field_health(field_id: int):
     })
 
 
+# AGRONOMIST EXTENSION C.1 - Human-centred maize leaf-disease assistance.
+@app.route("/api/agronomy/diagnose", methods=["POST"])
+@require_roles("Farmer", "Researcher", "Agronomist", "Admin")
+def diagnose_maize_leaf():
+    if get_disease_predictor is None or build_advice is None:
+        return fail("Disease assistance is not installed on this server", 503)
+
+    is_multipart = bool(request.files)
+    payload = request.form if is_multipart else (request.get_json(silent=True) or {})
+    language = normalize_language(payload.get("language")) if normalize_language else "en"
+    field_id = payload.get("field_id") or payload.get("fieldId")
+    image_id = payload.get("image_id") or payload.get("imageId")
+    uploaded = request.files.get("image") if is_multipart else None
+
+    if not uploaded and not image_id:
+        message = (
+            "请上传叶片照片，或提供已有的 image_id。"
+            if language == "zh-CN"
+            else "Upload a leaf image or provide an existing image_id."
+        )
+        return fail(message, 400)
+    if uploaded and image_id:
+        return fail("Provide either an uploaded image or image_id, not both", 400)
+
+    if field_id not in (None, ""):
+        try:
+            field_id = int(field_id)
+        except (TypeError, ValueError):
+            return fail("field_id must be an integer", 400)
+    else:
+        field_id = None
+
+    context = {
+        "crop_stage": str(payload.get("crop_stage") or payload.get("cropStage") or "").strip()[:200],
+        "recent_weather": str(payload.get("recent_weather") or payload.get("recentWeather") or "").strip()[:500],
+        "symptom_spread": str(payload.get("symptom_spread") or payload.get("symptomSpread") or "").strip()[:500],
+    }
+    image_name = None
+    image_bytes = None
+
+    if uploaded:
+        validation_error = validate_image_upload(uploaded.filename, uploaded.content_type)
+        if validation_error:
+            return fail(validation_error, 400)
+        image_bytes = uploaded.read(10 * 1024 * 1024 + 1)
+        if len(image_bytes) > 10 * 1024 * 1024:
+            return fail("Image must be 10 MB or smaller", 413)
+        image_name = clean_image_filename(uploaded.filename)
+    else:
+        try:
+            image_id = int(image_id)
+        except (TypeError, ValueError):
+            return fail("image_id must be an integer", 400)
+        try:
+            with db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT image_name, user_id, field_id FROM images WHERE image_id = %s",
+                        (image_id,),
+                    )
+                    image = cur.fetchone()
+            if not image:
+                return fail("Uploaded image not found", 404)
+            if (
+                request.auth_user["role"] != "Admin"
+                and image["user_id"] != request.auth_user["user_id"]
+            ):
+                return fail("You can only diagnose images you uploaded", 403)
+            image_name = image["image_name"]
+            field_id = field_id or image.get("field_id")
+            with materialized_image(Path(image_name).name) as image_path:
+                image_bytes = image_path.read_bytes()
+        except Exception as exc:
+            return db_error_response(exc)
+
+    try:
+        predictor = get_disease_predictor()
+        prediction = predictor.predict_bytes(image_bytes)
+        response = build_advice(prediction, language=language, context=context)
+    except InvalidDiseaseImage as exc:
+        return fail(str(exc), 400)
+    except DiseaseModelUnavailable as exc:
+        app.logger.info("Disease model unavailable: %s", exc)
+        return fail("Disease model is not ready on this server", 503)
+    except Exception:
+        app.logger.exception("Disease inference failed")
+        return fail("Disease analysis could not be completed", 500)
+
+    try:
+        with db_connection() as conn:
+            if uploaded:
+                image_id = create_image_record(
+                    conn,
+                    image_name=image_name,
+                    file_size=len(image_bytes),
+                    user_id=int(request.auth_user["user_id"]),
+                )
+                secure_store_bytes(image_name, image_bytes)
+                store_image_blob(
+                    conn,
+                    image_id,
+                    "original",
+                    image_name,
+                    uploaded.content_type or "image/jpeg",
+                    image_bytes,
+                )
+                if field_id:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "UPDATE images SET field_id = %s WHERE image_id = %s",
+                            (field_id, image_id),
+                        )
+
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO disease_diagnoses
+                        (user_id, field_id, image_id, model_version, knowledge_version,
+                         status, predicted_condition, confidence, entropy,
+                         rejection_reason, quality_findings, context_data, response_data)
+                    VALUES
+                        (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                         %s::jsonb, %s::jsonb, %s::jsonb)
+                    RETURNING diagnosis_id
+                    """,
+                    (
+                        request.auth_user["user_id"],
+                        field_id,
+                        image_id,
+                        response.get("technical", {}).get("model_version"),
+                        response.get("knowledge_version"),
+                        response["status"],
+                        (response.get("possible_condition") or {}).get("code"),
+                        response.get("technical", {}).get("confidence"),
+                        response.get("technical", {}).get("entropy"),
+                        None if response["status"] == "supported" else response["status"],
+                        json.dumps(response.get("quality", {}), ensure_ascii=False),
+                        json.dumps(response.get("context_received", {}), ensure_ascii=False),
+                        json.dumps(response, ensure_ascii=False),
+                    ),
+                )
+                diagnosis_id = cur.fetchone()["diagnosis_id"]
+            log_action(
+                conn,
+                "maize_leaf_diagnosed",
+                f"diagnosis_id={diagnosis_id}; status={response['status']}",
+                request.auth_user["user_id"],
+            )
+        response["diagnosis_id"] = diagnosis_id
+        response["image_id"] = image_id
+        response["persistence"] = {"status": "saved"}
+    except Exception:
+        app.logger.exception("Disease result persistence failed")
+        response["diagnosis_id"] = None
+        response["image_id"] = image_id
+        response["persistence"] = {
+            "status": "failed",
+            "message": (
+                "诊断已完成，但这次记录没有保存成功。"
+                if language == "zh-CN"
+                else "The assessment completed, but this record could not be saved."
+            ),
+        }
+
+    return ok(response)
+
+
+@app.route("/api/agronomy/diagnoses", methods=["GET"])
+@require_roles("Farmer", "Researcher", "Agronomist", "Admin")
+def list_maize_leaf_diagnoses():
+    """Return a safe summary of leaf screenings visible to the signed-in user."""
+    try:
+        limit = min(max(int(request.args.get("limit", "20")), 1), 100)
+    except ValueError:
+        return fail("limit must be an integer", 400)
+
+    role = request.auth_user["role"]
+    own_records_only = role in {"Farmer", "Researcher"}
+    query = """
+        SELECT diagnosis_id, image_id, status, predicted_condition,
+               response_data, created_at
+        FROM disease_diagnoses
+    """
+    params: list[Any] = []
+    if own_records_only:
+        query += " WHERE user_id = %s"
+        params.append(request.auth_user["user_id"])
+    query += " ORDER BY created_at DESC LIMIT %s"
+    params.append(limit)
+
+    try:
+        with db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, tuple(params))
+                rows = cur.fetchall()
+    except Exception as exc:
+        return db_error_response(exc)
+
+    records = []
+    for row in rows:
+        response_data = row.get("response_data") or {}
+        if isinstance(response_data, str):
+            try:
+                response_data = json.loads(response_data)
+            except json.JSONDecodeError:
+                response_data = {}
+        condition = response_data.get("possible_condition") or {}
+        records.append(
+            {
+                "diagnosis_id": row["diagnosis_id"],
+                "image_id": row.get("image_id"),
+                "status": row["status"],
+                "condition_code": row.get("predicted_condition"),
+                "condition_name": condition.get("display_name"),
+                "headline": response_data.get("headline"),
+                "created_at": (
+                    row["created_at"].isoformat()
+                    if row.get("created_at")
+                    else None
+                ),
+            }
+        )
+    return ok({"records": records})
+
+
+@app.route("/api/agronomy/diagnoses/<int:diagnosis_id>/review", methods=["POST"])
+@require_roles("Agronomist", "Admin")
+def review_maize_leaf_diagnosis(diagnosis_id: int):
+    payload = request.get_json(silent=True) or {}
+    decision = str(payload.get("decision") or "").strip().lower()
+    note = str(payload.get("note") or "").strip()[:2000]
+    reviewed_condition = str(
+        payload.get("reviewed_condition") or payload.get("reviewedCondition") or ""
+    ).strip()
+    allowed_decisions = {"confirmed", "corrected", "inconclusive"}
+    allowed_conditions = {
+        "healthy",
+        "common_rust",
+        "gray_leaf_spot",
+        "northern_leaf_blight",
+        "other",
+    }
+    if decision not in allowed_decisions:
+        return fail("decision must be confirmed, corrected, or inconclusive", 400)
+    if decision == "corrected" and reviewed_condition not in allowed_conditions:
+        return fail("A supported reviewed_condition or other is required", 400)
+    if decision != "corrected":
+        reviewed_condition = None
+    if not note:
+        return fail("A short review note is required", 400)
+
+    try:
+        with db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE disease_diagnoses
+                    SET reviewer_user_id = %s,
+                        reviewer_decision = %s,
+                        reviewed_condition = %s,
+                        reviewer_note = %s,
+                        reviewed_at = CURRENT_TIMESTAMP
+                    WHERE diagnosis_id = %s
+                    RETURNING diagnosis_id, status, predicted_condition,
+                              reviewer_decision, reviewed_condition,
+                              reviewer_note, reviewed_at
+                    """,
+                    (
+                        request.auth_user["user_id"],
+                        decision,
+                        reviewed_condition,
+                        note,
+                        diagnosis_id,
+                    ),
+                )
+                reviewed = cur.fetchone()
+            if not reviewed:
+                return fail("Diagnosis record not found", 404)
+            log_action(
+                conn,
+                "maize_leaf_diagnosis_reviewed",
+                f"diagnosis_id={diagnosis_id}; decision={decision}",
+                request.auth_user["user_id"],
+            )
+        return ok({"status": "success", "review": reviewed})
+    except Exception as exc:
+        return db_error_response(exc)
+
+
 # USER STORY C.1 - Read or save agronomist recommendations.
 @app.route("/api/fields/<int:field_id>/recommendations", methods=["GET", "POST"])
 @require_roles("Agronomist", "Admin")
@@ -2760,11 +3222,14 @@ def preprocess_image(image_id: int):
 @app.route("/api/system/status", methods=["GET"])
 @require_roles("Admin", "Researcher")
 def system_status():
-    weights = Path(__file__).resolve().parent / "models" / "best.pt"
+    predictor = get_predictor() if get_predictor is not None else None
+    weights = predictor.model_path if predictor is not None else Path(
+        "models/deployment/tassel-best.pt"
+    )
     predictor_available = False
-    if get_predictor is not None:
+    if predictor is not None:
         try:
-            predictor_available = get_predictor().available
+            predictor_available = predictor.available
         except Exception:
             predictor_available = False
     active_version = None
@@ -2778,12 +3243,17 @@ def system_status():
                 active_version = active["model_version"] if active else None
     except Exception:
         active_version = None
+    project_root = Path(__file__).resolve().parents[1]
+    model_display = str(weights.relative_to(project_root)) if weights.is_relative_to(project_root) else weights.name
     return ok({
-        "model_file": str(weights.relative_to(Path(__file__).resolve().parents[1])),
+        "model_file": model_display,
         "model_file_exists": weights.exists(),
         "inference_available": predictor_available,
         "active_model_version": active_version,
-        "training_notebooks": ["maize_yolo26_colab.ipynb", "maize_yolo26_final (4).ipynb"],
+        "training_notebooks": [
+            "training/notebooks/tassel/maize_yolo26_colab.ipynb",
+            "training/notebooks/tassel/maize_yolo26_final.ipynb",
+        ],
     })
 
 
@@ -2793,9 +3263,9 @@ if __name__ == "__main__":
     if not ready:
         raise SystemExit(f"PostgreSQL startup check failed: {error}")
     if get_predictor is None or not get_predictor().available:
-        raise SystemExit("AI startup check failed: backend/models/best.pt is unavailable")
+        raise SystemExit("AI startup check failed: the configured tassel model is unavailable")
     print("Database: PostgreSQL connected")
-    print("AI Inference: backend/models/best.pt loaded")
+    print(f"AI Inference: {get_predictor().model_path.name} loaded")
     from wsgiref.simple_server import make_server
     httpd = make_server("127.0.0.1", 5000, app)
     try:

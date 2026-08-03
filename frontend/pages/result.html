@@ -2,50 +2,55 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <title>Maize Detector - Detection Result</title>
+<link rel="manifest" href="../manifest.webmanifest">
+<link rel="icon" href="../icons/maize-icon-192.png">
 <link rel="stylesheet" href="../css/style.css">
+<link rel="stylesheet" href="../css/mobile.css">
 </head>
 <body>
 
+<div id="networkStatus" class="network-status" role="status" hidden></div>
 <nav class="nav" id="mainNav"></nav>
 
 <div class="container">
   <!-- USER STORY A.3 Boundary: show a clear count, confidence, and processing time. -->
-  <h2 class="page-title">Detection Result</h2>
+  <a href="mobile.html" class="mobile-only" id="resultBack" style="color:var(--mobile-green);font-weight:750;text-decoration:none">‹ 返回首页</a>
+  <h2 class="page-title" id="resultTitle">Detection Result</h2>
   <p class="page-subtitle" id="imageNameLabel">Image: -</p>
   <div id="sourceNotice" class="alert" style="margin-bottom:1rem;"></div>
 
   <div class="card" style="text-align:center;">
     <div style="font-size:4rem;font-weight:800;color:var(--green);" id="countDisplay">-</div>
-    <div style="font-size:1rem;color:var(--gray-500);">Detected Tassels</div>
+    <div style="font-size:1rem;color:#3f5144;" id="countLabel">Detected Tassels</div>
   </div>
 
   <div class="card-grid" style="margin-top:1rem;">
     <div class="stat-card">
       <div class="value" id="confidenceDisplay">-</div>
-      <div class="label">Confidence Score</div>
+      <div class="label" id="confidenceLabel">Confidence Score</div>
     </div>
     <div class="stat-card">
       <div class="value" id="timeDisplay">-</div>
-      <div class="label">Processing Time (seconds)</div>
+      <div class="label" id="timeLabel">Processing Time (seconds)</div>
     </div>
   </div>
 
   <!-- USER STORY A.4 Boundary: display highlighted tassels and compare images. -->
   <div class="card" style="margin-top:1rem;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
-      <h3 style="color:var(--green);">Image View</h3>
+      <h3 style="color:var(--green);" id="imageViewTitle">Image View</h3>
       <label class="toggle" onclick="toggleCompare()">
-        <input type="checkbox" id="compareToggle"> Compare Original vs Annotated
+        <input type="checkbox" id="compareToggle"> <span id="compareLabel">Compare Original vs Annotated</span>
       </label>
     </div>
     <div id="imageContainer" class="compare" style="display:grid;grid-template-columns:1fr;gap:1rem;">
       <div>
-        <p style="text-align:center;font-weight:600;margin-bottom:0.5rem;">Annotated Image (with bounding boxes)</p>
+        <p id="annotatedLabel" style="text-align:center;font-weight:600;margin-bottom:0.5rem;">Annotated Image (with bounding boxes)</p>
         <div style="position:relative;border-radius:6px;border:1px solid var(--gray-300);overflow:hidden;background:#f8faf8;">
           <img id="annotatedImg" src="" alt="Annotated maize field" style="display:block;width:100%;min-height:200px;">
           <svg id="annotationOverlay" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;"></svg>
@@ -61,8 +66,16 @@
   <div id="resultActions" style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-top:1rem;"></div>
 </div>
 
+<nav class="mobile-bottom-nav" aria-label="Mobile navigation">
+  <a href="mobile.html"><span aria-hidden="true">⌂</span><b id="navHome">首页</b></a>
+  <a href="history.html"><span aria-hidden="true">◷</span><b id="navHistory">历史</b></a>
+  <a href="profile.html"><span aria-hidden="true">○</span><b id="navMine">我的</b></a>
+</nav>
+
 <script src="../js/api.js"></script>
 <script src="../js/auth.js"></script>
+<script src="../js/mobile.js"></script>
+<script src="../js/pwa.js"></script>
 <script>
 setActiveNav();
 
@@ -114,9 +127,12 @@ async function loadResult() {
 function displayResult(data) {
   const sourceNotice = document.getElementById('sourceNotice');
   sourceNotice.className = 'alert alert-success';
-  sourceNotice.innerHTML =
-    '<strong>Real result:</strong> loaded from PostgreSQL and backend/models/best.pt.';
-  document.getElementById('imageNameLabel').textContent = 'Image: ' + data.imageName;
+  const mobileZh = window.matchMedia('(max-width: 768px)').matches && mobileLanguage() === 'zh-CN';
+  sourceNotice.innerHTML = mobileZh
+    ? '<strong>真实结果：</strong>由 PostgreSQL 和已部署的玉米穗模型返回。'
+    : '<strong>Real result:</strong> loaded from PostgreSQL and the deployed tassel model.';
+  document.getElementById('imageNameLabel').textContent =
+    (mobileZh ? '图片：' : 'Image: ') + data.imageName;
   document.getElementById('countDisplay').textContent = data.tasselCount;
   document.getElementById('confidenceDisplay').textContent = formatPercent(data.confidenceScore);
   document.getElementById('timeDisplay').textContent =
@@ -216,8 +232,10 @@ function toggleCompare() {
 }
 
 function saveResult() {
-  alert('Result saved to history!');
-  location.href = currentRole() === 'Researcher' ? 'history.html' : 'dashboard.html';
+  alert(mobileLanguage() === 'zh-CN' ? '结果已经保存到历史记录。' : 'Result saved to history!');
+  location.href = currentRole() === 'Researcher'
+    ? 'history.html'
+    : (window.matchMedia('(max-width: 768px)').matches ? 'mobile.html' : 'dashboard.html');
 }
 
 // USER STORY B.1 Boundary: Researchers can flag a result for review.
@@ -233,9 +251,10 @@ function renderResultActions() {
     return;
   }
   el.innerHTML =
-    '<button class="btn btn-primary" onclick="saveResult()">Save Result</button>' +
-    '<a href="upload.html" class="btn btn-outline">Upload Another</a>' +
-    '<a href="dashboard.html" class="btn btn-outline">Farmer Dashboard</a>';
+    '<button class="btn btn-primary" onclick="saveResult()">' + (mobileLanguage() === 'zh-CN' ? '保存并返回首页' : 'Save and return home') + '</button>' +
+    '<a href="upload.html" class="btn btn-outline">' + (mobileLanguage() === 'zh-CN' ? '再拍一张' : 'Take another photo') + '</a>' +
+    '<a href="' + (window.matchMedia('(max-width: 768px)').matches ? 'mobile.html' : 'dashboard.html') + '" class="btn btn-outline">' +
+      (mobileLanguage() === 'zh-CN' ? '返回首页' : 'Farmer home') + '</a>';
 }
 
 // USER STORY B.1 Control call: persist the quality review note.
@@ -246,6 +265,23 @@ async function flagResult() {
   alert(response.ok ? 'Result flagged for review.' : 'Could not flag this result.');
 }
 
+function renderResultLanguage() {
+  if (!window.matchMedia('(max-width: 768px)').matches) return;
+  const zh = mobileLanguage() === 'zh-CN';
+  document.documentElement.lang = zh ? 'zh-CN' : 'en';
+  document.getElementById('resultBack').textContent = zh ? '‹ 返回首页' : '‹ Back home';
+  document.getElementById('resultTitle').textContent = zh ? '玉米穗计数结果' : 'Tassel counting result';
+  document.getElementById('countLabel').textContent = zh ? '检测到的玉米穗' : 'Detected tassels';
+  document.getElementById('confidenceLabel').textContent = zh ? '模型置信度' : 'Confidence score';
+  document.getElementById('timeLabel').textContent = zh ? '处理时间（秒）' : 'Processing time (seconds)';
+  document.getElementById('imageViewTitle').textContent = zh ? '标注图片' : 'Image view';
+  document.getElementById('compareLabel').textContent = zh ? '对比原图与标注图' : 'Compare original and annotated';
+  document.getElementById('annotatedLabel').textContent = zh ? '已标出检测框的图片' : 'Annotated image (with bounding boxes)';
+  document.getElementById('navHome').textContent = zh ? '首页' : 'Home';
+  document.getElementById('navHistory').textContent = zh ? '历史' : 'History';
+  document.getElementById('navMine').textContent = zh ? '我的' : 'My account';
+}
+renderResultLanguage();
 loadResult();
 </script>
 </body>

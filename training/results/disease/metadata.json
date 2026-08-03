@@ -1,0 +1,166 @@
+{
+  "artifact_schema_version": "1.0",
+  "model_version": "maize-disease-20260725-043333",
+  "deployment_ready": true,
+  "architecture": "efficientnet_v2_s",
+  "profile": "quality",
+  "classes": [
+    "healthy",
+    "common_rust",
+    "gray_leaf_spot",
+    "northern_leaf_blight"
+  ],
+  "display_names": {
+    "healthy": "No supported disease clearly detected",
+    "common_rust": "Common rust",
+    "gray_leaf_spot": "Gray leaf spot",
+    "northern_leaf_blight": "Northern corn leaf blight"
+  },
+  "image_size": 224,
+  "resize_size": 256,
+  "normalization": {
+    "mean": [
+      0.485,
+      0.456,
+      0.406
+    ],
+    "std": [
+      0.229,
+      0.224,
+      0.225
+    ]
+  },
+  "temperature": 0.7918410897254944,
+  "thresholds": {
+    "min_confidence": 0.985,
+    "min_margin": 0.05,
+    "max_normalized_entropy": 0.075,
+    "unknown_max_confidence": 0.73,
+    "unknown_min_normalized_entropy": 0.28
+  },
+  "gates": {
+    "external_macro_f1_at_least_0_80": true,
+    "cds_macro_f1_at_least_0_80": true,
+    "supported_class_recall_at_least_0_70": true,
+    "cds_class_recall_at_least_0_70": true,
+    "accepted_external_accuracy_at_least_0_90": true,
+    "accepted_external_coverage_at_least_0_30": true,
+    "ood_false_acceptance_at_most_0_10": true,
+    "external_ece_at_most_0_08": true,
+    "cds_ece_at_most_0_10": true,
+    "no_cross_partition_hash_leakage": true,
+    "external_sample_count_at_least_20": true,
+    "torchscript_equivalence": true
+  },
+  "advisory_audits": {
+    "plantdoc_supported_samples": 14,
+    "plantdoc_advisory_only_because_supported_samples_below_20": true,
+    "plantdoc_accepted_accuracy": 0.875,
+    "plantdoc_accepted_coverage": 0.5714285714285714
+  },
+  "metrics": {
+    "internal": {
+      "dataset": "internal_test",
+      "samples": 794,
+      "accuracy": 0.9685138539042821,
+      "macro_f1": 0.9569550284843638,
+      "ece": 0.009575570860797859,
+      "coverage": 0.6385390428211587,
+      "accepted_accuracy": 0.9960552268244576
+    },
+    "external_field": {
+      "dataset": "external_field_test",
+      "samples": 523,
+      "accuracy": 0.9847036328871893,
+      "macro_f1": 0.9545665744978146,
+      "ece": 0.006335246859271485,
+      "coverage": 0.8374760994263862,
+      "accepted_accuracy": 0.997716894977169
+    },
+    "plantdoc_field": {
+      "dataset": "plantdoc_field_test",
+      "samples": 14,
+      "accuracy": 0.7142857142857143,
+      "macro_f1": 0.6944444444444444,
+      "ece": 0.2766173269067492,
+      "coverage": 0.5714285714285714,
+      "accepted_accuracy": 0.875
+    },
+    "cds_field": {
+      "dataset": "cds_field_test",
+      "samples": 509,
+      "accuracy": 0.9921414538310412,
+      "macro_f1": 0.9931329841149481,
+      "ece": 0.012042934744671841,
+      "coverage": 0.8447937131630648,
+      "accepted_accuracy": 1.0
+    },
+    "ood_false_acceptance": 0.08634538152610442,
+    "confidence_intervals": {
+      "internal_accuracy": {
+        "estimate": 0.9685138539042821,
+        "lower_95": 0.9559193954659949,
+        "upper_95": 0.9811083123425692
+      },
+      "internal_macro_f1": {
+        "estimate": 0.9569550284843638,
+        "lower_95": 0.9385684158927708,
+        "upper_95": 0.9739122916656068
+      },
+      "external_accuracy": {
+        "estimate": 0.9847036328871893,
+        "lower_95": 0.9751434034416826,
+        "upper_95": 0.994263862332696
+      },
+      "external_macro_f1": {
+        "estimate": 0.9545665744978146,
+        "lower_95": 0.8899902418353706,
+        "upper_95": 0.9960853173299574
+      },
+      "plantdoc_macro_f1": {
+        "estimate": 0.6944444444444444,
+        "lower_95": 0.4090909090909091,
+        "upper_95": 0.9181286549707601
+      },
+      "cds_macro_f1": {
+        "estimate": 0.9931329841149481,
+        "lower_95": 0.9852511114180923,
+        "upper_95": 0.999036884117809
+      }
+    }
+  },
+  "data": {
+    "plantvillage": {
+      "url": "https://github.com/spMohanty/PlantVillage-Dataset.git",
+      "revision": "7f7ecc7e1eaca78107e3affe7cb5abd9427e139a",
+      "split_revision": "a12d9d3ebb66dd0f7668e577194d6057e80f3b16"
+    },
+    "plantdoc": {
+      "url": "https://github.com/pratikkayal/PlantDoc-Dataset.git",
+      "revision": "5467f6012d78d1c446145d5f582da6096f852ae8",
+      "license": "CC BY 4.0",
+      "windows_safe_file_map": "plantdoc_file_map.csv"
+    },
+    "cds": {
+      "url": "https://osf.io/s6ru5/",
+      "osf_node": "s6ru5",
+      "subset": "Dataset_Original",
+      "official_split": true,
+      "license": "Not specified in OSF metadata; verify before redistribution",
+      "manifest": "cds_manifest.json"
+    },
+    "partition_manifest": "partition_manifest.csv",
+    "leakage_removals": "leakage_removals.csv",
+    "development_duplicates_removed": 15
+  },
+  "versions": {
+    "python": "3.11.5",
+    "torch": "2.11.0+cu128",
+    "torchvision": "0.26.0+cu128",
+    "sklearn": "1.9.0"
+  },
+  "export": {
+    "format": "torchscript",
+    "max_eager_difference": 0.0
+  }
+}

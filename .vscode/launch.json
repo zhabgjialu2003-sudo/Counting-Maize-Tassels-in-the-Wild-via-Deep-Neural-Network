@@ -1,0 +1,15 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run Maize Detector",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}\\backend\\server.py",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}\\backend\\.env",
+      "console": "integratedTerminal",
+      "justMyCode": true
+    }
+  ]
+}

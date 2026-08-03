@@ -1,0 +1,29 @@
+{
+  "id": "./",
+  "name": "Maize Field Assistant",
+  "short_name": "Maize Assist",
+  "description": "Bilingual maize tassel counting and leaf screening for field use.",
+  "lang": "en",
+  "dir": "ltr",
+  "start_url": "./pages/login.html?source=pwa",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#edf5e9",
+  "theme_color": "#1f5136",
+  "categories": ["agriculture", "productivity", "utilities"],
+  "icons": [
+    {
+      "src": "./icons/maize-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icons/maize-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

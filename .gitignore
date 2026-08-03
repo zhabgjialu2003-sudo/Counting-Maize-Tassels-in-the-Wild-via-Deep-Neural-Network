@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 venv/
+.venv/
 .env
 
 # Node
@@ -11,8 +12,11 @@ node_modules/
 .DS_Store
 Thumbs.db
 
-# IDE
-.vscode/
+# IDE (keep the shared VS Code run/test configuration)
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
 .idea/
 
 # Temp
@@ -25,3 +29,4 @@ package.json
 package-lock.json
 .claude/
 .playwright-cli/
+.superpowers/

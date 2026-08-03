@@ -3,7 +3,7 @@ const AUTH_KEY = 'maize_user';
 const TOKEN_KEY = 'maize_access_token';
 
 const ROLE_PAGES = {
-  Farmer: ['dashboard.html', 'upload.html', 'result.html'],
+  Farmer: ['mobile.html', 'dashboard.html', 'upload.html', 'leaf.html', 'result.html', 'history.html', 'profile.html'],
   Researcher: ['researcher.html', 'history.html', 'report.html', 'export.html'],
   Agronomist: ['agronomist.html'],
   Admin: ['admin.html', 'system.html'],
@@ -58,8 +58,11 @@ async function validateSession() {
 }
 
 function defaultPageForRole(role) {
+  if (role === 'Farmer' && window.matchMedia('(max-width: 768px)').matches) {
+    return 'mobile.html';
+  }
   const pages = ROLE_PAGES[role] || [];
-  return pages[0] || 'login.html';
+  return role === 'Farmer' ? 'dashboard.html' : (pages[0] || 'login.html');
 }
 
 function normalizeSessionUser(user = {}) {
@@ -91,13 +94,22 @@ function buildNav() {
   const session = getSession();
   if (!session) return '<a href="login.html">Login</a>';
 
-  const pages = ROLE_PAGES[session.role] || [];
+  const isMobileFarmer =
+    session.role === 'Farmer' && window.matchMedia('(max-width: 768px)').matches;
+  const pages = isMobileFarmer
+    ? ['mobile.html', 'upload.html', 'leaf.html', 'history.html', 'profile.html']
+    : (session.role === 'Farmer'
+      ? ['dashboard.html', 'upload.html', 'result.html']
+      : (ROLE_PAGES[session.role] || []));
   const navMap = {
+    'mobile.html': 'Home',
     'dashboard.html': 'Home',
     'researcher.html': 'Dashboard',
     'upload.html': 'Upload',
+    'leaf.html': 'Leaf Assistant',
     'result.html': 'Result',
     'history.html': 'History',
+    'profile.html': 'My account',
     'report.html': 'Report',
     'export.html': 'Export',
     'agronomist.html': 'Agronomist',
@@ -125,6 +137,14 @@ function initNav() {
 function logout() {
   clearSession();
   location.href = 'login.html';
+}
+
+function confirmLogout(language = 'en') {
+  const zh = language === 'zh-CN';
+  const message = zh
+    ? '确定要退出登录吗？退出后需要重新输入邮箱和密码。'
+    : 'Sign out now? You will need your email and password to sign in again.';
+  if (window.confirm(message)) logout();
 }
 
 async function doLogin(email, password) {

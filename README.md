@@ -1,113 +1,170 @@
 # Counting Maize Tassels in the Wild via Deep Neural Network
 
-**FYP-26-S2-7 | Week 11 integrated working prototype**
+A final-year project that combines real maize-tassel detection, secure image
+handling, PostgreSQL result storage, desktop workflows, and a mobile PWA. The
+primary objective is automatic tassel counting from field images. A calibrated
+maize leaf-disease screening assistant is included as an Agronomist extension.
 
-This project detects and counts maize tassels from field images with the team's
-trained YOLO26s model. The web application provides role-based workflows for
-Farmers, Researchers, Agronomists, Administrators, and system/model operations.
+## Core capabilities
 
-- Project website: https://zhabgjialu2003-sudo.github.io/Counting-Maize-Tassels-in-the-Wild-via-Deep-Neural-Network/
-- Repository: https://github.com/zhabgjialu2003-sudo/Counting-Maize-Tassels-in-the-Wild-via-Deep-Neural-Network
-- Local API: `http://127.0.0.1:5000`
+- Count and highlight maize tassels with the team-trained YOLO26s model.
+- Accept single or batch images and preserve analysis history.
+- Store uploaded image content securely and record results in PostgreSQL.
+- Support Farmer, Researcher, Agronomist, and Admin permissions.
+- Provide mobile-friendly capture and upload through an installable PWA.
+- Screen close-up maize leaves for four supported disease outcomes.
+- Reject low-quality, unfamiliar, or low-confidence leaf images rather than
+  forcing a diagnosis.
+- Export results and retain model and testing evidence for assessment.
 
-## Week 11 Status
+## Evidence preview
 
-- Real inference uses `backend/models/best.pt`.
-- PostgreSQL is required; production routes do not return fabricated success data.
-- 30 User Stories are implemented in BCE order: A.1-A.8, B.1-B.6,
-  C.1-C.5, D.1-D.6, and E.1-E.5.
-- 30 BCE diagrams and 30 sequence diagrams are included.
-- 11 role-oriented frontend pages and 47 declared Flask routes are included.
-- Automated compliance tests cover authentication, role permissions, storage,
-  validation, BCE ordering, and removal of production mock fallbacks.
+| Input | Annotated tassel result |
+|---|---|
+| [`DJI_0243 (2).JPG`](examples/tassel-counting/input/DJI_0243%20(2).JPG) | [`DJI_0243 (2)_annotated.jpg`](examples/tassel-counting/output/DJI_0243%20(2)_annotated.jpg) |
 
-## Repository Structure
+More inputs and expected outputs are available under [`examples/`](examples/).
+
+## System flow
 
 ```text
-index.html                         Project website for GitHub Pages
-frontend/
-  pages/                           Login and role-based application pages
-  css/style.css                    Shared responsive styles
-  js/api.js                        API client and response normalization
-  js/auth.js                       Session and role-based access control
-backend/
-  app.py                           Flask API and User Story controls
-  server.py                        Strict local production-style startup
-  db.py                            PostgreSQL connection helpers
-  inference.py                     YOLO26s inference using best.pt
-  training.py                      Local Ultralytics training workflow
-  models/best.pt                   Team-trained deployable weights
-database/
-  schema_postgresql.sql            Current PostgreSQL schema
-  migrate_user_story_compliance.sql Non-destructive compliance migration
-  erd.drawio                       Entity relationship diagram
-docs/
-  diagrams/                        30 BCE and 30 sequence diagrams
-  reports/                         Reports, test plan, and compliance audits
-  presentations/                   Presentation material
-  other/                           User Stories and implementation guide
-tests/test_compliance.py           Automated compliance checks
+Desktop or mobile browser
+          |
+          v
+Flask API: authentication, validation and authorization
+          |
+          +----> encrypted image storage
+          |
+          +----> tassel detector or disease-screening model
+          |
+          v
+PostgreSQL result, audit and model records
+          |
+          v
+Role-specific result, history, report and export views
 ```
 
-## Run Locally
+Detailed architecture, AI logic, database design, tests, reports, and manuals
+are indexed in [`docs/ASSESSMENT_INDEX.md`](docs/ASSESSMENT_INDEX.md).
 
-1. Create the PostgreSQL database and run:
+## Repository structure
+
+```text
+backend/       Flask API, security, persistence and inference integration
+frontend/      Desktop pages, mobile pages and PWA assets
+database/      SQL schema, ordered migrations and demo seeds
+models/        Git LFS deployment models, model cards and provenance
+training/      Tassel and disease notebooks with evaluation evidence
+datasets/      Dataset sources, licences and download guidance
+examples/      Small demonstration inputs and expected outputs
+tests/         Automated unit, integration and static contract tests
+docs/          Requirements, design, testing, manuals, reports and evidence
+coursework/    Historical assessed submission packages
+```
+
+## Prerequisites
+
+- Windows, macOS or Linux
+- Python 3.11 or 3.12
+- PostgreSQL
+- Git LFS
+- VS Code with the Python extension, recommended
+
+## Run in VS Code
 
 ```powershell
-psql -U postgres -d maize_detector -f database/schema_postgresql.sql
-psql -U postgres -d maize_detector -f database/migrate_user_story_compliance.sql
+git lfs install
+git lfs pull
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r backend\requirements.txt
+Copy-Item backend\.env.example backend\.env
 ```
 
-2. Copy `backend/.env.example` to `backend/.env` and configure PostgreSQL,
-   `SECRET_KEY`, and `FILE_ENCRYPTION_KEY`.
+Edit `backend/.env` locally. Set the PostgreSQL password, a long random
+`SECRET_KEY`, and a Fernet `FILE_ENCRYPTION_KEY`. Never commit this file.
 
-3. Install dependencies and start the strict server:
+Create the database and apply the current schema:
 
 ```powershell
-python -m pip install -r backend/requirements.txt
-python backend/server.py
+createdb -U postgres maize_detector
+psql -U postgres -d maize_detector -f database\schema\schema_postgresql.sql
+psql -U postgres -d maize_detector -f database\migrations\001_user_story_compliance.sql
+psql -U postgres -d maize_detector -f database\migrations\002_disease_agronomist.sql
 ```
 
-4. Serve the repository root and open the prototype:
+Start the application with the VS Code `Run Maize Detector` launch
+configuration, or run:
 
 ```powershell
-python -m http.server 8000
+python backend\server.py
 ```
 
-Open `http://localhost:8000/frontend/pages/login.html`.
+Open:
 
-Direct `file://` opening is also allowed for the local demo, but serving the
-repository over `http://localhost:8000` is recommended for consistent browser
-behaviour.
+```text
+http://127.0.0.1:5000/frontend/pages/login.html
+```
 
-## Verification
+The mobile entry page is:
+
+```text
+http://127.0.0.1:5000/frontend/pages/mobile.html
+```
+
+See the [User Manual](docs/manuals/USER_MANUAL.md) and
+[Technical Manual](docs/manuals/TECHNICAL_MANUAL.md) for complete instructions.
+
+## Deployment models
+
+| Task | Runtime file | SHA-256 |
+|---|---|---|
+| Tassel counting | `models/deployment/tassel-best.pt` | `37BCA6B8E817D911424DBD22F720F9CBE00248036E0FC6305EF853F8B38D9913` |
+| Disease screening | `models/deployment/maize-disease.torchscript.pt` | `4F48A440E2EB35BEF220107F9E777F9A3A10DC8FA0B79E0296A022CBA700EF17` |
+
+Model paths can be overridden with `TASSEL_MODEL_PATH` and
+`DISEASE_MODEL_PATH`. Startup checks reject missing files and Git LFS pointer
+files. Provenance and model cards are under [`models/`](models/).
+
+## Recorded disease evaluation
+
+| Evaluation set | Samples | Accuracy | Macro F1 | Accepted accuracy | Coverage |
+|---|---:|---:|---:|---:|---:|
+| Internal test | 794 | 96.85% | 95.70% | 99.61% | 63.85% |
+| External field test | 523 | 98.47% | 95.46% | 99.77% | 83.75% |
+| PlantDoc field audit | 14 | 71.43% | 69.44% | 87.50% | 57.14% |
+| CDS field test | 509 | 99.21% | 99.31% | 100.00% | 84.48% |
+
+The PlantDoc result is advisory because only 14 supported samples were
+available. Full thresholds, confidence intervals, dataset revisions, leakage
+checks, and deployment gates are in
+[`training/results/disease/metadata.json`](training/results/disease/metadata.json).
+
+## Tests
 
 ```powershell
 python -m unittest discover -s tests -v
 ```
 
-`backend/server.py` stops immediately if PostgreSQL or `best.pt` is unavailable,
-preventing an incomplete demo from appearing successful.
+The current baseline is 54 automated tests. The latest verified result is recorded in
+[`docs/testing/TEST_RESULTS.md`](docs/testing/TEST_RESULTS.md).
 
-## Main Evidence
+## Responsible use and limitations
 
-- [User Stories](docs/other/FYP-26-S2-7_User_Stories.md)
-- [User Story Code Guide](docs/other/FYP-26-S2-7_User_Story_Code_Guide.md)
-- [BCE and Sequence Source](docs/other/FYP-26-S2-7_BCE_Sequence_Diagrams.md)
-- [BCE Compliance Audit](docs/reports/bce_sequence_compliance_audit.md)
-- [Week 11 Compliance Audit](docs/reports/week11_compliance_audit.md)
-- [PostgreSQL ERD](database/erd.md)
+- Tassel counts depend on image resolution, viewpoint, occlusion, lighting and
+  field conditions.
+- Disease screening supports only the classes listed in its model card.
+- A supported output is a field-screening aid, not a laboratory diagnosis or
+  pesticide prescription.
+- PlantDoc evidence is explicitly marked advisory because of its small supported
+  sample count.
+- Private farmer uploads, local database credentials and encryption keys must
+  never be committed.
 
-## Team
+## Assessment and project history
 
-| Member | Student ID |
-|---|---|
-| R Philip Abraham | 8931707 |
-| Li Qiankun | 7912936 |
-| Zhang Yixin | 9107241 |
-| Li Baichuan | 9182111 |
-| Zhang Jialu | 9090411 |
-
-Supervisor: **Sionggo Japit**
-
-Assessor: **Tian Sion Hui**
+- [Assessment Evidence Index](docs/ASSESSMENT_INDEX.md)
+- [Privacy-safe Project Deliverables](docs/requirements/PROJECT_DELIVERABLES.md)
+- [Training and Evaluation](training/README.md)
+- [Database ERD](docs/design/database/erd.md)
+- [Historical Coursework Archive](coursework/README.md)
