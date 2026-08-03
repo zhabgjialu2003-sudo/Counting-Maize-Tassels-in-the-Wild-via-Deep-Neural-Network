@@ -2,7 +2,7 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Run Maize Detector / 运行玉米检测系统",
+      "name": "Run Maize Detector",
       "type": "debugpy",
       "request": "launch",
       "program": "${workspaceFolder}\\backend\\server.py",

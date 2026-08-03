@@ -131,7 +131,7 @@ For deliberate evaluation of a candidate, set
 - [Mobile PWA Run Guide](docs/MOBILE_PWA_RUN_GUIDE.md)
 - [Final Requirements Acceptance](docs/reports/thesis_requirements_acceptance_20260725.md)
 - [Tassel Model Provenance](backend/models/MODEL_PROVENANCE.md)
-- [Disease Training Code and Results / 病害训练代码与结果](training/README.md)
+- [Disease Training Code and Results](training/README.md)
 - [User Stories](docs/other/FYP-26-S2-7_User_Stories.md)
 - [User Story Code Guide](docs/other/FYP-26-S2-7_User_Story_Code_Guide.md)
 - [BCE and Sequence Source](docs/other/FYP-26-S2-7_BCE_Sequence_Diagrams.md)
