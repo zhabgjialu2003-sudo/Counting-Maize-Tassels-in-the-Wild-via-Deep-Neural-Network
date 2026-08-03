@@ -1,7 +1,14 @@
 // Maize Detector - shared API client and response normalization.
-// Use IPv4 explicitly because some Windows browsers resolve localhost to ::1
-// while the local assessment server listens on 127.0.0.1.
-const API_BASE = 'http://127.0.0.1:5000';
+// Local development keeps frontend/backend on separate ports. A deployed PWA
+// uses the same HTTPS origin unless an explicit runtime override is supplied.
+const API_BASE = (() => {
+  const configured = String(window.MAIZE_API_BASE || '').trim().replace(/\/+$/, '');
+  if (configured) return configured;
+  if (location.protocol === 'file:' || ['localhost', '127.0.0.1'].includes(location.hostname)) {
+    return 'http://127.0.0.1:5000';
+  }
+  return '';
+})();
 
 async function apiRequest(endpoint, options = {}) {
   // Set a generous timeout (2 min) to prevent infinite hang on slow CPU inference
@@ -60,6 +67,14 @@ function apiPut(endpoint, body) {
   });
 }
 
+function apiPatch(endpoint, body) {
+  return apiRequest(endpoint, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
 function apiDelete(endpoint) {
   return apiRequest(endpoint, { method: 'DELETE' });
 }
@@ -68,6 +83,83 @@ function apiUpload(file) {
   const form = new FormData();
   form.append('image', file);
   return apiRequest('/api/upload', { method: 'POST', body: form });
+}
+
+function apiMultipartWithProgress(endpoint, form, onProgress, timeoutMs = 120000) {
+  return new Promise(resolve => {
+    const request = new XMLHttpRequest();
+    request.open('POST', `${API_BASE}${endpoint}`);
+    request.timeout = timeoutMs;
+    const token = sessionStorage.getItem('maize_access_token');
+    if (token) request.setRequestHeader('Authorization', `Bearer ${token}`);
+    request.upload.onprogress = event => {
+      if (event.lengthComputable && typeof onProgress === 'function') {
+        onProgress(Math.round((event.loaded / event.total) * 100));
+      }
+    };
+    request.onload = () => {
+      let data = {};
+      try { data = JSON.parse(request.responseText || '{}'); } catch (error) {}
+      if (request.status >= 200 && request.status < 300) {
+        resolve({ ok: true, status: request.status, data });
+        return;
+      }
+      resolve({
+        ok: false,
+        status: request.status,
+        error: data.message || data.error || request.statusText || 'Upload failed',
+      });
+    };
+    request.onerror = () => resolve({
+      ok: false,
+      status: 0,
+      error: navigator.onLine
+        ? 'The connection was interrupted. Your photo is still on this page; try again.'
+        : 'You are offline. Reconnect, then try this upload again.',
+    });
+    request.ontimeout = () => resolve({
+      ok: false,
+      status: 408,
+      error: 'The upload is taking longer than expected. Check your signal and try again.',
+    });
+    request.send(form);
+  });
+}
+
+function apiUploadWithProgress(file, onProgress) {
+  const form = new FormData();
+  form.append('image', file);
+  return apiMultipartWithProgress('/api/upload', form, onProgress);
+}
+
+function apiDiagnoseDisease(file, details = {}) {
+  const form = new FormData();
+  form.append('image', file);
+  Object.entries(details).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && String(value).trim() !== '') {
+      form.append(key, String(value));
+    }
+  });
+  return apiRequest('/api/agronomy/diagnose', {
+    method: 'POST',
+    body: form,
+    timeout: 120000,
+  });
+}
+
+function apiDiagnoseDiseaseWithProgress(file, details = {}, onProgress) {
+  const form = new FormData();
+  form.append('image', file);
+  Object.entries(details).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && String(value).trim() !== '') {
+      form.append(key, String(value));
+    }
+  });
+  return apiMultipartWithProgress('/api/agronomy/diagnose', form, onProgress);
+}
+
+function apiReviewDiseaseDiagnosis(diagnosisId, review) {
+  return apiPost(`/api/agronomy/diagnoses/${diagnosisId}/review`, review);
 }
 
 function normalizeResult(raw) {

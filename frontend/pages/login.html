@@ -2,12 +2,17 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
+<link rel="icon" href="data:,">
 <title>Maize Detector - Login</title>
+<link rel="manifest" href="../manifest.webmanifest">
+<link rel="icon" href="../icons/maize-icon-192.png">
+<link rel="apple-touch-icon" href="../icons/maize-icon-192.png">
 <link rel="stylesheet" href="../css/style.css">
+<link rel="stylesheet" href="../css/mobile.css">
 <style>
   body { min-height:100vh; background:linear-gradient(180deg,#f3faf5 0%,#eef3ee 100%); }
   .login-card { max-width:420px; margin:72px auto; }
@@ -89,7 +94,15 @@
 
 <script src="../js/api.js?v=20260610-2"></script>
 <script src="../js/auth.js?v=20260610-2"></script>
+<script src="../js/mobile.js"></script>
+<script src="../js/pwa.js"></script>
 <script>
+const loginParams = new URLSearchParams(location.search);
+if (loginParams.get('password_changed') === '1') {
+  document.getElementById('errorBox').innerHTML =
+    '<div class="alert alert-success">密码已修改，请使用新密码登录。<br><small>Password changed. Sign in with your new password.</small></div>';
+}
+
 if (isLoggedIn()) {
   location.href = defaultPageForRole(currentRole());
 }

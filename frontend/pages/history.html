@@ -2,18 +2,27 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Maize Detector - History</title>
+<link rel="manifest" href="../manifest.webmanifest">
+<link rel="icon" href="../icons/maize-icon-192.png">
 <link rel="stylesheet" href="../css/style.css">
+<link rel="stylesheet" href="../css/mobile.css">
 </head>
 <body>
 
+<div id="networkStatus" class="network-status" role="status" hidden></div>
 <nav class="nav" id="mainNav"></nav>
 
 <div class="container">
   <!-- USER STORY B.3 Boundary: filter, sort, inspect, and chart historical data. -->
-  <h2 class="page-title">Detection History</h2>
-  <p class="page-subtitle">View and filter past tassel counting records</p>
+  <h2 class="page-title" id="historyTitle">Detection History</h2>
+  <p class="page-subtitle" id="historySubtitle">View and filter past tassel counting records</p>
+
+  <section id="leafHistorySection" class="mobile-only" style="margin-bottom:1rem">
+    <h3 style="color:var(--mobile-green)">最近的叶片筛查</h3>
+    <div id="leafHistoryCards"><span class="spinner"></span></div>
+  </section>
 
   <div class="card" style="display:flex;gap:0.75rem;flex-wrap:wrap;align-items:end;">
     <div class="form-group" style="flex:1;min-width:150px;margin-bottom:0;">
@@ -45,7 +54,7 @@
 
   <div class="card" style="margin-top:1rem;">
     <div class="table-wrap">
-      <table>
+      <table class="mobile-history-table">
         <thead><tr><th>Image Name</th><th>Date</th><th>Tassel Count</th><th>Confidence</th><th>Action</th></tr></thead>
         <tbody id="historyTableBody"></tbody>
       </table>
@@ -53,10 +62,18 @@
   </div>
 </div>
 
+<nav class="mobile-bottom-nav" aria-label="Mobile navigation">
+  <a href="mobile.html"><span aria-hidden="true">⌂</span><b>首页</b></a>
+  <a class="active" href="history.html"><span aria-hidden="true">◷</span><b>历史</b></a>
+  <a href="profile.html"><span aria-hidden="true">○</span><b>我的</b></a>
+</nav>
+
 <script src="../js/api.js?v=20260610-2"></script>
 <script src="../js/auth.js?v=20260610-2"></script>
+<script src="../js/mobile.js"></script>
+<script src="../js/pwa.js"></script>
 <script>
-if (!requireRole(["Researcher"])) throw new Error('Access denied');
+if (!requireRole(["Farmer", "Researcher"])) throw new Error('Access denied');
 initNav();
 
 let allRecords = [];
@@ -74,10 +91,35 @@ async function loadHistory() {
   applyFilters();
 }
 
+async function loadLeafHistory() {
+  if (currentRole() !== 'Farmer') return;
+  const holder = document.getElementById('leafHistoryCards');
+  const response = await apiGet('/api/agronomy/diagnoses?limit=8');
+  if (!response.ok) {
+    holder.innerHTML = '<div class="alert alert-warning">叶片记录暂时无法读取，请稍后重试。</div>';
+    return;
+  }
+  const records = response.data.records || [];
+  holder.innerHTML = records.length ? records.map(record =>
+    '<article class="card" style="border-left:5px solid var(--mobile-green);padding:1rem">' +
+      '<strong style="display:block;color:var(--mobile-green)">' +
+        esc(record.condition_name || (record.status === 'retake_required' ? '需要重新拍摄' : '仍需确认')) +
+      '</strong><p style="margin:0.35rem 0;color:#26382b">' + esc(record.headline || '') + '</p>' +
+      '<small class="info-text">' + esc(formatDate(record.created_at)) + '</small>' +
+    '</article>'
+  ).join('') : '<div class="high-contrast-note">还没有叶片筛查记录。</div>';
+}
+
 function renderTable(records) {
+  const zh = window.matchMedia('(max-width: 768px)').matches && mobileLanguage() === 'zh-CN';
+  const labels = zh
+    ? { image: '图片', date: '日期', count: '玉米穗数量', confidence: '置信度', action: '操作', view: '查看' }
+    : { image: 'Image', date: 'Date', count: 'Tassel count', confidence: 'Confidence', action: 'Action', view: 'View' };
   const rows = records.map(r => {
     const badge = r.confidenceScore >= 0.9 ? 'badge-green' : r.confidenceScore >= 0.75 ? 'badge-yellow' : 'badge-red';
-    return `<tr><td>${esc(r.imageName)}</td><td>${formatDate(r.createdAt)}</td><td><strong>${r.tasselCount}</strong></td><td><span class="badge ${badge}">${formatPercent(r.confidenceScore)}</span></td><td><a href="result.html?id=${r.resultId}" onclick="viewResult(${r.resultId});return false;" class="btn btn-sm btn-outline">View</a></td></tr>`;
+    return `<tr><td data-label="${labels.image}">${esc(r.imageName)}</td><td data-label="${labels.date}">${formatDate(r.createdAt)}</td>` +
+      `<td data-label="${labels.count}"><strong>${r.tasselCount}</strong></td><td data-label="${labels.confidence}"><span class="badge ${badge}">${formatPercent(r.confidenceScore)}</span></td>` +
+      `<td data-label="${labels.action}"><a href="result.html?id=${r.resultId}" onclick="viewResult(${r.resultId});return false;" class="btn btn-sm btn-outline">${labels.view}</a></td></tr>`;
   }).join('');
   document.getElementById('historyTableBody').innerHTML = rows || '<tr><td colspan="5" style="text-align:center;color:var(--gray-500);">No records found</td></tr>';
 }
@@ -133,7 +175,17 @@ function resetFilters() {
   applyFilters();
 }
 
+function renderHistoryLanguage() {
+  if (!window.matchMedia('(max-width: 768px)').matches) return;
+  const zh = mobileLanguage() === 'zh-CN';
+  document.getElementById('historyTitle').textContent = zh ? '历史记录' : 'History';
+  document.getElementById('historySubtitle').textContent = zh
+    ? '查看过去的玉米穗计数和叶片筛查'
+    : 'Review past tassel counts and leaf screenings';
+}
+renderHistoryLanguage();
 loadHistory();
+loadLeafHistory();
 </script>
 </body>
 </html>

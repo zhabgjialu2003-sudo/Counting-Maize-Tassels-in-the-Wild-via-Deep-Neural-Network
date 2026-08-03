@@ -10,14 +10,26 @@
 <nav class="nav" id="mainNav"></nav>
 <div class="container">
   <!-- AGRONOMIST BOUNDARY: all Agronomist stories appear below in BCE order. -->
-  <h2 class="page-title">Agronomist Dashboard</h2>
-  <p class="page-subtitle">Multi-field monitoring, health evaluation, and actionable insights</p>
+  <div class="agronomy-toolbar">
+    <div>
+      <h2 class="page-title" id="agronomyTitle">Agronomist Dashboard</h2>
+      <p class="page-subtitle" id="agronomySubtitle">Multi-field monitoring, health evaluation, and actionable insights</p>
+    </div>
+    <label class="language-picker" for="agronomyLanguage">
+      <span id="languageLabel">Language</span>
+      <select id="agronomyLanguage" aria-label="Agronomist language">
+        <option value="en">English</option>
+        <option value="zh-CN">中文</option>
+      </select>
+    </label>
+  </div>
   <div class="tabs" id="tabs">
-    <button class="tab active" data-tab="health">Health (C.1)</button>
-    <button class="tab" data-tab="growth">Growth (C.2)</button>
-    <button class="tab" data-tab="alerts">Alerts (C.3)</button>
-    <button class="tab" data-tab="dashboard">Multi-Field (C.4)</button>
-    <button class="tab" data-tab="insights">Insights (C.5)</button>
+    <button class="tab active" data-tab="health" id="tabHealth">Health (C.1)</button>
+    <button class="tab" data-tab="diagnosis" id="tabDiagnosis">Leaf Assistant (C.1+)</button>
+    <button class="tab" data-tab="growth" id="tabGrowth">Growth (C.2)</button>
+    <button class="tab" data-tab="alerts" id="tabAlerts">Alerts (C.3)</button>
+    <button class="tab" data-tab="dashboard" id="tabDashboard">Multi-Field (C.4)</button>
+    <button class="tab" data-tab="insights" id="tabInsights">Insights (C.5)</button>
   </div>
   <div id="tabContent"></div>
 </div>
@@ -29,6 +41,175 @@ initNav();
 
 let fields = [];
 let latestInsights = null;
+let agronomyLanguage = localStorage.getItem('agronomy_language') || 'en';
+let diagnosisDraftFile = null;
+let diagnosisPreviewUrl = null;
+let latestDiagnosis = null;
+let diagnosisDraftContext = {};
+
+const agronomyText = {
+  en: {
+    title: 'Agronomist Dashboard',
+    subtitle: 'Multi-field monitoring, leaf assistance, and practical next steps',
+    language: 'Language',
+    health: 'Health (C.1)',
+    diagnosis: 'Leaf Assistant (C.1+)',
+    growth: 'Growth (C.2)',
+    alerts: 'Alerts (C.3)',
+    dashboard: 'Multi-Field (C.4)',
+    insights: 'Insights (C.5)',
+    assistantTitle: 'Let’s take a careful look at the leaf',
+    assistantIntro: 'A clear photo and a little field context help the system give a more honest answer.',
+    guideLight: 'Soft daylight',
+    guideLightBody: 'Avoid deep shade, glare, and harsh flash.',
+    guideLeaf: 'Show the leaf',
+    guideLeafBody: 'Fill most of the frame and include the damaged area.',
+    guideSteady: 'Hold steady',
+    guideSteadyBody: 'Tap the leaf to focus before taking the photo.',
+    choosePhoto: 'Tap to choose or take a leaf photo',
+    retainedPhoto: 'Photo kept after language change',
+    field: 'Field (optional)',
+    noField: 'Not linked to a field',
+    fieldUnavailable: 'Field data is unavailable right now. You can still use the Leaf Assistant without linking a field.',
+    cropStage: 'Crop stage (optional)',
+    cropStageHint: 'e.g. before tasseling',
+    weather: 'Recent weather (optional)',
+    weatherHint: 'e.g. humid with frequent rain',
+    spread: 'How are the symptoms spreading? (optional)',
+    spreadHint: 'e.g. started on lower leaves three days ago',
+    analyse: 'Look at this leaf',
+    noPhoto: 'Please choose a clear leaf photo first.',
+    checking: 'Checking photo quality…',
+    analysing: 'Looking for visible patterns…',
+    preparing: 'Preparing a clear explanation…',
+    observed: 'What I noticed',
+    condition: 'Possible condition',
+    questions: 'A few useful checks',
+    next: 'What to do next',
+    technical: 'Technical details for review',
+    saved: 'Saved to the diagnosis history.',
+    saveFailed: 'The result is ready, but this record was not saved.',
+    strong_match: 'Stronger visual match',
+    moderate_match: 'Moderate visual match',
+    needs_confirmation: 'Needs confirmation',
+    reviewTitle: 'Agronomist review',
+    decision: 'Your assessment',
+    confirmed: 'The result looks reasonable',
+    corrected: 'Choose a different condition',
+    inconclusive: 'Still inconclusive',
+    reviewedCondition: 'Reviewed condition',
+    otherCondition: 'Another condition or cause',
+    reviewNote: 'Short review note',
+    reviewNoteHint: 'What did you observe in the field?',
+    saveReview: 'Save professional review',
+    reviewSaved: 'Thank you. Your review has been saved.',
+    reviewFailed: 'The review could not be saved.',
+    serviceError: 'The leaf assistant is not available right now. Tassel counting is unaffected.',
+    tryAgain: 'Please try again'
+  },
+  'zh-CN': {
+    title: '农艺师工作台',
+    subtitle: '查看多田块情况，辅助判断叶片问题，并给出清楚的下一步',
+    language: '语言',
+    health: '田间健康（C.1）',
+    diagnosis: '叶片助手（C.1+）',
+    growth: '生长趋势（C.2）',
+    alerts: '异常提醒（C.3）',
+    dashboard: '多田块（C.4）',
+    insights: '综合建议（C.5）',
+    assistantTitle: '我们一起仔细看看这片叶子',
+    assistantIntro: '照片越清楚，再加上一点田间情况，系统越能给出诚实、好理解的判断。',
+    guideLight: '光线柔和',
+    guideLightBody: '避开深色阴影、强反光和刺眼闪光灯。',
+    guideLeaf: '拍清叶片',
+    guideLeafBody: '让叶片占据大部分画面，并把异常位置拍进去。',
+    guideSteady: '拿稳手机',
+    guideSteadyBody: '拍摄前点一下叶片，让相机先对焦。',
+    choosePhoto: '点这里选择或拍摄叶片照片',
+    retainedPhoto: '切换语言后，照片仍然保留',
+    field: '关联田块（可不填）',
+    noField: '暂不关联田块',
+    fieldUnavailable: '田块数据暂时不可用。你仍然可以使用叶片助手，只是不关联具体田块。',
+    cropStage: '生育期（可不填）',
+    cropStageHint: '例如：抽雄前',
+    weather: '近期天气（可不填）',
+    weatherHint: '例如：湿度大、经常下雨',
+    spread: '症状怎样扩散？（可不填）',
+    spreadHint: '例如：三天前从下部叶片开始',
+    analyse: '帮我看看这片叶子',
+    noPhoto: '请先选择一张清楚的叶片照片。',
+    checking: '正在检查照片是否清楚…',
+    analysing: '正在查看叶片上的可见特征…',
+    preparing: '正在整理一份好理解的说明…',
+    observed: '我看到的情况',
+    condition: '可能的情况',
+    questions: '再确认几个细节',
+    next: '接下来可以这样做',
+    technical: '供专业人员查看的技术信息',
+    saved: '这次结果已经保存到诊断记录。',
+    saveFailed: '判断已经完成，但这次记录没有保存成功。',
+    strong_match: '图像特征较为相似',
+    moderate_match: '图像特征有一定相似度',
+    needs_confirmation: '还需要进一步确认',
+    reviewTitle: '农艺师复核',
+    decision: '你的判断',
+    confirmed: '这个结果基本合理',
+    corrected: '应改为其他情况',
+    inconclusive: '暂时仍无法判断',
+    reviewedCondition: '复核后的情况',
+    otherCondition: '其他病害或原因',
+    reviewNote: '简短复核说明',
+    reviewNoteHint: '你在田间还观察到了什么？',
+    saveReview: '保存专业复核',
+    reviewSaved: '谢谢，复核结果已经保存。',
+    reviewFailed: '复核结果没有保存成功。',
+    serviceError: '叶片助手暂时不可用，但雄穗计数不受影响。',
+    tryAgain: '请稍后再试'
+  }
+};
+
+function at(key) {
+  return agronomyText[agronomyLanguage][key] || agronomyText.en[key] || key;
+}
+
+function aesc(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('"', '&quot;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;');
+}
+
+function activeAgronomyTab() {
+  return document.querySelector('#tabs .tab.active')?.dataset.tab || 'health';
+}
+
+function applyAgronomyLanguage() {
+  document.documentElement.lang = agronomyLanguage;
+  document.getElementById('agronomyLanguage').value = agronomyLanguage;
+  document.getElementById('agronomyTitle').textContent = at('title');
+  document.getElementById('agronomySubtitle').textContent = at('subtitle');
+  document.getElementById('languageLabel').textContent = at('language');
+  document.getElementById('tabHealth').textContent = at('health');
+  document.getElementById('tabDiagnosis').textContent = at('diagnosis');
+  document.getElementById('tabGrowth').textContent = at('growth');
+  document.getElementById('tabAlerts').textContent = at('alerts');
+  document.getElementById('tabDashboard').textContent = at('dashboard');
+  document.getElementById('tabInsights').textContent = at('insights');
+}
+
+document.getElementById('agronomyLanguage').addEventListener('change', async function() {
+  agronomyLanguage = this.value;
+  localStorage.setItem('agronomy_language', agronomyLanguage);
+  applyAgronomyLanguage();
+  const active = activeAgronomyTab();
+  renderTab(active);
+  if (active === 'diagnosis' && diagnosisDraftFile && latestDiagnosis) {
+    await submitDiseaseDiagnosis(true);
+  }
+});
+
+applyAgronomyLanguage();
 
 document.getElementById('tabs').addEventListener('click', function(event) {
   const tab = event.target.closest('.tab');
@@ -60,6 +241,10 @@ function normalizeField(field) {
 
 function renderTab(type) {
   const el = document.getElementById('tabContent');
+  if (type === 'diagnosis') {
+    renderDiagnosisTab();
+    return;
+  }
   if (type === 'dashboard') {
     el.innerHTML = '<div class="form-group" style="max-width:260px;"><label>Filter by Region</label>' +
       '<select id="regionFilter"><option value="">All Regions</option><option>North Region</option><option>East Region</option><option>South Region</option></select></div>' +
@@ -73,6 +258,10 @@ function renderTab(type) {
     return;
   }
   if (type === 'health') {
+    if (!fields.length) {
+      el.innerHTML = '<div class="alert alert-warning">' + esc(at('fieldUnavailable')) + '</div>';
+      return;
+    }
     el.innerHTML = '<div class="card"><div class="form-group"><label>Select Field</label><select id="healthField">' +
       fields.map(field => '<option value="' + field.fieldId + '">' + esc(field.fieldName) + '</option>').join('') +
       '</select></div><div id="healthResult"></div></div>';
@@ -102,6 +291,194 @@ function renderTab(type) {
   loadInsights();
 }
 
+function renderDiagnosisTab() {
+  const el = document.getElementById('tabContent');
+  const preview = diagnosisPreviewUrl
+    ? '<img class="leaf-preview" id="leafPreview" src="' + diagnosisPreviewUrl + '" alt="Selected maize leaf">'
+    : '<div id="leafPreviewPrompt"><strong>' + esc(at('choosePhoto')) + '</strong><br><small>JPG / PNG · max 10 MB</small></div>';
+  const retained = diagnosisDraftFile
+    ? '<p class="info-text" id="retainedPhoto">' + esc(at('retainedPhoto')) + ': <strong>' + esc(diagnosisDraftFile.name) + '</strong></p>'
+    : '<p class="info-text" id="retainedPhoto"></p>';
+  el.innerHTML =
+    '<div class="diagnosis-shell">' +
+      '<section class="diagnosis-panel" aria-labelledby="leafAssistantTitle">' +
+        '<h3 id="leafAssistantTitle">' + esc(at('assistantTitle')) + '</h3>' +
+        '<p>' + esc(at('assistantIntro')) + '</p>' +
+        '<div class="photo-guide" aria-label="Photo guidance">' +
+          '<div class="photo-guide-item"><strong>' + esc(at('guideLight')) + '</strong>' + esc(at('guideLightBody')) + '</div>' +
+          '<div class="photo-guide-item"><strong>' + esc(at('guideLeaf')) + '</strong>' + esc(at('guideLeafBody')) + '</div>' +
+          '<div class="photo-guide-item"><strong>' + esc(at('guideSteady')) + '</strong>' + esc(at('guideSteadyBody')) + '</div>' +
+        '</div>' +
+        '<form id="diseaseDiagnosisForm">' +
+          '<label class="leaf-dropzone">' + preview +
+            '<input id="leafPhoto" type="file" accept="image/jpeg,image/png" capture="environment" aria-label="' + aesc(at('choosePhoto')) + '">' +
+          '</label>' + retained +
+          '<div class="form-group"><label for="diagnosisField">' + esc(at('field')) + '</label>' +
+            '<select id="diagnosisField"><option value="">' + esc(at('noField')) + '</option>' +
+              fields.map(field => '<option value="' + field.fieldId + '"' +
+                (String(diagnosisDraftContext.field_id || '') === String(field.fieldId) ? ' selected' : '') +
+                '>' + esc(field.fieldName) + '</option>').join('') +
+            '</select></div>' +
+          '<div class="form-group"><label for="cropStage">' + esc(at('cropStage')) + '</label>' +
+            '<input id="cropStage" maxlength="200" placeholder="' + aesc(at('cropStageHint')) + '" value="' +
+              aesc(diagnosisDraftContext.crop_stage || '') + '"></div>' +
+          '<div class="form-group"><label for="recentWeather">' + esc(at('weather')) + '</label>' +
+            '<input id="recentWeather" maxlength="500" placeholder="' + aesc(at('weatherHint')) + '" value="' +
+              aesc(diagnosisDraftContext.recent_weather || '') + '"></div>' +
+          '<div class="form-group"><label for="symptomSpread">' + esc(at('spread')) + '</label>' +
+            '<textarea id="symptomSpread" rows="2" maxlength="500" placeholder="' + aesc(at('spreadHint')) + '">' +
+              esc(diagnosisDraftContext.symptom_spread || '') + '</textarea></div>' +
+          '<button class="btn btn-primary" type="submit" id="diagnoseButton">' + esc(at('analyse')) + '</button>' +
+          '<div id="diagnosisProgress" role="status" aria-live="polite"></div>' +
+        '</form>' +
+      '</section>' +
+      '<aside id="diagnosisResult" aria-live="polite">' +
+        (latestDiagnosis ? diagnosisResultHtml(latestDiagnosis) : '') +
+      '</aside>' +
+    '</div>';
+
+  document.getElementById('leafPhoto').addEventListener('change', function() {
+    const file = this.files && this.files[0];
+    if (!file) return;
+    diagnosisDraftFile = file;
+    if (diagnosisPreviewUrl) URL.revokeObjectURL(diagnosisPreviewUrl);
+    diagnosisPreviewUrl = URL.createObjectURL(file);
+    const dropzone = this.closest('.leaf-dropzone');
+    const existing = dropzone.querySelector('.leaf-preview, #leafPreviewPrompt');
+    existing.outerHTML = '<img class="leaf-preview" id="leafPreview" src="' + diagnosisPreviewUrl + '" alt="Selected maize leaf">';
+    document.getElementById('retainedPhoto').innerHTML =
+      esc(at('retainedPhoto')) + ': <strong>' + esc(file.name) + '</strong>';
+  });
+  document.getElementById('diseaseDiagnosisForm').addEventListener('submit', function(event) {
+    event.preventDefault();
+    submitDiseaseDiagnosis(false);
+  });
+  wireDiseaseReviewControls();
+}
+
+async function submitDiseaseDiagnosis(silentLanguageRefresh) {
+  if (!diagnosisDraftFile) {
+    const progress = document.getElementById('diagnosisProgress');
+    if (progress) progress.innerHTML = '<div class="alert alert-warning">' + esc(at('noPhoto')) + '</div>';
+    return;
+  }
+  diagnosisDraftContext = {
+    field_id: document.getElementById('diagnosisField')?.value || diagnosisDraftContext.field_id || '',
+    crop_stage: document.getElementById('cropStage')?.value.trim() || diagnosisDraftContext.crop_stage || '',
+    recent_weather: document.getElementById('recentWeather')?.value.trim() || diagnosisDraftContext.recent_weather || '',
+    symptom_spread: document.getElementById('symptomSpread')?.value.trim() || diagnosisDraftContext.symptom_spread || '',
+    language: agronomyLanguage
+  };
+  const progress = document.getElementById('diagnosisProgress');
+  const button = document.getElementById('diagnoseButton');
+  if (button) button.disabled = true;
+  const steps = [at('checking'), at('analysing'), at('preparing')];
+  let step = 0;
+  if (progress && !silentLanguageRefresh) {
+    progress.innerHTML = '<div class="diagnosis-progress"><span class="spinner"></span> ' + esc(steps[0]) + '</div>';
+  }
+  const ticker = setInterval(() => {
+    step = Math.min(step + 1, steps.length - 1);
+    if (progress) {
+      progress.innerHTML = '<div class="diagnosis-progress"><span class="spinner"></span> ' + esc(steps[step]) + '</div>';
+    }
+  }, 900);
+
+  const result = await apiDiagnoseDisease(diagnosisDraftFile, diagnosisDraftContext);
+  clearInterval(ticker);
+  if (button) button.disabled = false;
+  if (progress) progress.innerHTML = '';
+  if (!result.ok) {
+    const message = result.status === 503 ? at('serviceError') : (result.error || at('tryAgain'));
+    const resultElement = document.getElementById('diagnosisResult');
+    if (resultElement) {
+      resultElement.innerHTML =
+        '<div class="alert alert-warning"><strong>' + esc(message) + '</strong></div>';
+    }
+    return;
+  }
+  latestDiagnosis = result.data;
+  const resultElement = document.getElementById('diagnosisResult');
+  if (resultElement) {
+    resultElement.innerHTML = diagnosisResultHtml(latestDiagnosis);
+    wireDiseaseReviewControls();
+  }
+}
+
+function diagnosisResultHtml(result) {
+  const list = items => (items || []).length
+    ? '<ul>' + items.map(item => '<li>' + esc(item) + '</li>').join('') + '</ul>'
+    : '';
+  const condition = result.possible_condition;
+  const conditionBlock = condition
+    ? '<div class="diagnosis-section"><h4>' + esc(at('condition')) + '</h4>' +
+      '<p><strong>' + esc(condition.display_name) + '</strong></p>' +
+      '<span class="confidence-language">' + esc(at(condition.confidence_band)) + '</span></div>'
+    : '';
+  const persistenceText = result.persistence?.status === 'saved' ? at('saved') : at('saveFailed');
+  const reviewBlock = result.diagnosis_id
+    ? '<div class="diagnosis-section" id="diseaseReviewBox"><h4>' + esc(at('reviewTitle')) + '</h4>' +
+      '<div class="form-group"><label for="diseaseReviewDecision">' + esc(at('decision')) + '</label>' +
+        '<select id="diseaseReviewDecision"><option value="confirmed">' + esc(at('confirmed')) + '</option>' +
+        '<option value="corrected">' + esc(at('corrected')) + '</option>' +
+        '<option value="inconclusive">' + esc(at('inconclusive')) + '</option></select></div>' +
+      '<div class="form-group" id="reviewedConditionGroup" style="display:none;"><label for="reviewedCondition">' + esc(at('reviewedCondition')) + '</label>' +
+        '<select id="reviewedCondition">' +
+          '<option value="healthy">' + esc(agronomyLanguage === 'zh-CN' ? '暂未发现已支持病害' : 'No supported disease clearly detected') + '</option>' +
+          '<option value="common_rust">' + esc(agronomyLanguage === 'zh-CN' ? '玉米普通锈病' : 'Common rust') + '</option>' +
+          '<option value="gray_leaf_spot">' + esc(agronomyLanguage === 'zh-CN' ? '玉米灰斑病' : 'Gray leaf spot') + '</option>' +
+          '<option value="northern_leaf_blight">' + esc(agronomyLanguage === 'zh-CN' ? '玉米大斑病' : 'Northern corn leaf blight') + '</option>' +
+          '<option value="other">' + esc(at('otherCondition')) + '</option></select></div>' +
+      '<div class="form-group"><label for="diseaseReviewNote">' + esc(at('reviewNote')) + '</label>' +
+        '<textarea id="diseaseReviewNote" rows="2" maxlength="2000" placeholder="' + aesc(at('reviewNoteHint')) + '"></textarea></div>' +
+      '<button class="btn btn-outline" type="button" onclick="saveDiseaseReview(' + Number(result.diagnosis_id) + ')">' +
+        esc(at('saveReview')) + '</button><div id="diseaseReviewMessage" role="status"></div></div>'
+    : '';
+  return '<article class="diagnosis-result">' +
+    '<h3>' + esc(result.headline || '') + '</h3>' +
+    conditionBlock +
+    '<div class="diagnosis-section"><h4>' + esc(at('observed')) + '</h4>' + list(result.observation) + '</div>' +
+    ((result.follow_up_questions || []).length
+      ? '<div class="diagnosis-section"><h4>' + esc(at('questions')) + '</h4>' + list(result.follow_up_questions) + '</div>'
+      : '') +
+    '<div class="diagnosis-section"><h4>' + esc(at('next')) + '</h4>' + list(result.next_steps) + '</div>' +
+    '<div class="diagnosis-safety">' + esc(result.safety_note || '') + '</div>' +
+    '<p class="info-text" style="color:#dff0b7;">' + esc(persistenceText) + '</p>' +
+    reviewBlock +
+    '<details class="diagnosis-technical"><summary>' + esc(at('technical')) + '</summary><pre>' +
+      esc(JSON.stringify(result.technical || {}, null, 2)) + '</pre></details>' +
+    '</article>';
+}
+
+function wireDiseaseReviewControls() {
+  const decision = document.getElementById('diseaseReviewDecision');
+  const conditionGroup = document.getElementById('reviewedConditionGroup');
+  if (!decision || !conditionGroup) return;
+  const sync = () => {
+    conditionGroup.style.display = decision.value === 'corrected' ? 'block' : 'none';
+  };
+  decision.addEventListener('change', sync);
+  sync();
+}
+
+async function saveDiseaseReview(diagnosisId) {
+  const decision = document.getElementById('diseaseReviewDecision').value;
+  const reviewedCondition = document.getElementById('reviewedCondition').value;
+  const note = document.getElementById('diseaseReviewNote').value.trim();
+  const message = document.getElementById('diseaseReviewMessage');
+  if (!note) {
+    message.innerHTML = '<div class="alert alert-warning">' + esc(at('reviewNoteHint')) + '</div>';
+    return;
+  }
+  const result = await apiReviewDiseaseDiagnosis(diagnosisId, {
+    decision,
+    reviewed_condition: reviewedCondition,
+    note
+  });
+  message.innerHTML = '<div class="alert ' + (result.ok ? 'alert-success' : 'alert-warning') + '">' +
+    esc(result.ok ? at('reviewSaved') : at('reviewFailed')) + '</div>';
+}
+
 function renderFieldCards(items) {
   return items.map(field => {
     const warning = field.anomalyFlag || field.healthStatus !== 'Healthy';
@@ -116,6 +493,7 @@ function renderFieldCards(items) {
 // USER STORY C.1 Control call: evaluate field health.
 async function loadHealth() {
   const fieldId = document.getElementById('healthField').value;
+  if (!fieldId) return;
   const result = await apiGet('/api/fields/' + fieldId + '/health');
   if (!result.ok) return;
   const data = result.data;
