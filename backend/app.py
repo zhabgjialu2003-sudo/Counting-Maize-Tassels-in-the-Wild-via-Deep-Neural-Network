@@ -87,13 +87,6 @@ from werkzeug.utils import secure_filename
 from cryptography.fernet import Fernet, InvalidToken
 
 try:
-    import psycopg
-    from psycopg.rows import dict_row
-except ImportError:
-    psycopg = None
-    dict_row = None
-
-try:
     from .inference import activate_predictor, get_predictor
     from .image_security import (
         DEFAULT_MAX_IMAGE_BYTES,
@@ -150,6 +143,7 @@ except ImportError:
         train_model = None
 
 try:
+    from .database import db_config, db_connection
     from .security.model_paths import ModelArtifactError, validate_model_artifact
     from .security.path_controls import (
         ApprovedPathError,
@@ -161,6 +155,7 @@ try:
     from .security.rate_limits import InMemoryRateLimiter
     from .services.training_jobs import BoundedJobExecutor
 except ImportError:
+    from database import db_config, db_connection
     from security.model_paths import ModelArtifactError, validate_model_artifact
     from security.path_controls import (
         ApprovedPathError,
@@ -194,6 +189,24 @@ app.config["SECRET_KEY"] = os.getenv(
 MAX_IMAGE_BYTES = int(os.getenv("MAX_IMAGE_BYTES", str(DEFAULT_MAX_IMAGE_BYTES)))
 MAX_DATASET_BYTES = int(os.getenv("MAX_DATASET_BYTES", str(50 * 1024 * 1024)))
 app.config["MAX_CONTENT_LENGTH"] = int(os.getenv("MAX_REQUEST_BYTES", str(64 * 1024 * 1024)))
+
+
+@app.after_request
+def add_security_headers(response):
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault(
+        "Permissions-Policy",
+        "camera=(self), geolocation=(self), microphone=()",
+    )
+    if request.is_secure:
+        response.headers.setdefault(
+            "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
+        )
+    if request.path.startswith("/api/auth/"):
+        response.headers.setdefault("Cache-Control", "no-store")
+    return response
 
 UPLOAD_DIR = Path(__file__).resolve().parent / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
@@ -230,38 +243,6 @@ _training_executor = BoundedJobExecutor(
     max_workers=int(os.getenv("MAX_CONCURRENT_TRAINING_JOBS", "1")),
     max_pending=int(os.getenv("MAX_PENDING_TRAINING_JOBS", "2")),
 )
-
-
-def db_config() -> dict[str, str | int]:
-    return {
-        "host": os.getenv("PGHOST", "localhost"),
-        "port": os.getenv("PGPORT", "5432"),
-        "dbname": os.getenv("PGDATABASE", "maize_detector"),
-        "user": os.getenv("PGUSER", "postgres"),
-        "password": os.getenv("PGPASSWORD", ""),
-        "connect_timeout": int(os.getenv("PGCONNECT_TIMEOUT", "3")),
-        "options": f"-c statement_timeout={int(os.getenv('PGSTATEMENT_TIMEOUT_MS', '5000'))}",
-    }
-
-
-@contextmanager
-def db_connection():
-    if psycopg is None:
-        raise RuntimeError("psycopg is not installed")
-
-    config = db_config()
-    if not config["password"]:
-        raise RuntimeError("PGPASSWORD is not configured")
-
-    conn = psycopg.connect(**config, row_factory=dict_row)
-    try:
-        yield conn
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
 
 
 def jsonable(value: Any) -> Any:
@@ -939,16 +920,20 @@ def uploaded_file(filename: str):
             with db_connection() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
-                        "SELECT user_id FROM images WHERE image_name = %s ORDER BY image_id DESC LIMIT 1",
+                        "SELECT user_id, field_id FROM images WHERE image_name = %s ORDER BY image_id DESC LIMIT 1",
                         (Path(filename).name,),
                     )
                     image = cur.fetchone()
                 if not image:
                     return fail("Image not found", 404)
                 if request.auth_user["role"] == "Agronomist":
-                    return fail("Agronomists can access aggregated field data only", 403)
+                    if not image.get("field_id") or not user_can_reference_field(
+                        conn, image["field_id"], request.auth_user
+                    ):
+                        return fail("This image is not assigned for agronomy review", 403)
                 if image["user_id"] != request.auth_user["user_id"]:
-                    return fail("You can only access your own images", 403)
+                    if request.auth_user["role"] != "Agronomist":
+                        return fail("You can only access your own images", 403)
         data = secure_read_bytes(filename)
         mime = "image/png" if filename.lower().endswith(".png") else "image/jpeg"
         return Response(data, mimetype=mime)
@@ -977,7 +962,7 @@ def health():
         "service": "Maize Detector API",
         "version": "1.1.0",
         "database": "connected" if ready else "unavailable",
-        "database_error": error if not ready else None,
+        "database_error": "Database connection unavailable" if not ready else None,
         "disease_model": disease_health,
     }
     return ok(payload, 200 if ready else 503)

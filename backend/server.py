@@ -22,6 +22,7 @@ os.chdir(str(backend_dir))
 
 # Import app - this loads the YOLO model BEFORE the server starts
 from app import app, db_ready, get_predictor, start_backup_scheduler
+from migrations import apply_migrations
 
 
 configuration_errors = []
@@ -35,6 +36,11 @@ if configuration_errors:
 database_ready, database_error = db_ready()
 if not database_ready:
     raise SystemExit(f"PostgreSQL startup check failed: {database_error}")
+if os.getenv("AUTO_MIGRATE", "false").lower() == "true":
+    try:
+        apply_migrations()
+    except Exception as exc:
+        raise SystemExit(f"Database migration failed: {exc}") from exc
 
 if get_predictor is None:
     raise SystemExit("AI startup check failed: inference.py could not be imported")
@@ -46,8 +52,8 @@ try:
 except Exception as exc:
     raise SystemExit(f"AI startup check failed: {exc}") from exc
 
-host = os.getenv("HOST", "127.0.0.1")
-port = int(os.getenv("PORT", "5000"))
+host = os.getenv("WAITRESS_HOST", os.getenv("HOST", "127.0.0.1"))
+port = int(os.getenv("WAITRESS_PORT", os.getenv("PORT", "5000")))
 print(f"Maize Detector API running at http://{host}:{port}")
 print("Database: PostgreSQL connected")
 print(f"AI Inference: {predictor.model_path.name} loaded")
@@ -57,7 +63,7 @@ serve(
     app,
     host=host,
     port=port,
-    threads=max(1, int(os.getenv("WSGI_THREADS", "4"))),
-    channel_timeout=max(30, int(os.getenv("WSGI_CHANNEL_TIMEOUT", "120"))),
+    threads=max(1, int(os.getenv("WAITRESS_THREADS", os.getenv("WSGI_THREADS", "4")))),
+    channel_timeout=max(30, int(os.getenv("WAITRESS_CHANNEL_TIMEOUT", "120"))),
     clear_untrusted_proxy_headers=True,
 )

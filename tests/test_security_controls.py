@@ -1,8 +1,14 @@
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
-from backend.security.model_paths import ModelArtifactError, validate_model_artifact
+from backend.security.model_paths import (
+    PROJECT_ROOT,
+    ModelArtifactError,
+    configured_model_roots,
+    validate_model_artifact,
+)
 from backend.security.passwords import password_policy_error
 from backend.security.path_controls import ApprovedPathError, resolve_approved_path
 from backend.security.rate_limits import InMemoryRateLimiter
@@ -21,6 +27,10 @@ class RateLimiterTests(unittest.TestCase):
 
 
 class ModelArtifactValidationTests(unittest.TestCase):
+    def test_relative_configured_root_is_project_relative(self):
+        with patch.dict("os.environ", {"MODEL_ROOTS": "models"}):
+            self.assertEqual(configured_model_roots(), ((PROJECT_ROOT / "models").resolve(),))
+
     def test_artifact_must_remain_inside_an_approved_root(self):
         with tempfile.TemporaryDirectory() as approved, tempfile.TemporaryDirectory() as outside:
             candidate = Path(outside) / "model.pt"

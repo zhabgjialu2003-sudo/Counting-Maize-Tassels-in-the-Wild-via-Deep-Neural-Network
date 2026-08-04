@@ -28,7 +28,13 @@ class ValidatedModelArtifact:
 def configured_model_roots() -> tuple[Path, ...]:
     configured = os.getenv("MODEL_ROOTS")
     values = configured.split(os.pathsep) if configured else [str(PROJECT_ROOT / "models")]
-    return tuple(Path(value).expanduser().resolve() for value in values if value.strip())
+    roots = []
+    for value in values:
+        if not value.strip():
+            continue
+        path = Path(value).expanduser()
+        roots.append((path if path.is_absolute() else PROJECT_ROOT / path).resolve())
+    return tuple(roots)
 
 
 def _inside(path: Path, roots: Iterable[Path]) -> bool:
