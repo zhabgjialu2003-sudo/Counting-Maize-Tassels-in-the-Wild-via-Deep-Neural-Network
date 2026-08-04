@@ -4,6 +4,20 @@ This page is the assessor's entry point to the current project evidence. The
 root `README.md` explains how to run the system; this index maps the supervisor
 requirements to their repository locations.
 
+## Submission status
+
+| Item | Evidence |
+|---|---|
+| Current implementation | Default `main` branch after pull request review |
+| Latest verified test run | [Verified Test Results](testing/TEST_RESULTS.md) |
+| Automated repository checks | [GitHub Actions workflow](../.github/workflows/quality.yml) |
+| Contribution standard | [Contributing Guide](../CONTRIBUTING.md) |
+| Security and privacy handling | [Security Policy](../SECURITY.md) |
+| Historical assessed work | [`coursework/`](../coursework/) archive |
+
+The current source, tests, models, requirements, and manuals take precedence
+over historical coursework copies.
+
 ## Project definition and requirements
 
 | Evidence | Location |
@@ -61,6 +75,7 @@ requirements to their repository locations.
 | Test strategy and cases | [`docs/testing/`](testing/) |
 | Current extension regression cases | [Current Regression Test Cases](testing/current-regression-test-cases.md) |
 | Latest verified results | [Test Results](testing/TEST_RESULTS.md) |
+| Submission-readiness contracts | [`test_submission_readiness.py`](../tests/test_submission_readiness.py) |
 | Historical compliance audits | [`docs/testing/audits/`](testing/audits/) |
 
 ## Manuals, reports and presentation

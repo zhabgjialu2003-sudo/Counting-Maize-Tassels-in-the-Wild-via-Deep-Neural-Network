@@ -229,14 +229,14 @@ INSERT INTO roles (role_name) VALUES
     ('Admin');
 
 -- Users
--- The first five accounts are fixed demo logins. The generated rows bring
--- the table to exactly 100 stable accounts for Admin user-management demos.
+-- Sample identities are disabled until an administrator is configured through
+-- backend/scripts/bootstrap_admin.py. No deployable default password is stored.
 INSERT INTO users (name, email, password_hash, role_id, status) VALUES
-    ('John Smith',    'john@farm.com',        'sha256$8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 1, 'active'),
-    ('Dr. Li Wei',    'liwei@research.org',   'sha256$8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 2, 'active'),
-    ('Maria Garcia',  'maria@agro.com',       'sha256$8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 3, 'active'),
-    ('Admin User',    'admin@system.com',     'sha256$8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 4, 'active'),
-    ('Bob Brown',     'bob@farm.com',         'sha256$8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 1, 'disabled');
+    ('John Smith',    'john@farm.com',        'disabled$bootstrap-required', 1, 'disabled'),
+    ('Dr. Li Wei',    'liwei@research.org',   'disabled$bootstrap-required', 2, 'disabled'),
+    ('Maria Garcia',  'maria@agro.com',       'disabled$bootstrap-required', 3, 'disabled'),
+    ('Admin User',    'admin@system.com',     'disabled$bootstrap-required', 4, 'disabled'),
+    ('Bob Brown',     'bob@farm.com',         'disabled$bootstrap-required', 1, 'disabled');
 
 INSERT INTO users (name, email, password_hash, role_id, status)
 SELECT
@@ -264,7 +264,7 @@ SELECT
         WHEN 3 THEN 'farm.com'
         ELSE 'farm.com'
     END AS email,
-    'sha256$8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92' AS password_hash,
+    'disabled$bootstrap-required' AS password_hash,
     CASE ((n - 1) % 5)
         WHEN 0 THEN 1
         WHEN 1 THEN 2
@@ -272,7 +272,7 @@ SELECT
         WHEN 3 THEN 1
         ELSE 1
     END AS role_id,
-    CASE WHEN n % 17 = 0 THEN 'disabled'::user_status ELSE 'active'::user_status END AS status
+        'disabled'::user_status AS status
 FROM generate_series(1, 95) AS n;
 
 -- Images (sample uploads)

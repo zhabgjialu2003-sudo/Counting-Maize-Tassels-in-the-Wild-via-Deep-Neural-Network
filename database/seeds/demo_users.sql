@@ -6,8 +6,8 @@
 --   Add 100 stable demo accounts for role/login/Admin CRUD testing without
 --   dropping existing project data.
 --
--- Demo password:
---   123456
+-- Accounts remain disabled until an administrator intentionally activates
+-- them and assigns individual passwords through the Admin interface.
 -- ============================================================
 
 INSERT INTO roles (role_name) VALUES
@@ -19,11 +19,11 @@ ON CONFLICT (role_name) DO NOTHING;
 
 WITH fixed_users(name, email, password_hash, role_name, status) AS (
     VALUES
-        ('John Smith',   'john@farm.com',      'sha256$8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 'Farmer',     'active'::user_status),
-        ('Dr. Li Wei',   'liwei@research.org', 'sha256$8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 'Researcher', 'active'::user_status),
-        ('Maria Garcia', 'maria@agro.com',     'sha256$8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 'Agronomist', 'active'::user_status),
-        ('Admin User',   'admin@system.com',   'sha256$8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 'Admin',      'active'::user_status),
-        ('Bob Brown',    'bob@farm.com',       'sha256$8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 'Farmer',     'disabled'::user_status)
+        ('John Smith',   'john@farm.com',      'disabled$bootstrap-required', 'Farmer',     'disabled'::user_status),
+        ('Dr. Li Wei',   'liwei@research.org', 'disabled$bootstrap-required', 'Researcher', 'disabled'::user_status),
+        ('Maria Garcia', 'maria@agro.com',     'disabled$bootstrap-required', 'Agronomist', 'disabled'::user_status),
+        ('Admin User',   'admin@system.com',   'disabled$bootstrap-required', 'Admin',      'disabled'::user_status),
+        ('Bob Brown',    'bob@farm.com',       'disabled$bootstrap-required', 'Farmer',     'disabled'::user_status)
 ),
 generated_users AS (
     SELECT
@@ -51,7 +51,7 @@ generated_users AS (
             WHEN 3 THEN 'farm.com'
             ELSE 'farm.com'
         END AS email,
-        'sha256$8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92' AS password_hash,
+        'disabled$bootstrap-required' AS password_hash,
         CASE ((n - 1) % 5)
             WHEN 0 THEN 'Farmer'
             WHEN 1 THEN 'Researcher'
@@ -59,7 +59,7 @@ generated_users AS (
             WHEN 3 THEN 'Farmer'
             ELSE 'Farmer'
         END AS role_name,
-        CASE WHEN n % 17 = 0 THEN 'disabled'::user_status ELSE 'active'::user_status END AS status
+        'disabled'::user_status AS status
     FROM generate_series(1, 95) AS n
 ),
 all_users AS (
@@ -73,6 +73,7 @@ FROM all_users u
 JOIN roles r ON r.role_name = u.role_name
 ON CONFLICT (email) DO UPDATE SET
     name = EXCLUDED.name,
+    password_hash = EXCLUDED.password_hash,
     role_id = EXCLUDED.role_id,
     status = EXCLUDED.status;
 
