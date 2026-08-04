@@ -40,6 +40,13 @@
     </div>
   </div>
 
+  <div class="card" id="provenanceCard" style="margin-top:1rem;">
+    <h3 style="color:var(--green);margin-bottom:0.75rem;">Result provenance</h3>
+    <p style="margin:0;"><strong>Model:</strong> <span id="modelVersionDisplay">Not recorded</span></p>
+    <p style="margin:0.35rem 0 0;"><strong>Inference mode:</strong> <span id="inferenceModeDisplay">Not recorded</span></p>
+    <p style="margin:0.35rem 0 0;"><strong>Review status:</strong> <span id="qualityStatusDisplay">Unreviewed</span></p>
+  </div>
+
   <!-- USER STORY A.4 Boundary: display highlighted tassels and compare images. -->
   <div class="card" style="margin-top:1rem;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
@@ -107,7 +114,7 @@ async function loadResult() {
     }
   }
 
-  if (resultId && (!resultData || String(resultData.resultId) !== resultId || !resultData.imagePath)) {
+  if (resultId && (!resultData || String(resultData.resultId) !== resultId || !resultData.originalAssetUrl)) {
     const response = await apiGet(`/api/results/${resultId}`);
     if (response.ok) resultData = normalizeResult(response.data);
   }
@@ -137,10 +144,13 @@ async function displayResult(data) {
   document.getElementById('confidenceDisplay').textContent = formatPercent(data.confidenceScore);
   document.getElementById('timeDisplay').textContent =
     data.processingTime > 0 ? Number(data.processingTime).toFixed(1) + 's' : '< 0.1s';
+  document.getElementById('modelVersionDisplay').textContent = data.modelVersion || 'Not recorded';
+  document.getElementById('inferenceModeDisplay').textContent = data.inferenceMode || 'Not recorded';
+  document.getElementById('qualityStatusDisplay').textContent = data.qualityStatus || 'Unreviewed';
 
   var imageId = data.imageId;
-  var protectedPath = imageId ? '/api/images/' + imageId + '/file/original' : null;
-  var filePath = (!resultId && uploadedImageDataUrl) || data.originalImagePath || data.imagePath;
+  var protectedPath = data.originalAssetUrl || (imageId ? '/api/images/' + imageId + '/file/original' : null);
+  var filePath = (!resultId && uploadedImageDataUrl) || protectedPath;
   var imgUrl = null;
   try {
     imgUrl = protectedPath

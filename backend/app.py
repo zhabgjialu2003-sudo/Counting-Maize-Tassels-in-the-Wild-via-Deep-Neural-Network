@@ -60,6 +60,7 @@ from __future__ import annotations
 import os
 import io
 import json
+import re
 from dotenv import load_dotenv
 load_dotenv()  # load .env file so PGPASSWORD etc. are always available
 import hashlib
@@ -417,12 +418,15 @@ def log_action(conn, action: str, details: str, user_id: int | None = None) -> N
         )
 
 
+IDEMPOTENCY_KEY_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{16,128}$")
+
+
 def normalize_model_row(row: dict[str, Any]) -> dict[str, Any]:
+    """Return model metadata without disclosing server filesystem paths."""
     return {
         "model_id": row.get("model_id"),
         "model_name": row.get("model_name"),
         "model_version": row.get("model_version"),
-        "weights_path": row.get("weights_path"),
         "status": row.get("status"),
         "map50": row.get("map50"),
         "precision": row.get("precision_score", row.get("precision")),
@@ -432,12 +436,48 @@ def normalize_model_row(row: dict[str, Any]) -> dict[str, Any]:
         "changelog": row.get("changelog"),
         "created_at": row.get("created_at"),
         "activated_at": row.get("activated_at"),
+        "artifact_registered": bool(row.get("weights_path")),
+        "artifact_integrity_recorded": bool(row.get("artifact_sha256")),
         "comparison_mode": (
-            "weights-and-metrics"
-            if row.get("weights_path") and Path(str(row["weights_path"])).exists()
+            "validated-artifact-and-metrics"
+            if row.get("weights_path") and row.get("artifact_sha256")
             else "metrics-only"
         ),
     }
+
+
+def validate_evaluation_resources(
+    model_rows: list[dict[str, Any]], dataset_yaml: str
+) -> tuple[list[Path], Path]:
+    """Validate every artifact and the shared dataset before any evaluation runs."""
+    artifacts = [
+        validate_model_artifact(
+            model["weights_path"],
+            expected_sha256=model.get("artifact_sha256"),
+        ).path
+        for model in model_rows
+    ]
+    return artifacts, validate_dataset_yaml(dataset_yaml)
+
+
+def evaluation_validation_error(exc: Exception, *, resource: str):
+    """Log diagnostic details while returning a stable, path-free API message."""
+    app.logger.warning("Rejected %s evaluation resource: %s", resource, exc)
+    if resource == "dataset":
+        return fail("Dataset YAML is not approved for evaluation", 400)
+    return fail("A registered model artifact is unavailable or failed integrity validation", 409)
+
+
+def parse_idempotency_key() -> str | None:
+    raw = request.headers.get("Idempotency-Key")
+    if raw is None or not raw.strip():
+        return None
+    key = raw.strip()
+    if not IDEMPOTENCY_KEY_PATTERN.fullmatch(key):
+        raise ValueError(
+            "Idempotency-Key must be 16-128 characters using letters, numbers, '.', '_', ':', or '-'"
+        )
+    return key
 
 
 def find_psql() -> str | None:
@@ -693,24 +733,32 @@ def start_backup_scheduler() -> None:
 def normalize_detection_row(row: dict[str, Any]) -> dict[str, Any]:
     count = row.get("tassel_count", row.get("count", 0))
     confidence = row.get("confidence_score", row.get("confidence", 0))
-    image_path = row.get("image_path")
+    image_id = row.get("image_id")
     return {
         "result_id": row.get("result_id"),
-        "image_id": row.get("image_id"),
+        "image_id": image_id,
         "image_name": row.get("image_name"),
-        "image_path": image_path,
-        "original_image_path": image_path,
+        "original_asset_url": (
+            f"/api/images/{image_id}/file/original" if image_id is not None else None
+        ),
+        "annotated_asset_url": (
+            f"/api/images/{image_id}/file/annotated"
+            if image_id is not None and row.get("annotated_available")
+            else None
+        ),
         "tassel_count": count,
         "count": count,
         "confidence_score": confidence,
         "confidence": confidence,
         "processing_time": row.get("processing_time"),
-        "annotated_image_path": row.get("annotated_image_path"),
         "bbox_data": row.get("bbox_data"),
         "created_at": row.get("created_at"),
         "field_name": row.get("field_name"),
         "quality_status": row.get("quality_status", "unreviewed"),
         "review_note": row.get("review_note"),
+        "model_id": row.get("model_id"),
+        "model_version": row.get("model_version"),
+        "inference_mode": row.get("inference_mode"),
         "status": "success",
         "source": "database",
     }
@@ -724,19 +772,26 @@ def latest_detection_for_image(conn, image_id: int) -> dict[str, Any] | None:
                 dr.result_id,
                 dr.image_id,
                 i.image_name,
-                i.image_path,
                 dr.tassel_count,
                 dr.confidence_score,
                 dr.processing_time,
-                dr.annotated_image_path,
                 dr.bbox_data,
                 dr.quality_status,
                 dr.review_note,
+                dr.model_id,
+                COALESCE(dr.model_version, m.model_version) AS model_version,
+                dr.inference_mode,
+                EXISTS (
+                    SELECT 1 FROM image_files image_file
+                    WHERE image_file.image_id = dr.image_id
+                      AND image_file.file_type = 'annotated'
+                ) AS annotated_available,
                 f.field_name,
                 dr.created_at
             FROM detection_results dr
             JOIN images i ON i.image_id = dr.image_id
             LEFT JOIN fields f ON f.field_id = i.field_id
+            LEFT JOIN models m ON m.model_id = dr.model_id
             WHERE dr.image_id = %s
             ORDER BY dr.created_at DESC, dr.result_id DESC
             LIMIT 1
@@ -759,6 +814,7 @@ def create_image_record(
     image_width: int | None = None,
     image_height: int | None = None,
     validated: bool = False,
+    upload_idempotency_key: str | None = None,
 ) -> int:
     user_id = user_id or 1
     image_path = f"uploads/{image_name}"
@@ -768,9 +824,9 @@ def create_image_record(
             INSERT INTO images (
                 user_id, image_name, image_path, status, file_size, access_level,
                 original_filename, content_sha256, mime_type, image_width,
-                image_height, validated
+                image_height, validated, upload_idempotency_key
             )
-            VALUES (%s, %s, %s, 'processing', %s, 'private', %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, 'processing', %s, 'private', %s, %s, %s, %s, %s, %s, %s)
             RETURNING image_id
             """,
             (
@@ -784,9 +840,87 @@ def create_image_record(
                 image_width,
                 image_height,
                 validated,
+                upload_idempotency_key,
             ),
         )
         return cur.fetchone()["image_id"]
+
+
+def find_idempotent_upload(
+    conn, user_id: int, upload_idempotency_key: str
+) -> dict[str, Any] | None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                i.image_id,
+                i.image_name,
+                i.content_sha256,
+                EXISTS (
+                    SELECT 1
+                    FROM image_files image_file
+                    WHERE image_file.image_id = i.image_id
+                      AND image_file.file_type = 'original'
+                ) AS original_stored
+            FROM images i
+            WHERE i.user_id = %s AND i.upload_idempotency_key = %s
+            LIMIT 1
+            """,
+            (user_id, upload_idempotency_key),
+        )
+        return cur.fetchone()
+
+
+def idempotent_upload_response(
+    upload: dict[str, Any], *, expected_sha256: str | None = None
+):
+    if (
+        expected_sha256
+        and upload.get("content_sha256")
+        and upload["content_sha256"] != expected_sha256
+    ):
+        return fail("Idempotency-Key was already used for a different image", 409)
+    if not upload.get("original_stored"):
+        return fail("The original upload is still being stored. Retry shortly.", 409)
+    return ok({
+        "status": "success",
+        "message": "Image upload already completed",
+        "image_id": upload["image_id"],
+        "image_name": upload["image_name"],
+        "idempotent_replay": True,
+        "source": "database",
+    })
+
+
+def inference_model_provenance(conn, predictor) -> dict[str, Any]:
+    """Resolve a stable registered model identity for an inference result."""
+    runtime_path = Path(getattr(predictor, "model_path", "model"))
+    if not runtime_path.is_absolute():
+        runtime_path = Path(__file__).resolve().parents[1] / runtime_path
+    runtime_path = runtime_path.resolve()
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT model_id, model_version, weights_path
+            FROM models
+            ORDER BY (status = 'active') DESC,
+                     activated_at DESC NULLS LAST,
+                     model_id DESC
+            """
+        )
+        models = cur.fetchall()
+    project_root = Path(__file__).resolve().parents[1]
+    for model in models:
+        registered_path = Path(str(model["weights_path"]))
+        if not registered_path.is_absolute():
+            registered_path = project_root / registered_path
+        if registered_path.resolve() == runtime_path:
+            return {
+                "model_id": model["model_id"],
+                "model_version": model["model_version"],
+            }
+    runtime_name = runtime_path.stem
+    return {"model_id": None, "model_version": f"runtime:{runtime_name}"[:50]}
 
 
 def user_can_reference_field(conn, field_id: int, user: dict[str, Any]) -> bool:
@@ -868,19 +1002,26 @@ def detection_for_result(conn, result_id: int) -> dict[str, Any] | None:
                 dr.result_id,
                 dr.image_id,
                 i.image_name,
-                i.image_path,
                 dr.tassel_count,
                 dr.confidence_score,
                 dr.processing_time,
-                dr.annotated_image_path,
                 dr.bbox_data,
                 dr.quality_status,
                 dr.review_note,
+                dr.model_id,
+                COALESCE(dr.model_version, m.model_version) AS model_version,
+                dr.inference_mode,
+                EXISTS (
+                    SELECT 1 FROM image_files image_file
+                    WHERE image_file.image_id = dr.image_id
+                      AND image_file.file_type = 'annotated'
+                ) AS annotated_available,
                 f.field_name,
                 dr.created_at
             FROM detection_results dr
             JOIN images i ON i.image_id = dr.image_id
             LEFT JOIN fields f ON f.field_id = i.field_id
+            LEFT JOIN models m ON m.model_id = dr.model_id
             WHERE dr.result_id = %s
             LIMIT 1
             """,
@@ -1209,7 +1350,13 @@ def auth_change_password():
 def upload():
     file = request.files.get("image") or request.files.get("file")
     payload = request.get_json(silent=True) or {}
-    user_id = request.auth_user["user_id"]
+    user_id = int(request.auth_user["user_id"])
+    try:
+        upload_idempotency_key = parse_idempotency_key()
+    except ValueError as exc:
+        return fail(str(exc), 400)
+
+    stored_path: Path | None = None
 
     if file:
         original_name = file.filename or "uploaded_maize_image.jpg"
@@ -1229,7 +1376,6 @@ def upload():
 
         image_name = validated.stored_name
         file_size = validated.byte_size
-        stored_path = secure_store_bytes(image_name, raw_image)
     else:
         image_name = payload.get("image_name") or payload.get("imageName") or "uploaded_maize_image.jpg"
         validation_error = validate_image_upload(image_name)
@@ -1242,19 +1388,30 @@ def upload():
 
     try:
         with db_connection() as conn:
+            if upload_idempotency_key:
+                existing = find_idempotent_upload(
+                    conn, user_id, upload_idempotency_key
+                )
+                if existing:
+                    return idempotent_upload_response(
+                        existing,
+                        expected_sha256=validated.sha256 if file else None,
+                    )
             image_id = create_image_record(
                 conn,
                 image_name=image_name,
                 file_size=file_size,
-                user_id=int(user_id),
+                user_id=user_id,
                 original_filename=validated.original_name if file else None,
                 content_sha256=validated.sha256 if file else None,
                 mime_type=validated.mime_type if file else None,
                 image_width=validated.width if file else None,
                 image_height=validated.height if file else None,
                 validated=bool(file),
+                upload_idempotency_key=upload_idempotency_key,
             )
             if file:
+                stored_path = secure_store_bytes(image_name, raw_image)
                 store_image_blob(
                     conn,
                     image_id,
@@ -1268,7 +1425,7 @@ def upload():
                     conn,
                     "secure_image_upload",
                     f"Encrypted upload stored for image {image_id}",
-                    int(user_id),
+                    user_id,
                 )
         return ok(
             {
@@ -1276,12 +1433,32 @@ def upload():
                 "message": "Image uploaded",
                 "image_id": image_id,
                 "image_name": image_name,
+                "idempotent_replay": False,
                 "source": "database",
             },
             201,
         )
     except Exception as exc:
-        return db_error_response(exc)
+        if stored_path is not None:
+            stored_path.unlink(missing_ok=True)
+        if upload_idempotency_key and (
+            "uq_images_user_upload_idempotency_key" in str(exc)
+            or "duplicate key value" in str(exc).lower()
+        ):
+            try:
+                with db_connection() as conn:
+                    existing = find_idempotent_upload(
+                        conn, user_id, upload_idempotency_key
+                    )
+                if existing:
+                    return idempotent_upload_response(
+                        existing,
+                        expected_sha256=validated.sha256 if file else None,
+                    )
+            except Exception:
+                app.logger.exception("Could not resolve a concurrent upload replay")
+        app.logger.exception("Image upload persistence failed")
+        return fail("Image upload could not be stored", 500)
 
 
 # USER STORIES A.2, A.6 - Run real YOLO counting in fast or accurate mode.
@@ -1335,27 +1512,22 @@ def predict():
         return fail("The trained model is unavailable", 503)
 
     if predictor is not None and predictor.available and image_name:
-        # Resolve image path: try exact name, basename, then cleaned version
         try:
             with materialized_image(Path(image_name).name) as image_path:
                 ai_result = predictor.detect(str(image_path), mode=inference_mode)
-                # Save detection to database
                 try:
                     with db_connection() as conn:
-                        if not image_id:
-                            image_id = create_image_record(
-                                conn,
-                                image_name=image_name,
-                                file_size=payload.get("file_size"),
-                            )
                         bbox_json = json.dumps(ai_result["bbox_data"], ensure_ascii=False)
+                        model_provenance = inference_model_provenance(conn, predictor)
                         with conn.cursor() as cur:
                             cur.execute("UPDATE images SET status = 'completed' WHERE image_id = %s", (image_id,))
                             cur.execute(
                                 """
                                 INSERT INTO detection_results
-                                    (image_id, tassel_count, confidence_score, processing_time, bbox_data, annotated_image_path)
-                                VALUES (%s, %s, %s, %s, %s::jsonb, %s)
+                                    (image_id, tassel_count, confidence_score, processing_time,
+                                     bbox_data, annotated_image_path, model_id, model_version,
+                                     inference_mode)
+                                VALUES (%s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s)
                                 RETURNING result_id
                                 """,
                                 (
@@ -1365,20 +1537,22 @@ def predict():
                                     ai_result["processing_time"],
                                     bbox_json,
                                     f"uploads/annotated_{image_id}.jpg",
+                                    model_provenance["model_id"],
+                                    model_provenance["model_version"],
+                                    ai_result.get("inference_mode", inference_mode),
                                 ),
                             )
                             ai_result["result_id"] = cur.fetchone()["result_id"]
-                        conn.commit()
-                except Exception as db_err:
+                except Exception:
                     app.logger.exception("Inference succeeded but result persistence failed")
-                    return fail("Detection result could not be saved", 500, database_error=str(db_err))
+                    return fail("Detection result could not be saved", 500)
 
                 return ok({
                     "result_id": ai_result["result_id"],
                     "image_id": image_id,
                     "image_name": image_name,
-                    "image_path": f"uploads/{image_name}",
-                    "original_image_path": f"uploads/{image_name}",
+                    "original_asset_url": f"/api/images/{image_id}/file/original",
+                    "annotated_asset_url": None,
                     "tassel_count": ai_result["tassel_count"],
                     "count": ai_result["tassel_count"],
                     "confidence_score": ai_result["confidence_score"],
@@ -1386,6 +1560,10 @@ def predict():
                     "processing_time": ai_result["processing_time"],
                     "bbox_data": ai_result["bbox_data"],
                     "inference_mode": ai_result.get("inference_mode", inference_mode),
+                    "model_id": model_provenance["model_id"],
+                    "model_version": model_provenance["model_version"],
+                    "quality_status": "unreviewed",
+                    "review_note": None,
                     "cache_hit": ai_result.get("cache_hit", False),
                     "created_at": datetime.now().isoformat(),
                     "source": "yolo-inference",
@@ -1440,19 +1618,26 @@ def history():
                         dr.result_id,
                         dr.image_id,
                         i.image_name,
-                        i.image_path,
                         dr.tassel_count,
                         dr.confidence_score,
                         dr.processing_time,
-                        dr.annotated_image_path,
                         dr.bbox_data,
                         dr.quality_status,
                         dr.review_note,
+                        dr.model_id,
+                        COALESCE(dr.model_version, m.model_version) AS model_version,
+                        dr.inference_mode,
+                        EXISTS (
+                            SELECT 1 FROM image_files image_file
+                            WHERE image_file.image_id = dr.image_id
+                              AND image_file.file_type = 'annotated'
+                        ) AS annotated_available,
                         f.field_name,
                         dr.created_at
                     FROM detection_results dr
                     JOIN images i ON i.image_id = dr.image_id
                     LEFT JOIN fields f ON f.field_id = i.field_id
+                    LEFT JOIN models m ON m.model_id = dr.model_id
                     {where_clause}
                     ORDER BY {order_by}
                     LIMIT %s
@@ -2249,40 +2434,73 @@ def compare_models():
     if not isinstance(model_ids, list) or len(model_ids) != 2:
         return fail("Exactly two model_ids are required", 400)
     try:
+        requested_ids = [int(item) for item in model_ids]
+    except (TypeError, ValueError):
+        return fail("model_ids must contain integers", 400)
+    if len(set(requested_ids)) != 2:
+        return fail("Two different model_ids are required", 400)
+    try:
         with db_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     "SELECT * FROM models WHERE model_id = ANY(%s) ORDER BY model_id",
-                    ([int(item) for item in model_ids],),
+                    (requested_ids,),
                 )
-                selected = [normalize_model_row(row) for row in cur.fetchall()]
+                selected_rows = cur.fetchall()
     except Exception as exc:
         return db_error_response(exc)
-    if len(selected) != 2:
+    if len(selected_rows) != 2:
         return fail("Both models must exist", 404)
+    selected = [normalize_model_row(row) for row in selected_rows]
     dataset_yaml = str(payload.get("dataset_yaml") or "").strip()
     comparison_source = "stored-evaluation"
     if dataset_yaml:
         if evaluate_model is None:
             return fail("Evaluation runtime is unavailable", 503)
-        evaluated = []
-        for model in selected:
-            weights_path = Path(str(model["weights_path"]))
-            if not weights_path.is_absolute():
-                weights_path = Path(__file__).resolve().parents[1] / weights_path
-            if not weights_path.exists():
-                return fail(
-                    f"Weights are unavailable for {model['model_version']}; "
-                    "use stored metrics or register the missing artifact",
-                    409,
+        try:
+            artifact_paths, approved_yaml = validate_evaluation_resources(
+                selected_rows, dataset_yaml
+            )
+        except ModelArtifactError as exc:
+            return evaluation_validation_error(exc, resource="model")
+        except ApprovedPathError as exc:
+            return evaluation_validation_error(exc, resource="dataset")
+        try:
+            evaluated = []
+            metric_updates = []
+            for model, weights_path in zip(selected, artifact_paths, strict=True):
+                metrics_result = evaluate_model(weights_path, approved_yaml)
+                evaluated.append({
+                    **model,
+                    "map50": metrics_result["map50"],
+                    "precision": metrics_result["precision"],
+                    "recall": metrics_result["recall"],
+                })
+                metric_updates.append((
+                    metrics_result["map50"],
+                    metrics_result["precision"],
+                    metrics_result["recall"],
+                    model["model_id"],
+                ))
+            with db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.executemany(
+                        """
+                        UPDATE models
+                        SET map50 = %s, precision_score = %s, recall_score = %s
+                        WHERE model_id = %s
+                        """,
+                        metric_updates,
+                    )
+                log_action(
+                    conn,
+                    "models_compared",
+                    f"model_ids={requested_ids}, source=shared-validation-run",
+                    request.auth_user["user_id"],
                 )
-            metrics_result = evaluate_model(weights_path, dataset_yaml)
-            evaluated.append({
-                **model,
-                "map50": metrics_result["map50"],
-                "precision": metrics_result["precision"],
-                "recall": metrics_result["recall"],
-            })
+        except Exception:
+            app.logger.exception("Shared model comparison failed")
+            return fail("Model comparison could not be completed", 500)
         selected = evaluated
         comparison_source = "shared-validation-run"
     metrics = ("map50", "precision", "recall")
@@ -2367,13 +2585,14 @@ def evaluate_registered_model(model_id: int):
                 if evaluate_model is None:
                     return fail("Evaluation runtime is unavailable", 503)
                 try:
-                    weights_path = validate_model_artifact(
-                        model["weights_path"],
-                        expected_sha256=model.get("artifact_sha256"),
-                    ).path
-                    approved_yaml = validate_dataset_yaml(dataset_yaml)
-                except (ModelArtifactError, ApprovedPathError) as exc:
-                    return fail(str(exc), 400)
+                    artifact_paths, approved_yaml = validate_evaluation_resources(
+                        [model], dataset_yaml
+                    )
+                    weights_path = artifact_paths[0]
+                except ModelArtifactError as exc:
+                    return evaluation_validation_error(exc, resource="model")
+                except ApprovedPathError as exc:
+                    return evaluation_validation_error(exc, resource="dataset")
                 metrics = evaluate_model(weights_path, approved_yaml)
                 with conn.cursor() as cur:
                     cur.execute(

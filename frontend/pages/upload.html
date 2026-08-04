@@ -105,20 +105,46 @@ initNav();
 let selectedFiles = [];
 let isBatch = false;
 let mobilePreparedInfo = null;
+let uploadIdempotencyKeys = new WeakMap();
+let selectionGeneration = 0;
+
+function newUploadIdempotencyKey() {
+  const cryptoApi = window.crypto;
+  if (cryptoApi && typeof cryptoApi.randomUUID === 'function') {
+    return cryptoApi.randomUUID();
+  }
+  if (cryptoApi && typeof cryptoApi.getRandomValues === 'function') {
+    const random = new Uint8Array(16);
+    cryptoApi.getRandomValues(random);
+    return Array.from(random, byte => byte.toString(16).padStart(2, '0')).join('');
+  }
+  return `upload-${Date.now()}-${Math.random().toString(36).slice(2).padEnd(16, '0')}`;
+}
+
+function idempotencyKeyFor(file) {
+  if (!uploadIdempotencyKeys.has(file)) {
+    uploadIdempotencyKeys.set(file, newUploadIdempotencyKey());
+  }
+  return uploadIdempotencyKeys.get(file);
+}
 
 // USER STORY A.5 Control call preparation: switch between single and batch input.
 function toggleBatch() {
+  selectionGeneration += 1;
   isBatch = document.getElementById('batchMode').checked;
   document.getElementById('fileInput').multiple = isBatch;
   document.getElementById('batchHint').style.display = isBatch ? 'inline' : 'none';
   document.getElementById('fileInput').value = '';
   selectedFiles = [];
+  uploadIdempotencyKeys = new WeakMap();
   updatePreview();
 }
 
 // USER STORIES A.1/A.7 Boundary validation: accept mobile or desktop JPG/PNG files.
 async function handleFiles(files) {
+  const generation = ++selectionGeneration;
   selectedFiles = [];
+  uploadIdempotencyKeys = new WeakMap();
   mobilePreparedInfo = null;
   document.getElementById('errorBox').innerHTML = '';
   const validTypes = ['image/jpeg', 'image/png'];
@@ -134,6 +160,7 @@ async function handleFiles(files) {
       continue;
     }
     selectedFiles.push(f);
+    idempotencyKeyFor(f);
   }
   const desktopFileStatus = document.getElementById('desktopFileStatus');
   if (desktopFileStatus) {
@@ -150,8 +177,12 @@ async function handleFiles(files) {
     try {
       // Field acceptance showed 2560 px could reduce the count. 4096/q0.90
       // retained the 121-tassel baseline while still reducing transfer size.
-      mobilePreparedInfo = await prepareImageForUpload(original, { maxLongEdge: 4096, quality: 0.90 });
+      const preparedInfo = await prepareImageForUpload(original, { maxLongEdge: 4096, quality: 0.90 });
+      if (generation !== selectionGeneration) return;
+      mobilePreparedInfo = preparedInfo;
+      const originalIdempotencyKey = idempotencyKeyFor(original);
       selectedFiles = [mobilePreparedInfo.file];
+      uploadIdempotencyKeys.set(mobilePreparedInfo.file, originalIdempotencyKey);
       const prompt = document.getElementById('mobileFilePrompt');
       const url = URL.createObjectURL(original);
       prompt.innerHTML = '<img src="' + url + '" alt="Selected maize field" style="width:100%;max-height:360px;object-fit:contain">';
@@ -161,6 +192,7 @@ async function handleFiles(files) {
         `${mobilePreparedInfo.width}×${mobilePreparedInfo.height}`;
       progress.style.display = 'none';
     } catch (error) {
+      if (generation !== selectionGeneration) return;
       selectedFiles = [];
       progress.style.display = 'none';
       showError(error.message);
@@ -201,9 +233,10 @@ function fileToDataUrl(file) {
 }
 
 async function uploadAndPredict(file, onProgress) {
+  const idempotencyKey = idempotencyKeyFor(file);
   const uploadRes = typeof onProgress === 'function'
-    ? await apiUploadWithProgress(file, onProgress)
-    : await apiUpload(file);
+    ? await apiUploadWithProgress(file, onProgress, idempotencyKey)
+    : await apiUpload(file, idempotencyKey);
   if (!uploadRes.ok) {
     return { ok: false, error: uploadRes.error || 'Upload failed', fileName: file.name };
   }
@@ -302,7 +335,9 @@ async function submitUpload() {
 }
 
 function resetUpload() {
+  selectionGeneration += 1;
   selectedFiles = [];
+  uploadIdempotencyKeys = new WeakMap();
   document.getElementById('fileInput').value = '';
   document.getElementById('mobileFileInput').value = '';
   document.getElementById('errorBox').innerHTML = '';

@@ -388,9 +388,22 @@ ALTER TABLE models
     ADD COLUMN IF NOT EXISTS artifact_sha256 CHAR(64),
     ADD COLUMN IF NOT EXISTS artifact_validated_at TIMESTAMP;
 
+-- Retry-safe uploads and auditable inference provenance (migration 005).
+ALTER TABLE images
+    ADD COLUMN IF NOT EXISTS upload_idempotency_key VARCHAR(128);
+
+ALTER TABLE detection_results
+    ADD COLUMN IF NOT EXISTS model_id INTEGER REFERENCES models(model_id) ON DELETE SET NULL,
+    ADD COLUMN IF NOT EXISTS model_version VARCHAR(50),
+    ADD COLUMN IF NOT EXISTS inference_mode VARCHAR(20);
+
 CREATE INDEX IF NOT EXISTS idx_images_content_sha256 ON images(content_sha256);
 CREATE INDEX IF NOT EXISTS idx_fields_owner_user_id ON fields(owner_user_id);
 CREATE INDEX IF NOT EXISTS idx_models_active_status ON models(status) WHERE status = 'active';
+CREATE UNIQUE INDEX IF NOT EXISTS uq_images_user_upload_idempotency_key
+    ON images (user_id, upload_idempotency_key)
+    WHERE upload_idempotency_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_detection_results_model_id ON detection_results(model_id);
 
 CREATE TABLE IF NOT EXISTS field_assignments (
     field_id INTEGER NOT NULL REFERENCES fields(field_id) ON DELETE CASCADE,
