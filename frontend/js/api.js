@@ -203,14 +203,20 @@ function resolveAssetUrl(path) {
   if (path.startsWith('data:') || path.startsWith('http://') || path.startsWith('https://')) {
     return path;
   }
-  const token = sessionStorage.getItem('maize_access_token');
-  const authQuery = token ? `?access_token=${encodeURIComponent(token)}` : '';
   if (path.startsWith('/storage/uploads/')) {
-    return `${API_BASE}${path.replace('/storage', '')}${authQuery}`;
+    return `${API_BASE}${path.replace('/storage', '')}`;
   }
-  if (path.startsWith('/uploads/')) return `${API_BASE}${path}${authQuery}`;
-  if (path.startsWith('uploads/')) return `${API_BASE}/${path}${authQuery}`;
+  if (path.startsWith('/uploads/') || path.startsWith('/api/images/')) return `${API_BASE}${path}`;
+  if (path.startsWith('uploads/')) return `${API_BASE}/${path}`;
   return path;
+}
+
+async function fetchProtectedAssetUrl(path) {
+  const url = resolveAssetUrl(path);
+  if (!url || url.startsWith('data:')) return url;
+  const response = await fetch(url, { headers: authHeaders() });
+  if (!response.ok) throw new Error(`Image request failed (${response.status})`);
+  return URL.createObjectURL(await response.blob());
 }
 
 function authHeaders(extra) {

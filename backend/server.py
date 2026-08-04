@@ -1,7 +1,8 @@
-"""Simple production server for Maize Detector API.
+"""Production-oriented Waitress entry point for the Maize Detector API.
 
-Uses Python's built-in WSGI server with proper model preloading
-to avoid the Flask dev server + YOLO threading issues on Windows.
+Preloads the model before accepting requests and runs a bounded WSGI thread
+pool. Public HTTPS termination remains the responsibility of the hosting
+platform or reverse proxy.
 
 Usage:
     cd backend
@@ -10,9 +11,9 @@ Usage:
 
 import sys
 import os
-from socketserver import ThreadingMixIn
-from wsgiref.simple_server import WSGIServer, make_server
 from pathlib import Path
+
+from waitress import serve
 
 # Ensure backend is on Python path
 backend_dir = Path(__file__).resolve().parent
@@ -22,9 +23,6 @@ os.chdir(str(backend_dir))
 # Import app - this loads the YOLO model BEFORE the server starts
 from app import app, db_ready, get_predictor, start_backup_scheduler
 
-
-class ThreadingWSGIServer(ThreadingMixIn, WSGIServer):
-    daemon_threads = True
 
 configuration_errors = []
 if app.config["SECRET_KEY"] == "week10-development-key-change-before-production":
@@ -55,10 +53,11 @@ print("Database: PostgreSQL connected")
 print(f"AI Inference: {predictor.model_path.name} loaded")
 start_backup_scheduler()
 
-# Use a lightweight threaded WSGI server for the local assessment demo.
-httpd = make_server(host, port, app, server_class=ThreadingWSGIServer)
-try:
-    httpd.serve_forever()
-except KeyboardInterrupt:
-    print("\nShutting down...")
-    httpd.server_close()
+serve(
+    app,
+    host=host,
+    port=port,
+    threads=max(1, int(os.getenv("WSGI_THREADS", "4"))),
+    channel_timeout=max(30, int(os.getenv("WSGI_CHANNEL_TIMEOUT", "120"))),
+    clear_untrusted_proxy_headers=True,
+)

@@ -13,6 +13,13 @@ FRONTEND = ROOT / "frontend"
 
 
 class MobilePwaStaticTests(unittest.TestCase):
+    def test_access_tokens_are_never_added_to_asset_urls(self):
+        api_source = (ROOT / "frontend" / "js" / "api.js").read_text(encoding="utf-8")
+        result_source = (ROOT / "frontend" / "pages" / "result.html").read_text(encoding="utf-8")
+        self.assertNotIn("?access_token=", api_source)
+        self.assertNotIn("?access_token=", result_source)
+        self.assertIn("fetchProtectedAssetUrl", api_source)
+
     @staticmethod
     def contrast_ratio(foreground, background):
         def luminance(hex_color):

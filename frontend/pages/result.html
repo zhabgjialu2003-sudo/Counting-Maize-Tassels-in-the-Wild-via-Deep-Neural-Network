@@ -120,11 +120,11 @@ async function loadResult() {
     document.getElementById('timeDisplay').textContent = '--';
     return;
   }
-  displayResult(resultData);
+  await displayResult(resultData);
   renderResultActions();
 }
 
-function displayResult(data) {
+async function displayResult(data) {
   const sourceNotice = document.getElementById('sourceNotice');
   sourceNotice.className = 'alert alert-success';
   const mobileZh = window.matchMedia('(max-width: 768px)').matches && mobileLanguage() === 'zh-CN';
@@ -139,10 +139,16 @@ function displayResult(data) {
     data.processingTime > 0 ? Number(data.processingTime).toFixed(1) + 's' : '< 0.1s';
 
   var imageId = data.imageId;
-  var token = sessionStorage.getItem('maize_access_token');
-  var dbUrl = imageId ? API_BASE + '/api/images/' + imageId + '/file/original?access_token=' + encodeURIComponent(token || '') : null;
-  var fileUrl = (!resultId && uploadedImageDataUrl) || resolveAssetUrl(data.originalImagePath || data.imagePath);
-  var imgUrl = dbUrl || fileUrl;
+  var protectedPath = imageId ? '/api/images/' + imageId + '/file/original' : null;
+  var filePath = (!resultId && uploadedImageDataUrl) || data.originalImagePath || data.imagePath;
+  var imgUrl = null;
+  try {
+    imgUrl = protectedPath
+      ? await fetchProtectedAssetUrl(protectedPath)
+      : (filePath && filePath.startsWith('data:') ? filePath : await fetchProtectedAssetUrl(filePath));
+  } catch (error) {
+    console.error('Could not load protected result image', error);
+  }
   var fallbackMsg = 'Maize Field Image - ' + data.tasselCount + ' Tassels Detected';
 
   // Reset state

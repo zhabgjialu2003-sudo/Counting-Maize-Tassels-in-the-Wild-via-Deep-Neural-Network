@@ -77,6 +77,7 @@ from decimal import Decimal
 from functools import wraps
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from flask import Flask, jsonify, request, Response, redirect, send_from_directory
 from flask_cors import CORS
@@ -94,12 +95,28 @@ except ImportError:
 
 try:
     from .inference import activate_predictor, get_predictor
+    from .image_security import (
+        DEFAULT_MAX_IMAGE_BYTES,
+        InvalidImageUpload,
+        read_limited,
+        validate_image_bytes,
+    )
 except ImportError:
     try:
         from inference import activate_predictor, get_predictor
+        from image_security import (
+            DEFAULT_MAX_IMAGE_BYTES,
+            InvalidImageUpload,
+            read_limited,
+            validate_image_bytes,
+        )
     except ImportError:
         activate_predictor = None
         get_predictor = None
+        DEFAULT_MAX_IMAGE_BYTES = 12 * 1024 * 1024
+        InvalidImageUpload = ValueError
+        read_limited = None
+        validate_image_bytes = None
 
 try:
     from .advice_engine import build_advice, normalize_language
@@ -132,6 +149,29 @@ except ImportError:
         evaluate_model = None
         train_model = None
 
+try:
+    from .security.model_paths import ModelArtifactError, validate_model_artifact
+    from .security.path_controls import (
+        ApprovedPathError,
+        configured_dataset_roots,
+        resolve_approved_path,
+        validate_dataset_yaml,
+    )
+    from .security.passwords import password_policy_error
+    from .security.rate_limits import InMemoryRateLimiter
+    from .services.training_jobs import BoundedJobExecutor
+except ImportError:
+    from security.model_paths import ModelArtifactError, validate_model_artifact
+    from security.path_controls import (
+        ApprovedPathError,
+        configured_dataset_roots,
+        resolve_approved_path,
+        validate_dataset_yaml,
+    )
+    from security.passwords import password_policy_error
+    from security.rate_limits import InMemoryRateLimiter
+    from services.training_jobs import BoundedJobExecutor
+
 
 app = Flask(__name__)
 ALLOWED_ORIGINS = [
@@ -151,6 +191,9 @@ _backup_scheduler_started = False
 app.config["SECRET_KEY"] = os.getenv(
     "SECRET_KEY", "week10-development-key-change-before-production"
 )
+MAX_IMAGE_BYTES = int(os.getenv("MAX_IMAGE_BYTES", str(DEFAULT_MAX_IMAGE_BYTES)))
+MAX_DATASET_BYTES = int(os.getenv("MAX_DATASET_BYTES", str(50 * 1024 * 1024)))
+app.config["MAX_CONTENT_LENGTH"] = int(os.getenv("MAX_REQUEST_BYTES", str(64 * 1024 * 1024)))
 
 UPLOAD_DIR = Path(__file__).resolve().parent / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
@@ -162,6 +205,7 @@ ALLOWED_IMAGE_EXTENSIONS = {"jpg", "jpeg", "png"}
 ALLOWED_IMAGE_MIME_TYPES = {"image/jpeg", "image/png"}
 VALID_USER_STATUSES = {"active", "disabled"}
 TOKEN_MAX_AGE_SECONDS = int(os.getenv("TOKEN_MAX_AGE_SECONDS", "28800"))
+ALLOW_QUERY_TOKEN = os.getenv("ALLOW_QUERY_TOKEN", "false").lower() == "true"
 ROLE_PERMISSIONS = {
     "Farmer": ["images:upload", "results:read-own", "agronomy:diagnose"],
     "Researcher": [
@@ -181,6 +225,11 @@ ROLE_PERMISSIONS = {
     ],
     "Admin": ["*"],
 }
+_rate_limiter = InMemoryRateLimiter()
+_training_executor = BoundedJobExecutor(
+    max_workers=int(os.getenv("MAX_CONCURRENT_TRAINING_JOBS", "1")),
+    max_pending=int(os.getenv("MAX_PENDING_TRAINING_JOBS", "2")),
+)
 
 
 def db_config() -> dict[str, str | int]:
@@ -235,6 +284,11 @@ def fail(message: str, status: int = 400, **extra):
     return ok({"status": "error", "message": message, **extra}, status)
 
 
+@app.errorhandler(413)
+def request_too_large(_error):
+    return fail("Request body is too large", 413)
+
+
 def token_serializer() -> URLSafeTimedSerializer:
     return URLSafeTimedSerializer(app.config["SECRET_KEY"], salt="maize-auth")
 
@@ -243,27 +297,35 @@ def issue_access_token(user: dict[str, Any]) -> str:
     return token_serializer().dumps(
         {
             "user_id": user["user_id"],
-            "email": user["email"],
-            "role": user["role"],
-            "status": user.get("status", "active"),
-            "permissions": permissions_for(user),
+            "session_version": int(user.get("session_version") or 1),
         }
     )
 
 
 def authenticated_user() -> dict[str, Any] | None:
     header = request.headers.get("Authorization", "")
-    token = (
-        header.removeprefix("Bearer ").strip()
-        if header.startswith("Bearer ")
-        else request.args.get("access_token", "")
-    )
+    token = header.removeprefix("Bearer ").strip() if header.startswith("Bearer ") else ""
+    if not token and ALLOW_QUERY_TOKEN:
+        token = request.args.get("access_token", "")
     if not token:
         return None
     try:
-        return token_serializer().loads(token, max_age=TOKEN_MAX_AGE_SECONDS)
+        claims = token_serializer().loads(token, max_age=TOKEN_MAX_AGE_SECONDS)
     except (BadSignature, SignatureExpired):
         return None
+    try:
+        user_id = int(claims.get("user_id"))
+        with db_connection() as conn:
+            user = fetch_user(conn, user_id)
+    except Exception:
+        app.logger.exception("Authenticated user refresh failed")
+        return None
+    if not user:
+        return None
+    if int(claims.get("session_version") or 1) != int(user.get("session_version") or 1):
+        return None
+    user["permissions"] = permissions_for(user)
+    return user
 
 
 def require_roles(*roles: str, permission: str | None = None):
@@ -281,6 +343,31 @@ def require_roles(*roles: str, permission: str | None = None):
             if permission and "*" not in granted and permission not in granted:
                 return fail(f"Missing permission: {permission}", 403)
             request.auth_user = user
+            return view(*args, **kwargs)
+
+        return wrapped
+
+    return decorator
+
+
+def limit_requests(scope: str, limit: int, window_seconds: int):
+    def decorator(view):
+        @wraps(view)
+        def wrapped(*args, **kwargs):
+            authorization = request.headers.get("Authorization", "")
+            identity = request.remote_addr or "unknown"
+            if authorization:
+                identity = hashlib.sha256(authorization.encode("utf-8")).hexdigest()[:24]
+            decision = _rate_limiter.check(
+                scope,
+                identity,
+                limit=limit,
+                window_seconds=window_seconds,
+            )
+            if not decision.allowed:
+                response, status = fail("Too many requests. Please wait and try again.", 429)
+                response.headers["Retry-After"] = str(decision.retry_after)
+                return response, status
             return view(*args, **kwargs)
 
         return wrapped
@@ -457,6 +544,8 @@ def normalize_user_row(row: dict[str, Any]) -> dict[str, Any]:
         "role_id": row.get("role_id"),
         "role": row.get("role"),
         "status": row.get("status"),
+        "permissions": row.get("permissions"),
+        "session_version": row.get("session_version", 1),
         "created_at": row.get("created_at"),
     }
 
@@ -465,7 +554,8 @@ def fetch_user(conn, user_id: int) -> dict[str, Any] | None:
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT u.user_id, u.name, u.email, u.role_id, r.role_name AS role, u.status, u.created_at
+            SELECT u.user_id, u.name, u.email, u.role_id, r.role_name AS role,
+                   u.status, u.permissions, u.session_version, u.created_at
             FROM users u
             JOIN roles r ON r.role_id = u.role_id
             WHERE u.user_id = %s
@@ -513,6 +603,11 @@ def validate_user_payload(payload: dict[str, Any], creating: bool = False) -> st
     status = payload.get("status")
     if status and status not in VALID_USER_STATUSES:
         return "status must be active or disabled"
+
+    if payload.get("password"):
+        policy_error = password_policy_error(str(payload["password"]))
+        if policy_error:
+            return policy_error
 
     return None
 
@@ -671,19 +766,79 @@ def latest_detection_for_image(conn, image_id: int) -> dict[str, Any] | None:
     return normalize_detection_row(row) if row else None
 
 
-def create_image_record(conn, image_name: str, file_size: int | None = None, user_id: int | None = None) -> int:
+def create_image_record(
+    conn,
+    image_name: str,
+    file_size: int | None = None,
+    user_id: int | None = None,
+    *,
+    original_filename: str | None = None,
+    content_sha256: str | None = None,
+    mime_type: str | None = None,
+    image_width: int | None = None,
+    image_height: int | None = None,
+    validated: bool = False,
+) -> int:
     user_id = user_id or 1
     image_path = f"uploads/{image_name}"
     with conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO images (user_id, image_name, image_path, status, file_size, access_level)
-            VALUES (%s, %s, %s, 'processing', %s, 'private')
+            INSERT INTO images (
+                user_id, image_name, image_path, status, file_size, access_level,
+                original_filename, content_sha256, mime_type, image_width,
+                image_height, validated
+            )
+            VALUES (%s, %s, %s, 'processing', %s, 'private', %s, %s, %s, %s, %s, %s)
             RETURNING image_id
             """,
-            (user_id, image_name, image_path, file_size),
+            (
+                user_id,
+                image_name,
+                image_path,
+                file_size,
+                original_filename,
+                content_sha256,
+                mime_type,
+                image_width,
+                image_height,
+                validated,
+            ),
         )
         return cur.fetchone()["image_id"]
+
+
+def user_can_reference_field(conn, field_id: int, user: dict[str, Any]) -> bool:
+    """Enforce ownership or explicit assignment for field-scoped operations."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                f.owner_user_id,
+                EXISTS (
+                    SELECT 1
+                    FROM images i
+                    WHERE i.field_id = f.field_id AND i.user_id = %s
+                ) AS linked_to_user,
+                EXISTS (
+                    SELECT 1
+                    FROM field_assignments fa
+                    WHERE fa.field_id = f.field_id
+                      AND fa.agronomist_user_id = %s
+                ) AS assigned_to_agronomist
+            FROM fields f
+            WHERE f.field_id = %s
+            """,
+            (user["user_id"], user["user_id"], field_id),
+        )
+        field = cur.fetchone()
+    if not field:
+        return False
+    if user.get("role") in {"Researcher", "Admin"}:
+        return True
+    if user.get("role") == "Agronomist":
+        return bool(field.get("assigned_to_agronomist"))
+    return field.get("owner_user_id") == user["user_id"] or bool(field.get("linked_to_user"))
 
 
 def store_image_blob(
@@ -692,7 +847,9 @@ def store_image_blob(
     file_type: str,
     file_name: str,
     mime_type: str,
-    encrypted_data: bytes,
+    image_data: bytes,
+    *,
+    encrypted: bool,
 ) -> None:
     with conn.cursor() as cur:
         cur.execute(
@@ -701,13 +858,13 @@ def store_image_blob(
                 image_id, file_type, file_name, mime_type, file_size,
                 image_data, encrypted
             )
-            VALUES (%s, %s, %s, %s, %s, %s, TRUE)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (image_id, file_type) DO UPDATE SET
                 file_name = EXCLUDED.file_name,
                 mime_type = EXCLUDED.mime_type,
                 file_size = EXCLUDED.file_size,
                 image_data = EXCLUDED.image_data,
-                encrypted = TRUE,
+                encrypted = EXCLUDED.encrypted,
                 created_at = CURRENT_TIMESTAMP
             """,
             (
@@ -715,8 +872,9 @@ def store_image_blob(
                 file_type,
                 file_name,
                 mime_type,
-                len(encrypted_data),
-                encrypted_data,
+                len(image_data),
+                image_data,
+                encrypted,
             ),
         )
 
@@ -813,7 +971,7 @@ def health():
         try:
             disease_health = get_disease_predictor().health()
         except Exception as exc:
-            disease_health["error"] = str(exc)
+            disease_health["error"] = "Disease model health check is unavailable"
     payload = {
         "status": "ok" if ready else "degraded",
         "service": "Maize Detector API",
@@ -827,6 +985,7 @@ def health():
 
 # Shared authentication control (A.7, A.8, D.1, D.5).
 @app.route("/api/auth/login", methods=["POST"])
+@limit_requests("auth-login", 10, 60)
 def auth_login():
     """Authenticate user and return role info. BCE A.7 (access), D.1 (user mgmt)."""
     payload = request.get_json(silent=True) or {}
@@ -842,7 +1001,7 @@ def auth_login():
                 cur.execute(
                     """
                     SELECT u.user_id, u.name, u.email, u.password_hash, u.status, u.permissions,
-                           r.role_name AS role
+                           r.role_name AS role, u.session_version
                     FROM users u
                     JOIN roles r ON r.role_id = u.role_id
                     WHERE u.email = %s
@@ -882,6 +1041,7 @@ def auth_login():
 
 # Shared account registration control (A.8, D.1).
 @app.route("/api/auth/register", methods=["POST"])
+@limit_requests("auth-register", 5, 300)
 def auth_register():
     """Create a Farmer account in PostgreSQL."""
     payload = request.get_json(silent=True) or {}
@@ -893,8 +1053,9 @@ def auth_register():
         return fail("Name is required", 400)
     if "@" not in email or "." not in email.rsplit("@", 1)[-1]:
         return fail("A valid email address is required", 400)
-    if len(password) < 6:
-        return fail("Password must be at least 6 characters", 400)
+    policy_error = password_policy_error(password)
+    if policy_error:
+        return fail(policy_error, 400)
 
     try:
         with db_connection() as conn:
@@ -938,7 +1099,7 @@ def auth_me():
             user = fetch_user(conn, int(request.auth_user["user_id"]))
         if not user or user.get("status") != "active":
             return fail("Account is unavailable", 401)
-        user["permissions"] = request.auth_user.get("permissions", [])
+        user["permissions"] = permissions_for(user)
         return ok({"user": user, "permissions": user["permissions"]})
     except Exception as exc:
         return db_error_response(exc, 503)
@@ -946,6 +1107,7 @@ def auth_me():
 
 @app.route("/api/auth/profile", methods=["PATCH"])
 @require_roles("Farmer", "Researcher", "Agronomist", "Admin")
+@limit_requests("auth-profile", 10, 300)
 def auth_update_profile():
     """Update the signed-in user's name/email after password verification."""
     payload = request.get_json(silent=True) or {}
@@ -982,14 +1144,18 @@ def auth_update_profile():
                     return fail("Email already exists", 409)
 
                 cur.execute(
-                    "UPDATE users SET name = %s, email = %s WHERE user_id = %s",
+                    """
+                    UPDATE users
+                    SET name = %s, email = %s, session_version = session_version + 1
+                    WHERE user_id = %s
+                    """,
                     (name, email, user_id),
                 )
             user = fetch_user(conn, user_id)
 
         if not user:
             return fail("User not found", 404)
-        user["permissions"] = request.auth_user.get("permissions", [])
+        user["permissions"] = permissions_for(user)
         return ok({
             "status": "success",
             "message": "Profile updated",
@@ -1006,6 +1172,7 @@ def auth_update_profile():
 
 @app.route("/api/auth/change-password", methods=["POST"])
 @require_roles("Farmer", "Researcher", "Agronomist", "Admin")
+@limit_requests("auth-change-password", 5, 300)
 def auth_change_password():
     """Change the signed-in user's password after verifying the current password."""
     payload = request.get_json(silent=True) or {}
@@ -1015,10 +1182,9 @@ def auth_change_password():
 
     if not current_password:
         return fail("Current password is required", 400)
-    if len(new_password) < 6:
-        return fail("New password must be at least 6 characters", 400)
-    if len(new_password) > 128:
-        return fail("New password must be 128 characters or fewer", 400)
+    policy_error = password_policy_error(new_password)
+    if policy_error:
+        return fail(policy_error, 400)
     if new_password != confirm_password:
         return fail("New passwords do not match", 400)
 
@@ -1036,7 +1202,11 @@ def auth_change_password():
                 if verify_password(current_user["password_hash"], new_password):
                     return fail("New password must be different from the current password", 400)
                 cur.execute(
-                    "UPDATE users SET password_hash = %s WHERE user_id = %s",
+                    """
+                    UPDATE users
+                    SET password_hash = %s, session_version = session_version + 1
+                    WHERE user_id = %s
+                    """,
                     (hash_password(new_password), user_id),
                 )
         return ok({
@@ -1050,6 +1220,7 @@ def auth_change_password():
 # USER STORIES A.1, A.5, A.7 - Upload one validated image per request.
 @app.route("/api/upload", methods=["POST"])
 @require_roles("Farmer", "Admin", permission="images:upload")
+@limit_requests("image-upload", 30, 60)
 def upload():
     file = request.files.get("image") or request.files.get("file")
     payload = request.get_json(silent=True) or {}
@@ -1057,15 +1228,22 @@ def upload():
 
     if file:
         original_name = file.filename or "uploaded_maize_image.jpg"
-        validation_error = validate_image_upload(original_name, file.content_type)
-        if validation_error:
-            return fail(validation_error, 400)
+        try:
+            if read_limited is None or validate_image_bytes is None:
+                return fail("Image validation is unavailable", 503)
+            raw_image = read_limited(file.stream, MAX_IMAGE_BYTES)
+            validated = validate_image_bytes(
+                raw_image,
+                original_name,
+                file.content_type,
+                max_bytes=MAX_IMAGE_BYTES,
+            )
+        except InvalidImageUpload as exc:
+            status = 413 if "exceeds" in str(exc).lower() else 400
+            return fail(str(exc), status)
 
-        image_name = clean_image_filename(original_name)
-        raw_image = file.read()
-        if not raw_image:
-            return fail("Image file is empty", 400)
-        file_size = len(raw_image)
+        image_name = validated.stored_name
+        file_size = validated.byte_size
         stored_path = secure_store_bytes(image_name, raw_image)
     else:
         image_name = payload.get("image_name") or payload.get("imageName") or "uploaded_maize_image.jpg"
@@ -1073,20 +1251,33 @@ def upload():
         if validation_error:
             return fail(validation_error, 400)
 
-        image_name = clean_image_filename(image_name)
+        suffix = Path(image_name).suffix.lower()
+        image_name = f"{uuid4().hex}{suffix}"
         file_size = payload.get("file_size")
 
     try:
         with db_connection() as conn:
-            image_id = create_image_record(conn, image_name=image_name, file_size=file_size, user_id=int(user_id))
+            image_id = create_image_record(
+                conn,
+                image_name=image_name,
+                file_size=file_size,
+                user_id=int(user_id),
+                original_filename=validated.original_name if file else None,
+                content_sha256=validated.sha256 if file else None,
+                mime_type=validated.mime_type if file else None,
+                image_width=validated.width if file else None,
+                image_height=validated.height if file else None,
+                validated=bool(file),
+            )
             if file:
                 store_image_blob(
                     conn,
                     image_id,
                     "original",
                     image_name,
-                    file.content_type or "image/jpeg",
+                    validated.mime_type,
                     stored_path.read_bytes(),
+                    encrypted=True,
                 )
                 log_action(
                     conn,
@@ -1111,6 +1302,7 @@ def upload():
 # USER STORIES A.2, A.6 - Run real YOLO counting in fast or accurate mode.
 @app.route("/api/predict", methods=["POST"])
 @require_roles("Farmer", "Researcher", "Admin")
+@limit_requests("tassel-predict", 30, 60)
 def predict():
     payload = request.get_json(silent=True) or {}
     image_id = payload.get("image_id") or payload.get("imageId")
@@ -1152,7 +1344,7 @@ def predict():
             predictor = get_predictor()
         except Exception as exc:
             app.logger.exception("Could not initialize the inference runtime")
-            return fail("Inference runtime is unavailable", 503, model_error=str(exc))
+            return fail("Inference runtime is unavailable", 503)
 
     if predictor is None or not predictor.available:
         return fail("The trained model is unavailable", 503)
@@ -1215,10 +1407,10 @@ def predict():
                 }, 201)
         except (FileNotFoundError, RuntimeError) as inferr:
             app.logger.exception("Inference image or runtime unavailable")
-            return fail("Model inference failed", 500, model_error=str(inferr))
+            return fail("Model inference failed", 500)
         except Exception as inferr:
             app.logger.exception("Real inference failed")
-            return fail("Model inference failed", 500, model_error=str(inferr))
+            return fail("Model inference failed", 500)
 
     return fail("Model inference did not produce a result", 500)
 
@@ -1638,6 +1830,7 @@ def user_detail(user_id: int):
                 if not updates:
                     return fail("No user fields provided to update", 400)
 
+                updates.append("session_version = session_version + 1")
                 params.append(user_id)
                 with conn.cursor() as cur:
                     cur.execute(f"UPDATE users SET {', '.join(updates)} WHERE user_id = %s", params)
@@ -1656,7 +1849,14 @@ def user_detail(user_id: int):
                 return fail("User not found", 404)
 
             with conn.cursor() as cur:
-                cur.execute("UPDATE users SET status = 'disabled' WHERE user_id = %s", (user_id,))
+                cur.execute(
+                    """
+                    UPDATE users
+                    SET status = 'disabled', session_version = session_version + 1
+                    WHERE user_id = %s
+                    """,
+                    (user_id,),
+                )
 
             user = fetch_user(conn, user_id)
         return ok(
@@ -1688,7 +1888,14 @@ def user_status(user_id: int):
             if not user:
                 return fail("User not found", 404)
             with conn.cursor() as cur:
-                cur.execute("UPDATE users SET status = %s WHERE user_id = %s", (new_status, user_id))
+                cur.execute(
+                    """
+                    UPDATE users
+                    SET status = %s, session_version = session_version + 1
+                    WHERE user_id = %s
+                    """,
+                    (new_status, user_id),
+                )
             user = fetch_user(conn, user_id)
         return ok({"status": "success", "message": f"User {new_status}", "user": user, "source": "database"})
     except Exception as exc:
@@ -1730,7 +1937,12 @@ def user_permissions(user_id: int):
                 return fail("Administrators cannot remove their own full access", 400)
             with conn.cursor() as cur:
                 cur.execute(
-                    "UPDATE users SET permissions = %s::jsonb WHERE user_id = %s RETURNING user_id",
+                    """
+                    UPDATE users
+                    SET permissions = %s::jsonb, session_version = session_version + 1
+                    WHERE user_id = %s
+                    RETURNING user_id
+                    """,
                     (json.dumps(permissions), user_id),
                 )
                 if not cur.fetchone():
@@ -1869,6 +2081,7 @@ def dataset_detail(dataset_id: int):
 # USER STORY D.4 - Upload a managed dataset package.
 @app.route("/api/datasets/upload", methods=["POST"])
 @require_roles("Admin")
+@limit_requests("dataset-upload", 5, 300)
 def dataset_upload():
     file = request.files.get("dataset")
     name = str(request.form.get("dataset_name") or "").strip()
@@ -1879,9 +2092,26 @@ def dataset_upload():
         return fail("Dataset package must be ZIP, TAR, or GZ", 400)
     datasets_dir = Path(__file__).resolve().parents[1] / "datasets" / "packages"
     datasets_dir.mkdir(parents=True, exist_ok=True)
-    filename = secure_filename(file.filename) or f"dataset-{datetime.now().strftime('%Y%m%d%H%M%S')}.zip"
+    original_filename = secure_filename(file.filename) or f"dataset{extension}"
+    filename = f"{uuid4().hex}{extension}"
     target = datasets_dir / filename
-    file.save(target)
+    written = 0
+    try:
+        with target.open("xb") as output:
+            while True:
+                chunk = file.stream.read(1024 * 1024)
+                if not chunk:
+                    break
+                written += len(chunk)
+                if written > MAX_DATASET_BYTES:
+                    raise ValueError("Dataset package exceeds the configured size limit")
+                output.write(chunk)
+    except ValueError as exc:
+        target.unlink(missing_ok=True)
+        return fail(str(exc), 413)
+    if written == 0:
+        target.unlink(missing_ok=True)
+        return fail("Dataset package is empty", 400)
     try:
         with db_connection() as conn:
             with conn.cursor() as cur:
@@ -1901,7 +2131,12 @@ def dataset_upload():
                     ),
                 )
                 dataset = cur.fetchone()
-            log_action(conn, "dataset_upload", filename, request.auth_user["user_id"])
+            log_action(
+                conn,
+                "dataset_upload",
+                f"stored={filename}; original={original_filename}; bytes={written}",
+                request.auth_user["user_id"],
+            )
         return ok({"status": "success", "dataset": dataset}, 201)
     except Exception as exc:
         if target.exists():
@@ -1926,9 +2161,14 @@ def dataset_download(dataset_id: int):
     except Exception as exc:
         return db_error_response(exc)
 
-    requested = Path(str(dataset.get("dataset_path") or ""))
-    project_root = Path(__file__).resolve().parents[1]
-    source = requested if requested.is_absolute() else project_root / requested
+    try:
+        source = resolve_approved_path(
+            str(dataset.get("dataset_path") or ""),
+            roots=configured_dataset_roots(),
+        )
+    except ApprovedPathError as exc:
+        app.logger.warning("Rejected dataset download path: %s", exc)
+        return fail("Dataset files are not available from approved storage", 409)
     memory = tempfile.SpooledTemporaryFile(max_size=20 * 1024 * 1024)
     manifest = json.dumps(jsonable(dataset), indent=2, ensure_ascii=False).encode("utf-8")
     if archive_format == "zip":
@@ -2089,21 +2329,30 @@ def deploy_model(model_id: int):
                 model = cur.fetchone()
                 if not model:
                     return fail("Model not found", 404)
-                weights_path = Path(str(model["weights_path"]))
-                if not weights_path.is_absolute():
-                    weights_path = Path(__file__).resolve().parents[1] / weights_path
-                if not weights_path.exists():
-                    return fail("Model weights file does not exist", 409)
+                try:
+                    artifact = validate_model_artifact(
+                        str(model["weights_path"]),
+                        expected_sha256=model.get("artifact_sha256"),
+                    )
+                except ModelArtifactError as exc:
+                    app.logger.warning("Rejected model deployment for model_id=%s: %s", model_id, exc)
+                    return fail(str(exc), 409)
                 if activate_predictor is None:
                     return fail("Inference runtime is unavailable", 503)
                 try:
-                    activate_predictor(weights_path)
+                    activate_predictor(artifact.path)
                 except Exception as exc:
-                    return fail("Model warm-up or health check failed", 409, model_error=str(exc))
+                    app.logger.exception("Model warm-up or health check failed")
+                    return fail("Model warm-up or health check failed", 409)
                 cur.execute("UPDATE models SET status = 'archived' WHERE status = 'active'")
                 cur.execute(
-                    "UPDATE models SET status = 'active', activated_at = CURRENT_TIMESTAMP WHERE model_id = %s",
-                    (model_id,),
+                    """
+                    UPDATE models
+                    SET status = 'active', activated_at = CURRENT_TIMESTAMP,
+                        artifact_sha256 = %s, artifact_validated_at = CURRENT_TIMESTAMP
+                    WHERE model_id = %s
+                    """,
+                    (artifact.sha256, model_id),
                 )
             log_action(conn, "model_deployed", f"model_id={model_id}", request.auth_user["user_id"])
         return ok({
@@ -2129,13 +2378,18 @@ def evaluate_registered_model(model_id: int):
                 model = cur.fetchone()
             if not model:
                 return fail("Model not found", 404)
-            weights_path = Path(str(model["weights_path"]))
-            if not weights_path.is_absolute():
-                weights_path = Path(__file__).resolve().parents[1] / weights_path
             if dataset_yaml:
                 if evaluate_model is None:
                     return fail("Evaluation runtime is unavailable", 503)
-                metrics = evaluate_model(weights_path, dataset_yaml)
+                try:
+                    weights_path = validate_model_artifact(
+                        model["weights_path"],
+                        expected_sha256=model.get("artifact_sha256"),
+                    ).path
+                    approved_yaml = validate_dataset_yaml(dataset_yaml)
+                except (ModelArtifactError, ApprovedPathError) as exc:
+                    return fail(str(exc), 400)
+                metrics = evaluate_model(weights_path, approved_yaml)
                 with conn.cursor() as cur:
                     cur.execute(
                         """
@@ -2206,6 +2460,7 @@ def flag_result(result_id: int):
 # USER STORY E.2 - List, queue, or execute a model training run.
 @app.route("/api/training-runs", methods=["GET", "POST"])
 @require_roles("Admin")
+@limit_requests("training-runs", 20, 60)
 def training_runs():
     if request.method == "GET":
         try:
@@ -2222,6 +2477,11 @@ def training_runs():
         return fail("model_id and dataset_id are required", 400)
     if payload.get("execute_local") and not str(payload.get("dataset_yaml") or "").strip():
         return fail("dataset_yaml is required when execute_local is true", 400)
+    if payload.get("execute_local"):
+        try:
+            payload["dataset_yaml"] = str(validate_dataset_yaml(payload["dataset_yaml"]))
+        except ApprovedPathError as exc:
+            return fail(str(exc), 400)
     hyperparameters = payload.get("hyperparameters") or {
         "epochs": 100,
         "image_size": 640,
@@ -2243,12 +2503,19 @@ def training_runs():
             log_action(conn, "training_queued", f"run_id={run['run_id']}", request.auth_user["user_id"])
         if payload.get("execute_local"):
             dataset_yaml = str(payload.get("dataset_yaml") or "").strip()
-            threading.Thread(
-                target=execute_training_run,
-                args=(run["run_id"], dataset_yaml),
-                name=f"training-run-{run['run_id']}",
-                daemon=True,
-            ).start()
+            future = _training_executor.submit(execute_training_run, run["run_id"], dataset_yaml)
+            if future is None:
+                with db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            UPDATE training_runs
+                            SET status = 'failed', error_message = %s, completed_at = CURRENT_TIMESTAMP
+                            WHERE run_id = %s
+                            """,
+                            ("Local training capacity is full", run["run_id"]),
+                        )
+                return fail("Local training capacity is full. Try again later.", 429)
         return ok({
             "status": "success",
             "training_run": run,
@@ -2271,7 +2538,7 @@ def execute_training_run(run_id: int, dataset_yaml: str) -> None:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT tr.*, m.weights_path, m.model_id
+                    SELECT tr.*, m.weights_path, m.artifact_sha256, m.model_id
                     FROM training_runs tr
                     JOIN models m ON m.model_id = tr.model_id
                     WHERE tr.run_id = %s
@@ -2290,12 +2557,14 @@ def execute_training_run(run_id: int, dataset_yaml: str) -> None:
                     (run["model_id"],),
                 )
         params = run["hyperparameters"] or {}
-        weights = Path(str(run["weights_path"]))
-        if not weights.is_absolute():
-            weights = Path(__file__).resolve().parents[1] / weights
+        weights = validate_model_artifact(
+            run["weights_path"],
+            expected_sha256=run.get("artifact_sha256"),
+        ).path
+        approved_yaml = validate_dataset_yaml(dataset_yaml)
         result = train_model(
             weights,
-            dataset_yaml,
+            approved_yaml,
             epochs=int(params.get("epochs", 100)),
             image_size=int(params.get("image_size", 640)),
             batch=int(params.get("batch", 16)),
@@ -2453,7 +2722,8 @@ def admin_backup_restore(file_name: str):
         command, env=env, capture_output=True, text=True, timeout=120, check=False
     )
     if completed.returncode != 0:
-        return fail("Database restore failed", 500, restore_error=completed.stderr[-1000:])
+        app.logger.error("Database restore failed: %s", completed.stderr[-1000:])
+        return fail("Database restore failed", 500)
     try:
         with db_connection() as conn:
             log_action(conn, "backup_restored", safe_name, request.auth_user["user_id"])
@@ -2501,7 +2771,7 @@ def serve_image_file(image_id: int, file_type: str):
         with db_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT user_id, access_level FROM images WHERE image_id = %s",
+                    "SELECT user_id, field_id, access_level FROM images WHERE image_id = %s",
                     (image_id,),
                 )
                 image = cur.fetchone()
@@ -2514,8 +2784,11 @@ def serve_image_file(image_id: int, file_type: str):
                 )
                 policy = cur.fetchone()
             access_level = policy["access_level"] if policy else None
-            if access_level == "aggregated_field_data":
-                return fail("This role can access aggregated field data only", 403)
+            if access_level == "aggregated_field_data" and not (
+                image.get("field_id")
+                and user_can_reference_field(conn, image["field_id"], request.auth_user)
+            ):
+                return fail("This image is not assigned for agronomy review", 403)
             if access_level in {"own_images", None} and (
                 request.auth_user["role"] == "Farmer"
                 and image["user_id"] != request.auth_user["user_id"]
@@ -2611,11 +2884,11 @@ def backup():
         if completed.returncode != 0:
             if backup_path.exists():
                 backup_path.unlink()
-            return fail(
-                "Database backup failed",
-                500,
-                backup_error=(completed.stderr or completed.stdout or "pg_dump returned a non-zero exit code").strip(),
+            app.logger.error(
+                "Database backup failed: %s",
+                (completed.stderr or completed.stdout or "pg_dump returned a non-zero exit code").strip(),
             )
+            return fail("Database backup failed", 500)
 
         try:
             with db_connection() as conn:
@@ -2650,12 +2923,91 @@ def fields():
     try:
         with db_connection() as conn:
             with conn.cursor() as cur:
-                if region:
+                if request.auth_user["role"] == "Agronomist":
+                    query = (
+                        "SELECT f.* FROM fields f JOIN field_assignments fa "
+                        "ON fa.field_id = f.field_id "
+                        "WHERE fa.agronomist_user_id = %s"
+                    )
+                    params: list[Any] = [request.auth_user["user_id"]]
+                    if region:
+                        query += " AND f.location = %s"
+                        params.append(region)
+                    query += " ORDER BY f.field_id"
+                    cur.execute(query, tuple(params))
+                elif region:
                     cur.execute("SELECT * FROM fields WHERE location = %s ORDER BY field_id", (region,))
                 else:
                     cur.execute("SELECT * FROM fields ORDER BY field_id")
                 rows = cur.fetchall()
         return ok({"fields": rows, "source": "database"})
+    except Exception as exc:
+        return db_error_response(exc)
+
+
+@app.route("/api/fields/<int:field_id>/assignment", methods=["GET", "PUT", "DELETE"])
+@require_roles("Admin")
+def field_assignment(field_id: int):
+    """Let administrators explicitly control Agronomist field visibility."""
+    payload = request.get_json(silent=True) or {}
+    agronomist_user_id = payload.get("agronomist_user_id")
+    if request.method in {"PUT", "DELETE"}:
+        try:
+            agronomist_user_id = int(agronomist_user_id)
+        except (TypeError, ValueError):
+            return fail("agronomist_user_id is required", 400)
+    try:
+        with db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT field_id FROM fields WHERE field_id = %s", (field_id,))
+                if not cur.fetchone():
+                    return fail("Field not found", 404)
+                if request.method == "PUT":
+                    cur.execute(
+                        """
+                        SELECT 1 FROM users u JOIN roles r ON r.role_id = u.role_id
+                        WHERE u.user_id = %s AND r.role_name = 'Agronomist' AND u.status = 'active'
+                        """,
+                        (agronomist_user_id,),
+                    )
+                    if not cur.fetchone():
+                        return fail("Active Agronomist not found", 404)
+                    cur.execute(
+                        """
+                        INSERT INTO field_assignments
+                            (field_id, agronomist_user_id, assigned_by_user_id)
+                        VALUES (%s, %s, %s)
+                        ON CONFLICT (field_id, agronomist_user_id)
+                        DO UPDATE SET assigned_by_user_id = EXCLUDED.assigned_by_user_id,
+                                      assigned_at = CURRENT_TIMESTAMP
+                        """,
+                        (field_id, agronomist_user_id, request.auth_user["user_id"]),
+                    )
+                elif request.method == "DELETE":
+                    cur.execute(
+                        "DELETE FROM field_assignments WHERE field_id = %s AND agronomist_user_id = %s",
+                        (field_id, agronomist_user_id),
+                    )
+                cur.execute(
+                    """
+                    SELECT fa.field_id, fa.agronomist_user_id, u.name AS agronomist_name,
+                           fa.assigned_by_user_id, fa.assigned_at
+                    FROM field_assignments fa
+                    JOIN users u ON u.user_id = fa.agronomist_user_id
+                    WHERE fa.field_id = %s
+                    ORDER BY u.name, u.user_id
+                    """,
+                    (field_id,),
+                )
+                assignments = cur.fetchall()
+            if request.method != "GET":
+                log_action(
+                    conn,
+                    "field_assignment_changed",
+                    f"field_id={field_id}; agronomist_user_id={agronomist_user_id}; method={request.method}",
+                    request.auth_user["user_id"],
+                )
+        return ok({"field_id": field_id, "assignments": assignments})
     except Exception as exc:
         return db_error_response(exc)
 
@@ -2666,6 +3018,8 @@ def fields():
 def field_health(field_id: int):
     try:
         with db_connection() as conn:
+            if not user_can_reference_field(conn, field_id, request.auth_user):
+                return fail("Field not found or not assigned to this account", 403)
             with conn.cursor() as cur:
                 cur.execute("SELECT * FROM fields WHERE field_id = %s", (field_id,))
                 field = cur.fetchone()
@@ -2700,6 +3054,7 @@ def field_health(field_id: int):
 # AGRONOMIST EXTENSION C.1 - Human-centred maize leaf-disease assistance.
 @app.route("/api/agronomy/diagnose", methods=["POST"])
 @require_roles("Farmer", "Researcher", "Agronomist", "Admin")
+@limit_requests("disease-diagnose", 20, 60)
 def diagnose_maize_leaf():
     if get_disease_predictor is None or build_advice is None:
         return fail("Disease assistance is not installed on this server", 503)
@@ -2738,13 +3093,20 @@ def diagnose_maize_leaf():
     image_bytes = None
 
     if uploaded:
-        validation_error = validate_image_upload(uploaded.filename, uploaded.content_type)
-        if validation_error:
-            return fail(validation_error, 400)
-        image_bytes = uploaded.read(10 * 1024 * 1024 + 1)
-        if len(image_bytes) > 10 * 1024 * 1024:
-            return fail("Image must be 10 MB or smaller", 413)
-        image_name = clean_image_filename(uploaded.filename)
+        try:
+            if read_limited is None or validate_image_bytes is None:
+                return fail("Image validation is unavailable", 503)
+            image_bytes = read_limited(uploaded.stream, MAX_IMAGE_BYTES)
+            validated = validate_image_bytes(
+                image_bytes,
+                uploaded.filename,
+                uploaded.content_type,
+                max_bytes=MAX_IMAGE_BYTES,
+            )
+            image_name = validated.stored_name
+        except InvalidImageUpload as exc:
+            status = 413 if "exceeds" in str(exc).lower() else 400
+            return fail(str(exc), status)
     else:
         try:
             image_id = int(image_id)
@@ -2754,21 +3116,41 @@ def diagnose_maize_leaf():
             with db_connection() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
-                        "SELECT image_name, user_id, field_id FROM images WHERE image_id = %s",
-                        (image_id,),
+                        """
+                        SELECT i.image_name, i.user_id, i.field_id,
+                               EXISTS (
+                                   SELECT 1 FROM field_assignments fa
+                                   WHERE fa.field_id = i.field_id
+                                     AND fa.agronomist_user_id = %s
+                               ) AS assigned_to_reviewer
+                        FROM images i WHERE i.image_id = %s
+                        """,
+                        (request.auth_user["user_id"], image_id),
                     )
                     image = cur.fetchone()
             if not image:
                 return fail("Uploaded image not found", 404)
-            if (
-                request.auth_user["role"] != "Admin"
-                and image["user_id"] != request.auth_user["user_id"]
+            can_review_assigned = (
+                request.auth_user["role"] == "Agronomist"
+                and image.get("assigned_to_reviewer")
+            )
+            if request.auth_user["role"] != "Admin" and (
+                image["user_id"] != request.auth_user["user_id"]
+                and not can_review_assigned
             ):
                 return fail("You can only diagnose images you uploaded", 403)
             image_name = image["image_name"]
             field_id = field_id or image.get("field_id")
             with materialized_image(Path(image_name).name) as image_path:
                 image_bytes = image_path.read_bytes()
+        except Exception as exc:
+            return db_error_response(exc)
+
+    if field_id:
+        try:
+            with db_connection() as conn:
+                if not user_can_reference_field(conn, field_id, request.auth_user):
+                    return fail("Field not found or not available to this account", 403)
         except Exception as exc:
             return db_error_response(exc)
 
@@ -2793,15 +3175,22 @@ def diagnose_maize_leaf():
                     image_name=image_name,
                     file_size=len(image_bytes),
                     user_id=int(request.auth_user["user_id"]),
+                    original_filename=validated.original_name,
+                    content_sha256=validated.sha256,
+                    mime_type=validated.mime_type,
+                    image_width=validated.width,
+                    image_height=validated.height,
+                    validated=True,
                 )
-                secure_store_bytes(image_name, image_bytes)
+                stored_path = secure_store_bytes(image_name, image_bytes)
                 store_image_blob(
                     conn,
                     image_id,
                     "original",
                     image_name,
-                    uploaded.content_type or "image/jpeg",
-                    image_bytes,
+                    validated.mime_type,
+                    stored_path.read_bytes(),
+                    encrypted=True,
                 )
                 if field_id:
                     with conn.cursor() as cur:
@@ -2884,6 +3273,12 @@ def list_maize_leaf_diagnoses():
     if own_records_only:
         query += " WHERE user_id = %s"
         params.append(request.auth_user["user_id"])
+    elif role == "Agronomist":
+        query += (
+            " WHERE field_id IN (SELECT field_id FROM field_assignments "
+            "WHERE agronomist_user_id = %s)"
+        )
+        params.append(request.auth_user["user_id"])
     query += " ORDER BY created_at DESC LIMIT %s"
     params.append(limit)
 
@@ -2960,6 +3355,13 @@ def review_maize_leaf_diagnosis(diagnosis_id: int):
                         reviewer_note = %s,
                         reviewed_at = CURRENT_TIMESTAMP
                     WHERE diagnosis_id = %s
+                      AND (
+                          %s = 'Admin'
+                          OR field_id IN (
+                              SELECT field_id FROM field_assignments
+                              WHERE agronomist_user_id = %s
+                          )
+                      )
                     RETURNING diagnosis_id, status, predicted_condition,
                               reviewer_decision, reviewed_condition,
                               reviewer_note, reviewed_at
@@ -2970,6 +3372,8 @@ def review_maize_leaf_diagnosis(diagnosis_id: int):
                         reviewed_condition,
                         note,
                         diagnosis_id,
+                        request.auth_user["role"],
+                        request.auth_user["user_id"],
                     ),
                 )
                 reviewed = cur.fetchone()
@@ -2997,6 +3401,8 @@ def field_recommendations(field_id: int):
             return fail("Recommendation note is required", 400)
         try:
             with db_connection() as conn:
+                if not user_can_reference_field(conn, field_id, request.auth_user):
+                    return fail("Field not found or not assigned to this account", 403)
                 with conn.cursor() as cur:
                     cur.execute(
                         """
@@ -3012,6 +3418,8 @@ def field_recommendations(field_id: int):
             return db_error_response(exc)
     try:
         with db_connection() as conn:
+            if not user_can_reference_field(conn, field_id, request.auth_user):
+                return fail("Field not found or not assigned to this account", 403)
             with conn.cursor() as cur:
                 cur.execute(
                     "SELECT * FROM recommendations WHERE field_id = %s ORDER BY created_at DESC",
@@ -3033,6 +3441,8 @@ def field_growth(field_id: int):
         return fail("weeks must be an integer between 2 and 12", 400)
     try:
         with db_connection() as conn:
+            if not user_can_reference_field(conn, field_id, request.auth_user):
+                return fail("Field not found or not assigned to this account", 403)
             with conn.cursor() as cur:
                 cur.execute(
                     """
@@ -3074,6 +3484,13 @@ def field_anomalies():
     try:
         with db_connection() as conn:
             with conn.cursor() as cur:
+                scope_sql = "" if request.auth_user["role"] == "Admin" else (
+                    " WHERE field_id IN (SELECT field_id FROM field_assignments "
+                    "WHERE agronomist_user_id = %s)"
+                )
+                params = () if request.auth_user["role"] == "Admin" else (
+                    request.auth_user["user_id"],
+                )
                 cur.execute(
                     """
                     UPDATE fields
@@ -3082,10 +3499,16 @@ def field_anomalies():
                             WHEN latest_avg_count < threshold_low THEN 'Warning'
                             ELSE 'Healthy'
                         END
-                    """
+                    """ + scope_sql,
+                    params,
+                )
+                select_scope = "" if request.auth_user["role"] == "Admin" else (
+                    " AND field_id IN (SELECT field_id FROM field_assignments "
+                    "WHERE agronomist_user_id = %s)"
                 )
                 cur.execute(
-                    "SELECT * FROM fields WHERE anomaly_flag = TRUE ORDER BY field_id"
+                    "SELECT * FROM fields WHERE anomaly_flag = TRUE" + select_scope + " ORDER BY field_id",
+                    params,
                 )
                 anomalies = cur.fetchall()
         return ok({"anomalies": anomalies, "source": "database"})
@@ -3103,6 +3526,8 @@ def flag_field_anomaly(field_id: int):
         return fail("An anomaly review reason is required", 400)
     try:
         with db_connection() as conn:
+            if not user_can_reference_field(conn, field_id, request.auth_user):
+                return fail("Field not found or not assigned to this account", 403)
             with conn.cursor() as cur:
                 cur.execute(
                     """
@@ -3134,16 +3559,41 @@ def field_insights():
     try:
         with db_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT * FROM fields ORDER BY field_id")
+                if request.auth_user["role"] == "Agronomist":
+                    cur.execute(
+                        """
+                        SELECT f.* FROM fields f
+                        JOIN field_assignments fa ON fa.field_id = f.field_id
+                        WHERE fa.agronomist_user_id = %s
+                        ORDER BY f.field_id
+                        """,
+                        (request.auth_user["user_id"],),
+                    )
+                else:
+                    cur.execute("SELECT * FROM fields ORDER BY field_id")
                 fields_payload = cur.fetchall()
-                cur.execute(
-                    """
-                    SELECT COALESCE(AVG(dr.tassel_count), 0) AS average_count,
-                           COUNT(*) AS result_count
-                    FROM detection_results dr
-                    WHERE dr.created_at >= CURRENT_DATE - INTERVAL '30 days'
-                    """
-                )
+                if request.auth_user["role"] == "Agronomist":
+                    cur.execute(
+                        """
+                        SELECT COALESCE(AVG(dr.tassel_count), 0) AS average_count,
+                               COUNT(*) AS result_count
+                        FROM detection_results dr
+                        JOIN images i ON i.image_id = dr.image_id
+                        JOIN field_assignments fa ON fa.field_id = i.field_id
+                        WHERE dr.created_at >= CURRENT_DATE - INTERVAL '30 days'
+                          AND fa.agronomist_user_id = %s
+                        """,
+                        (request.auth_user["user_id"],),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        SELECT COALESCE(AVG(dr.tassel_count), 0) AS average_count,
+                               COUNT(*) AS result_count
+                        FROM detection_results dr
+                        WHERE dr.created_at >= CURRENT_DATE - INTERVAL '30 days'
+                        """
+                    )
                 aggregate = cur.fetchone()
         source = "database"
     except Exception as exc:
@@ -3215,7 +3665,8 @@ def preprocess_image(image_id: int):
             "steps": steps,
         })
     except Exception as exc:
-        return fail("Preprocessing failed", 500, error=str(exc))
+        app.logger.exception("Preprocessing failed")
+        return fail("Preprocessing failed", 500)
 
 
 # Shared AI system status for E.1-E.5.

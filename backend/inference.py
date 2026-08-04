@@ -15,11 +15,13 @@ Usage:
 
 from __future__ import annotations
 
-import json
+import copy
 import hashlib
 import logging
 import os
+import threading
 import time
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any
 
@@ -98,11 +100,14 @@ def _nms_boxes(boxes_xyxy, scores, iou_thr):
 class YOLOPredictor:
     """YOLO predictor with automatic SAHI tiling for large images."""
 
-    def __init__(self, model_path: Path | None = None):
+    def __init__(self, model_path: Path | None = None, max_cache_entries: int | None = None):
         self._model_path = model_path or DEFAULT_MODEL_PATH
         self._model: Any = None  # ultralytics.YOLO or None
         self._available: bool | None = None
-        self._cache: dict[str, dict[str, Any]] = {}
+        configured_capacity = int(os.getenv("INFERENCE_CACHE_SIZE", "128"))
+        self._max_cache_entries = max(1, max_cache_entries or configured_capacity)
+        self._cache: OrderedDict[str, dict[str, Any]] = OrderedDict()
+        self._lock = threading.RLock()
 
     @property
     def model_path(self) -> Path:
@@ -110,10 +115,34 @@ class YOLOPredictor:
 
     @property
     def available(self) -> bool:
-        if self._available is None:
-            self._model = _load_yolo(self._model_path)
-            self._available = self._model is not None
-        return self._available
+        with self._lock:
+            if self._available is None:
+                self._model = _load_yolo(self._model_path)
+                self._available = self._model is not None
+            return self._available
+
+    def _model_identity(self) -> str:
+        try:
+            stat = self._model_path.stat()
+            return f"{self._model_path.resolve()}:{stat.st_size}:{stat.st_mtime_ns}"
+        except OSError:
+            return str(self._model_path.resolve())
+
+    @staticmethod
+    def _content_digest(image_path: Path) -> str:
+        digest = hashlib.sha256()
+        with image_path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    def clear_cache(self) -> None:
+        with self._lock:
+            self._cache.clear()
+
+    def cache_info(self) -> dict[str, int]:
+        with self._lock:
+            return {"size": len(self._cache), "capacity": self._max_cache_entries}
 
     def _detect_single(
         self,
@@ -157,62 +186,57 @@ class YOLOPredictor:
             raise RuntimeError("YOLO model is not available for inference")
 
         image_path = Path(image_path)
-        # Use filename + mode as cache key (fast lookup without reading entire file)
-        cache_key = f"{image_path.name}:{mode}"
-        if cache_key in self._cache:
-            cached = dict(self._cache[cache_key])
-            cached["cache_hit"] = True
-            return cached
+        cache_key = f"{self._content_digest(image_path)}:{self._model_identity()}:{mode}"
+        with self._lock:
+            if cache_key in self._cache:
+                self._cache.move_to_end(cache_key)
+                cached = copy.deepcopy(self._cache[cache_key])
+                cached["cache_hit"] = True
+                return cached
 
-        t0 = time.perf_counter()
+            t0 = time.perf_counter()
 
-        img = np.array(Image.open(str(image_path)).convert("RGB"))
-        H, W = img.shape[:2]
+            with Image.open(image_path) as opened:
+                img = np.array(opened.convert("RGB"))
+            H, W = img.shape[:2]
 
-        if mode == "fast":
-            all_boxes = self._detect_single(
-                img,
-                image_size=2560,
-                confidence_threshold=0.15,
-            )
-        # If image is small enough, run single inference
-        elif W <= TILE_SIZE * 1.5 and H <= TILE_SIZE * 1.5:
-            all_boxes = self._detect_single(img)
-        else:
-            # SAHI tiling
-            stride = int(TILE_SIZE * (1 - TILE_OVERLAP))
-            all_boxes = []
-            tile_count = 0
+            if mode == "fast":
+                all_boxes = self._detect_single(
+                    img,
+                    image_size=2560,
+                    confidence_threshold=0.15,
+                )
+            elif W <= TILE_SIZE * 1.5 and H <= TILE_SIZE * 1.5:
+                all_boxes = self._detect_single(img)
+            else:
+                stride = int(TILE_SIZE * (1 - TILE_OVERLAP))
+                all_boxes = []
+                tile_count = 0
 
-            for y0 in range(0, H, stride):
-                for x0 in range(0, W, stride):
-                    tile = img[y0:y0 + TILE_SIZE, x0:x0 + TILE_SIZE]
-                    th, tw = tile.shape[:2]
+                for y0 in range(0, H, stride):
+                    for x0 in range(0, W, stride):
+                        tile = img[y0:y0 + TILE_SIZE, x0:x0 + TILE_SIZE]
+                        th, tw = tile.shape[:2]
+                        if th < TILE_SIZE * 0.3 or tw < TILE_SIZE * 0.3:
+                            continue
 
-                    # Skip tiny edge tiles
-                    if th < TILE_SIZE * 0.3 or tw < TILE_SIZE * 0.3:
-                        continue
+                        tile_boxes = self._detect_single(tile)
+                        tile_count += 1
+                        for box in tile_boxes:
+                            box["x"] += x0
+                            box["y"] += y0
+                            all_boxes.append(box)
 
-                    tile_boxes = self._detect_single(tile)
-                    tile_count += 1
+                logger.info("SAHI: %d tiles, %d raw detections", tile_count, len(all_boxes))
 
-                    # Shift boxes to full-image coordinates
-                    for box in tile_boxes:
-                        box["x"] += x0
-                        box["y"] += y0
-                        all_boxes.append(box)
-
-            logger.info("SAHI: %d tiles, %d raw detections", tile_count, len(all_boxes))
-
-            # Merge overlapping detections with NMS
-            if len(all_boxes) > 1:
-                xyxy = np.array([[b["x"], b["y"],
-                                  b["x"] + b["width"], b["y"] + b["height"]]
-                                 for b in all_boxes], dtype=float)
-                scores = np.array([b["confidence"] for b in all_boxes], dtype=float)
-                keep = _nms_boxes(xyxy, scores, IOU_NMS)
-                all_boxes = [all_boxes[i] for i in keep]
-                logger.info("After NMS: %d boxes", len(all_boxes))
+                if len(all_boxes) > 1:
+                    xyxy = np.array([[b["x"], b["y"],
+                                      b["x"] + b["width"], b["y"] + b["height"]]
+                                     for b in all_boxes], dtype=float)
+                    scores = np.array([b["confidence"] for b in all_boxes], dtype=float)
+                    keep = _nms_boxes(xyxy, scores, IOU_NMS)
+                    all_boxes = [all_boxes[i] for i in keep]
+                    logger.info("After NMS: %d boxes", len(all_boxes))
 
         processing_time = round(time.perf_counter() - t0, 3)
         avg_conf = round(float(np.mean([b["confidence"] for b in all_boxes]))
@@ -231,7 +255,11 @@ class YOLOPredictor:
             "cache_hit": False,
             "inference_mode": mode,
         }
-        self._cache[cache_key] = dict(output)
+        with self._lock:
+            self._cache[cache_key] = copy.deepcopy(output)
+            self._cache.move_to_end(cache_key)
+            while len(self._cache) > self._max_cache_entries:
+                self._cache.popitem(last=False)
         return output
 
 
