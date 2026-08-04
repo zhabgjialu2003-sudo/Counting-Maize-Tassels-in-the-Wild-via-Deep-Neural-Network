@@ -1,0 +1,19 @@
+classDiagram
+direction LR
+class UserManagementPage["Boundary: UserManagementPage"] {
+  +editRole()
+  +changeStatus()
+  +savePermissions()
+}
+class AuthenticationSessionControl["Control: AuthenticationSessionControl"] {
+  +reloadAccount()
+  +incrementSession()
+  +rejectStaleToken()
+}
+class User["Entity: User"] {
+  +roleId
+  +status
+  +sessionVersion
+}
+UserManagementPage --> AuthenticationSessionControl : calls
+AuthenticationSessionControl --> User : reads / persists

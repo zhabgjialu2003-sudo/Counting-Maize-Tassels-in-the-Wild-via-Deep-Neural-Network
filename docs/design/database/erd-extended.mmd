@@ -1,0 +1,103 @@
+erDiagram
+  ROLE ||--o{ USER : classifies
+  USER ||--o{ IMAGE : uploads
+  USER ||--o{ SYSTEM_LOG : performs
+  USER ||--o{ FIELD_ASSIGNMENT : receives
+  USER ||--o{ DISEASE_DIAGNOSIS : requests
+  USER ||--o{ DISEASE_DIAGNOSIS : reviews
+  FIELD ||--o{ IMAGE : groups
+  FIELD ||--o{ FIELD_ASSIGNMENT : scopes
+  FIELD ||--o{ DISEASE_DIAGNOSIS : contextualizes
+  IMAGE ||--o{ IMAGE_FILE : stores
+  IMAGE ||--o{ DETECTION_RESULT : produces
+  IMAGE ||--o{ DISEASE_DIAGNOSIS : supports
+  MODEL ||--o{ TRAINING_RUN : trains
+  DATASET ||--o{ TRAINING_RUN : supplies
+
+  ROLE {
+    int role_id PK
+    varchar role_name UK
+  }
+  USER {
+    int user_id PK
+    int role_id FK
+    varchar email UK
+    varchar status
+    bigint session_version
+    jsonb permissions
+  }
+  FIELD {
+    int field_id PK
+    int owner_user_id FK
+    varchar field_name
+    varchar health_status
+    boolean anomaly_flag
+  }
+  FIELD_ASSIGNMENT {
+    int field_id PK,FK
+    int agronomist_user_id PK,FK
+    int assigned_by_user_id FK
+    timestamp assigned_at
+  }
+  IMAGE {
+    int image_id PK
+    int user_id FK
+    int field_id FK
+    varchar image_name UK
+    varchar original_filename
+    char content_sha256
+    varchar mime_type
+    boolean validated
+  }
+  IMAGE_FILE {
+    int file_id PK
+    int image_id FK
+    varchar file_type
+    bytea image_data
+    boolean encrypted
+  }
+  DETECTION_RESULT {
+    int result_id PK
+    int image_id FK
+    int tassel_count
+    decimal confidence_score
+    jsonb bbox_data
+  }
+  DISEASE_DIAGNOSIS {
+    bigint diagnosis_id PK
+    int user_id FK
+    int field_id FK
+    int image_id FK
+    varchar status
+    varchar predicted_condition
+    int reviewer_user_id FK
+    varchar reviewer_decision
+    jsonb response_data
+  }
+  DATASET {
+    int dataset_id PK
+    varchar dataset_name
+    varchar dataset_path
+    varchar annotation_status
+  }
+  MODEL {
+    int model_id PK
+    varchar model_version UK
+    varchar weights_path
+    char artifact_sha256
+    varchar status
+  }
+  TRAINING_RUN {
+    int run_id PK
+    int model_id FK
+    int dataset_id FK
+    varchar status
+    jsonb hyperparameters
+  }
+  SYSTEM_LOG {
+    int log_id PK
+    int user_id FK
+    varchar action
+    text details
+    timestamp created_at
+  }

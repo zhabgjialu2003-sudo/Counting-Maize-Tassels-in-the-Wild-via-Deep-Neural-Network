@@ -1,6 +1,9 @@
+import io
 import unittest
 import uuid
 from pathlib import Path
+
+from PIL import Image
 
 import backend.app as backend
 
@@ -37,10 +40,29 @@ class FarmerAccountApiTests(unittest.TestCase):
                 "status": "active",
             })
         }
+        self.created_image_ids = []
 
     def tearDown(self):
         with backend.db_connection() as conn:
             with conn.cursor() as cur:
+                if self.created_image_ids:
+                    cur.execute(
+                        "DELETE FROM image_files WHERE image_id = ANY(%s)",
+                        (self.created_image_ids,),
+                    )
+                    cur.execute(
+                        "DELETE FROM disease_diagnoses WHERE image_id = ANY(%s)",
+                        (self.created_image_ids,),
+                    )
+                    cur.execute(
+                        "DELETE FROM detection_results WHERE image_id = ANY(%s)",
+                        (self.created_image_ids,),
+                    )
+                    cur.execute(
+                        "DELETE FROM images WHERE image_id = ANY(%s)",
+                        (self.created_image_ids,),
+                    )
+                cur.execute("DELETE FROM system_logs WHERE user_id = %s", (self.user_id,))
                 cur.execute("DELETE FROM users WHERE user_id = %s", (self.user_id,))
                 cur.execute("DELETE FROM users WHERE email LIKE 'occupied-profile-%@example.com'")
 
@@ -49,6 +71,11 @@ class FarmerAccountApiTests(unittest.TestCase):
         password = self.client.post("/api/auth/change-password", json={})
         self.assertEqual(profile.status_code, 401)
         self.assertEqual(password.status_code, 401)
+
+    def test_query_string_access_token_is_rejected(self):
+        token = self.headers["Authorization"].removeprefix("Bearer ")
+        response = self.client.get(f"/api/auth/me?access_token={token}")
+        self.assertEqual(response.status_code, 401)
 
     def test_farmer_can_update_own_name_and_email(self):
         new_email = f"updated-{uuid.uuid4().hex}@example.com"
@@ -66,6 +93,13 @@ class FarmerAccountApiTests(unittest.TestCase):
         self.assertEqual(payload["user"]["name"], "Updated Farmer")
         self.assertEqual(payload["user"]["email"], new_email)
         self.assertTrue(payload["access_token"])
+        stale = self.client.get("/api/auth/me", headers=self.headers)
+        fresh = self.client.get(
+            "/api/auth/me",
+            headers={"Authorization": "Bearer " + payload["access_token"]},
+        )
+        self.assertEqual(stale.status_code, 401)
+        self.assertEqual(fresh.status_code, 200)
         with backend.db_connection() as conn:
             user = backend.fetch_user(conn, self.user_id)
         self.assertEqual(user["email"], new_email)
@@ -119,6 +153,69 @@ class FarmerAccountApiTests(unittest.TestCase):
         new_login = self.client.post("/api/auth/login", json={"email": self.email, "password": new_password})
         self.assertEqual(old_login.status_code, 401)
         self.assertEqual(new_login.status_code, 200)
+        stale_session = self.client.get("/api/auth/me", headers=self.headers)
+        self.assertEqual(stale_session.status_code, 401)
+
+    def test_disabled_account_cannot_reuse_an_existing_token(self):
+        with backend.db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE users
+                    SET status = 'disabled', session_version = session_version + 1
+                    WHERE user_id = %s
+                    """,
+                    (self.user_id,),
+                )
+        response = self.client.get("/api/auth/me", headers=self.headers)
+        self.assertEqual(response.status_code, 401)
+
+    @staticmethod
+    def png_bytes(colour):
+        output = io.BytesIO()
+        Image.new("RGB", (64, 64), colour).save(output, format="PNG")
+        return output.getvalue()
+
+    def upload_png(self, data, filename="same-field-name.png"):
+        response = self.client.post(
+            "/api/upload",
+            headers=self.headers,
+            data={"image": (io.BytesIO(data), filename)},
+            content_type="multipart/form-data",
+        )
+        if response.status_code == 201:
+            self.created_image_ids.append(response.get_json()["image_id"])
+        return response
+
+    def test_same_original_filename_creates_isolated_encrypted_records(self):
+        first_bytes = self.png_bytes((10, 90, 20))
+        second_bytes = self.png_bytes((90, 10, 20))
+        first = self.upload_png(first_bytes)
+        second = self.upload_png(second_bytes)
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual(second.status_code, 201)
+        self.assertNotEqual(first.get_json()["image_name"], second.get_json()["image_name"])
+
+        with backend.db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT i.image_id, i.original_filename, i.content_sha256, i.validated,
+                           f.image_data, f.encrypted
+                    FROM images i
+                    JOIN image_files f ON f.image_id = i.image_id AND f.file_type = 'original'
+                    WHERE i.image_id = ANY(%s)
+                    ORDER BY i.image_id
+                    """,
+                    (self.created_image_ids,),
+                )
+                rows = cur.fetchall()
+        self.assertEqual(len(rows), 2)
+        self.assertTrue(all(row["original_filename"] == "same-field-name.png" for row in rows))
+        self.assertTrue(all(row["validated"] and row["encrypted"] for row in rows))
+        self.assertNotEqual(rows[0]["content_sha256"], rows[1]["content_sha256"])
+        plaintext = [backend.encryption_cipher().decrypt(bytes(row["image_data"])) for row in rows]
+        self.assertEqual(plaintext, [first_bytes, second_bytes])
 
 
 class FarmerAccountFrontendTests(unittest.TestCase):

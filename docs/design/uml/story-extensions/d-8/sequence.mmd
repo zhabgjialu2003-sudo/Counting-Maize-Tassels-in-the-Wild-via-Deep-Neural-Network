@@ -1,0 +1,11 @@
+sequenceDiagram
+actor Admin as Admin
+participant UserManagementPage as Boundary: UserManagementPage
+participant AuthenticationSessionControl as Control: AuthenticationSessionControl
+participant User as Entity: User
+Admin->>+UserManagementPage: Submit account authorization change
+UserManagementPage->>+AuthenticationSessionControl: Validate Admin and update policy
+AuthenticationSessionControl->>+User: Increment target session version
+User-->>-AuthenticationSessionControl: Return updated user
+AuthenticationSessionControl-->>-UserManagementPage: Reject old token on next request
+UserManagementPage-->>-Admin: Require fresh login

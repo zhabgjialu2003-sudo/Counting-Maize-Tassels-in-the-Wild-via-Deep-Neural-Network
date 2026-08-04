@@ -71,3 +71,7 @@ without a repository weight file are labelled `metrics-only`.
 The final validation output stored in `training/notebooks/tassel/maize_yolo26_final.ipynb` reports:
 Precision `0.885`, Recall `0.803`, mAP@0.5 `0.899`, and mAP@0.5:0.95 `0.511`
 over 55 validation images containing 2,210 instances.
+
+## Extension Baseline
+
+The original 30 stories above remain unchanged. The implemented bilingual disease-assistance, security, field-assignment, model-governance, and migration additions are specified separately in [`user-story-extensions.md`](user-story-extensions.md).

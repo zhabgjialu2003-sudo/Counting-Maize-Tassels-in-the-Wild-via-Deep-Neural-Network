@@ -1,0 +1,11 @@
+sequenceDiagram
+actor Agronomist as Agronomist
+participant AgronomistDashboard as Boundary: AgronomistDashboard
+participant FieldAssignmentReviewControl as Control: FieldAssignmentReviewControl
+participant FieldAssignment as Entity: FieldAssignment
+Agronomist->>+AgronomistDashboard: Request field evidence
+AgronomistDashboard->>+FieldAssignmentReviewControl: Reload account and resolve assignments
+FieldAssignmentReviewControl->>+FieldAssignment: Query scoped field relationship
+FieldAssignment-->>-FieldAssignmentReviewControl: Return assigned identifiers
+FieldAssignmentReviewControl-->>-AgronomistDashboard: Load permitted diagnosis and image
+AgronomistDashboard-->>-Agronomist: Display assigned evidence only

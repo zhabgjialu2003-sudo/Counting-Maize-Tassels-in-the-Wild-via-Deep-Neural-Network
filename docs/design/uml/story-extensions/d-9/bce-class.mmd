@@ -1,0 +1,19 @@
+classDiagram
+direction LR
+class AdminSystemConsole["Boundary: AdminSystemConsole"] {
+  +showHealth()
+  +showLimits()
+  +reviewAudit()
+}
+class GovernanceControl["Control: GovernanceControl"] {
+  +validateTrustBoundary()
+  +enforceCapacity()
+  +sanitizeError()
+}
+class SystemLog["Entity: SystemLog"] {
+  +action
+  +details
+  +createdAt
+}
+AdminSystemConsole --> GovernanceControl : calls
+GovernanceControl --> SystemLog : reads / persists

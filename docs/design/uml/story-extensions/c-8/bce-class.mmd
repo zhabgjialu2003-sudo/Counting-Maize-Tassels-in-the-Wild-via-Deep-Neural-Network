@@ -1,0 +1,19 @@
+classDiagram
+direction LR
+class LeafAssistant["Boundary: LeafAssistant"] {
+  +collectContext()
+  +showQuestions()
+  +showNextSteps()
+}
+class AdviceEngine["Control: AdviceEngine"] {
+  +separateEvidence()
+  +buildGuidance()
+  +isolateRequest()
+}
+class DiseaseDiagnosis["Entity: DiseaseDiagnosis"] {
+  +modelEvidence
+  +fieldContext
+  +responseData
+}
+LeafAssistant --> AdviceEngine : calls
+AdviceEngine --> DiseaseDiagnosis : reads / persists

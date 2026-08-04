@@ -18,17 +18,12 @@
   .login-card { max-width:420px; margin:72px auto; }
   .login-card h2 { text-align:center; color:var(--green); margin-bottom:0.5rem; }
   .login-card .sub { text-align:center; color:var(--gray-500); margin-bottom:1.5rem; font-size:0.9rem; }
-  .demo-hint { background:var(--green-bg); border-radius:6px; padding:0.75rem; margin-top:1rem; font-size:0.8rem; color:var(--green); }
-  .demo-hint strong { display:block; margin-bottom:0.25rem; }
-  .demo-grid { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:0.5rem; margin-top:0.75rem; }
-  .demo-grid button { min-height:38px; }
   .auth-tabs { display:grid; grid-template-columns:1fr 1fr; gap:0.5rem; margin-bottom:1rem; }
   .auth-tabs button { min-height:40px; }
   .auth-tabs button.active { background:var(--green); color:#fff; border-color:var(--green); }
   #createForm { display:none; }
   @media (max-width:520px) {
     .login-card { margin:32px auto; }
-    .demo-grid { grid-template-columns:1fr; }
   }
 </style>
 </head>
@@ -72,23 +67,13 @@
       </div>
       <div class="form-group">
         <label>Password</label>
-        <input type="password" id="newPassword" placeholder="At least 6 characters" autocomplete="new-password">
+        <input type="password" id="newPassword" placeholder="At least 10 characters" autocomplete="new-password">
       </div>
       <button class="btn btn-primary btn-lg" id="createBtn" style="width:100%;" onclick="handleCreateAccount()">
         Create Farmer Account
       </button>
     </div>
 
-    <div class="demo-hint">
-      <strong>Demo Accounts</strong>
-      <div class="demo-grid">
-        <button class="btn btn-sm btn-outline" type="button" onclick="fillDemo('john@farm.com')">Farmer</button>
-        <button class="btn btn-sm btn-outline" type="button" onclick="fillDemo('liwei@research.org')">Researcher</button>
-        <button class="btn btn-sm btn-outline" type="button" onclick="fillDemo('maria@agro.com')">Agronomist</button>
-        <button class="btn btn-sm btn-outline" type="button" onclick="fillDemo('admin@system.com')">Admin</button>
-      </div>
-      <small>Password: 123456</small>
-    </div>
   </div>
 </div>
 
@@ -100,17 +85,11 @@
 const loginParams = new URLSearchParams(location.search);
 if (loginParams.get('password_changed') === '1') {
   document.getElementById('errorBox').innerHTML =
-    '<div class="alert alert-success">密码已修改，请使用新密码登录。<br><small>Password changed. Sign in with your new password.</small></div>';
+    '<div class="alert alert-success">Password changed. Sign in with your new password.</div>';
 }
 
 if (isLoggedIn()) {
   location.href = defaultPageForRole(currentRole());
-}
-
-function fillDemo(email) {
-  setAuthMode('signin');
-  document.getElementById('email').value = email;
-  document.getElementById('password').value = '123456';
 }
 
 function setAuthMode(mode) {
@@ -157,8 +136,8 @@ async function handleCreateAccount() {
   var btn = document.getElementById('createBtn');
   var errBox = document.getElementById('errorBox');
 
-  if (!name || !email || password.length < 6) {
-    errBox.innerHTML = '<div class="alert alert-error">Please enter name, valid email, and a password with at least 6 characters.</div>';
+  if (!name || !email || password.length < 10) {
+    errBox.innerHTML = '<div class="alert alert-error">Please enter a name, valid email, and password with at least 10 characters.</div>';
     return;
   }
 

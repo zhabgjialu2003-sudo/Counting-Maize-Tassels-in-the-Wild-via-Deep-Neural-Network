@@ -1,0 +1,19 @@
+classDiagram
+direction LR
+class AccountPage["Boundary: AccountPage"] {
+  +editProfile()
+  +changePassword()
+  +showValidation()
+}
+class AuthenticationSessionControl["Control: AuthenticationSessionControl"] {
+  +verifyPassword()
+  +enforcePolicy()
+  +revokeSessions()
+}
+class User["Entity: User"] {
+  +email
+  +passwordHash
+  +sessionVersion
+}
+AccountPage --> AuthenticationSessionControl : calls
+AuthenticationSessionControl --> User : reads / persists

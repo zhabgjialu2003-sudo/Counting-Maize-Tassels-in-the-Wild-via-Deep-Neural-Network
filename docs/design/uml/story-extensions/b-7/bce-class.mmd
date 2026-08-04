@@ -1,0 +1,19 @@
+classDiagram
+direction LR
+class ResearchDashboard["Boundary: ResearchDashboard"] {
+  +loadResults()
+  +filterEvidence()
+  +showProvenance()
+}
+class InferenceResultControl["Control: InferenceResultControl"] {
+  +authorizeResearcher()
+  +joinModelMetadata()
+  +sanitizeResponse()
+}
+class DetectionResult["Entity: DetectionResult"] {
+  +confidence
+  +qualityStatus
+  +reviewStatus
+}
+ResearchDashboard --> InferenceResultControl : calls
+InferenceResultControl --> DetectionResult : reads / persists

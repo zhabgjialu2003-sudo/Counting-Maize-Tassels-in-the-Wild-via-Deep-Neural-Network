@@ -1,0 +1,11 @@
+sequenceDiagram
+actor Agronomist as Agronomist
+participant LeafAssistant as Boundary: LeafAssistant
+participant AdviceEngine as Control: AdviceEngine
+participant DiseaseDiagnosis as Entity: DiseaseDiagnosis
+Agronomist->>+LeafAssistant: Submit image and field context
+LeafAssistant->>+AdviceEngine: Separate validated context
+AdviceEngine->>+DiseaseDiagnosis: Load image-derived evidence
+DiseaseDiagnosis-->>-AdviceEngine: Return probabilities and quality
+AdviceEngine-->>-LeafAssistant: Build isolated cautious guidance
+LeafAssistant-->>-Agronomist: Display scientific distinction

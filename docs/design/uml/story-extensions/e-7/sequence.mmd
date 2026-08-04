@@ -1,0 +1,11 @@
+sequenceDiagram
+actor System as System
+participant PredictionAPIs as Boundary: PredictionAPIs
+participant DualInferenceControl as Control: DualInferenceControl
+participant ModelResult as Entity: ModelResult
+System->>+PredictionAPIs: Receive task-specific request
+PredictionAPIs->>+DualInferenceControl: Select and validate pipeline
+DualInferenceControl->>+ModelResult: Load active model and cache identity
+ModelResult-->>-DualInferenceControl: Return validated model contract
+DualInferenceControl-->>-PredictionAPIs: Persist task-specific evidence
+PredictionAPIs-->>-System: Return count or screening response

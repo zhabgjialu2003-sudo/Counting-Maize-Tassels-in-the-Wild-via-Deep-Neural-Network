@@ -1,0 +1,19 @@
+classDiagram
+direction LR
+class DatasetAccessPage["Boundary: DatasetAccessPage"] {
+  +listDatasets()
+  +requestArchive()
+  +downloadManifest()
+}
+class DatasetExportControl["Control: DatasetExportControl"] {
+  +checkPermission()
+  +resolveApprovedPath()
+  +buildArchive()
+}
+class Dataset["Entity: Dataset"] {
+  +datasetId
+  +approvedPath
+  +annotationStatus
+}
+DatasetAccessPage --> DatasetExportControl : calls
+DatasetExportControl --> Dataset : reads / persists

@@ -79,19 +79,25 @@ function apiDelete(endpoint) {
   return apiRequest(endpoint, { method: 'DELETE' });
 }
 
-function apiUpload(file) {
+function apiUpload(file, idempotencyKey = null) {
   const form = new FormData();
   form.append('image', file);
-  return apiRequest('/api/upload', { method: 'POST', body: form });
+  const headers = idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined;
+  return apiRequest('/api/upload', { method: 'POST', body: form, headers });
 }
 
-function apiMultipartWithProgress(endpoint, form, onProgress, timeoutMs = 120000) {
+function apiMultipartWithProgress(endpoint, form, onProgress, timeoutMs = 120000, extraHeaders = {}) {
   return new Promise(resolve => {
     const request = new XMLHttpRequest();
     request.open('POST', `${API_BASE}${endpoint}`);
     request.timeout = timeoutMs;
     const token = sessionStorage.getItem('maize_access_token');
     if (token) request.setRequestHeader('Authorization', `Bearer ${token}`);
+    Object.entries(extraHeaders).forEach(([name, value]) => {
+      if (value !== undefined && value !== null && String(value) !== '') {
+        request.setRequestHeader(name, String(value));
+      }
+    });
     request.upload.onprogress = event => {
       if (event.lengthComputable && typeof onProgress === 'function') {
         onProgress(Math.round((event.loaded / event.total) * 100));
@@ -126,10 +132,11 @@ function apiMultipartWithProgress(endpoint, form, onProgress, timeoutMs = 120000
   });
 }
 
-function apiUploadWithProgress(file, onProgress) {
+function apiUploadWithProgress(file, onProgress, idempotencyKey = null) {
   const form = new FormData();
   form.append('image', file);
-  return apiMultipartWithProgress('/api/upload', form, onProgress);
+  const headers = idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {};
+  return apiMultipartWithProgress('/api/upload', form, onProgress, 120000, headers);
 }
 
 function apiDiagnoseDisease(file, details = {}) {
@@ -164,8 +171,6 @@ function apiReviewDiseaseDiagnosis(diagnosisId, review) {
 
 function normalizeResult(raw) {
   const bboxData = normalizeBBoxData(raw.bbox_data ?? raw.bboxData ?? null);
-  const imagePath =
-    raw.image_path ?? raw.imagePath ?? raw.original_image_path ?? raw.originalImagePath ?? null;
   return {
     resultId: raw.result_id ?? raw.resultId ?? null,
     imageId: raw.image_id ?? raw.imageId ?? null,
@@ -174,14 +179,16 @@ function normalizeResult(raw) {
     confidenceScore: raw.confidence ?? raw.confidence_score ?? raw.confidenceScore ?? 0,
     processingTime: raw.processing_time ?? raw.processingTime ?? raw.time ?? 0,
     createdAt: raw.created_at ?? raw.createdAt ?? null,
-    imagePath,
-    originalImagePath: raw.original_image_path ?? raw.originalImagePath ?? imagePath,
-    annotatedImagePath: raw.annotated_image_path ?? raw.annotatedImagePath ?? null,
+    originalAssetUrl: raw.original_asset_url ?? raw.originalAssetUrl ?? null,
+    annotatedAssetUrl: raw.annotated_asset_url ?? raw.annotatedAssetUrl ?? null,
     bboxData,
     source: raw.source ?? 'database',
     fieldName: raw.field_name ?? raw.fieldName ?? '',
     qualityStatus: raw.quality_status ?? raw.qualityStatus ?? 'unreviewed',
     reviewNote: raw.review_note ?? raw.reviewNote ?? '',
+    modelId: raw.model_id ?? raw.modelId ?? null,
+    modelVersion: raw.model_version ?? raw.modelVersion ?? null,
+    inferenceMode: raw.inference_mode ?? raw.inferenceMode ?? null,
   };
 }
 
@@ -203,14 +210,20 @@ function resolveAssetUrl(path) {
   if (path.startsWith('data:') || path.startsWith('http://') || path.startsWith('https://')) {
     return path;
   }
-  const token = sessionStorage.getItem('maize_access_token');
-  const authQuery = token ? `?access_token=${encodeURIComponent(token)}` : '';
   if (path.startsWith('/storage/uploads/')) {
-    return `${API_BASE}${path.replace('/storage', '')}${authQuery}`;
+    return `${API_BASE}${path.replace('/storage', '')}`;
   }
-  if (path.startsWith('/uploads/')) return `${API_BASE}${path}${authQuery}`;
-  if (path.startsWith('uploads/')) return `${API_BASE}/${path}${authQuery}`;
+  if (path.startsWith('/uploads/') || path.startsWith('/api/images/')) return `${API_BASE}${path}`;
+  if (path.startsWith('uploads/')) return `${API_BASE}/${path}`;
   return path;
+}
+
+async function fetchProtectedAssetUrl(path) {
+  const url = resolveAssetUrl(path);
+  if (!url || url.startsWith('data:')) return url;
+  const response = await fetch(url, { headers: authHeaders() });
+  if (!response.ok) throw new Error(`Image request failed (${response.status})`);
+  return URL.createObjectURL(await response.blob());
 }
 
 function authHeaders(extra) {

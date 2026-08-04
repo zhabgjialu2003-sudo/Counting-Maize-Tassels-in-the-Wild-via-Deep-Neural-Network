@@ -1,0 +1,19 @@
+classDiagram
+direction LR
+class PredictionAPIs["Boundary: PredictionAPIs"] {
+  +predictTassels()
+  +screenLeaf()
+  +returnUnavailable()
+}
+class DualInferenceControl["Control: DualInferenceControl"] {
+  +selectPipeline()
+  +lockAndInfer()
+  +enforceContract()
+}
+class ModelResult["Entity: ModelResult"] {
+  +modelVersion
+  +taskType
+  +evidencePayload
+}
+PredictionAPIs --> DualInferenceControl : calls
+DualInferenceControl --> ModelResult : reads / persists

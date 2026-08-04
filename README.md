@@ -1,170 +1,221 @@
 # Counting Maize Tassels in the Wild via Deep Neural Network
 
-A final-year project that combines real maize-tassel detection, secure image
-handling, PostgreSQL result storage, desktop workflows, and a mobile PWA. The
-primary objective is automatic tassel counting from field images. A calibrated
-maize leaf-disease screening assistant is included as an Agronomist extension.
+[![Repository checks](https://github.com/zhabgjialu2003-sudo/Counting-Maize-Tassels-in-the-Wild-via-Deep-Neural-Network/actions/workflows/quality.yml/badge.svg)](https://github.com/zhabgjialu2003-sudo/Counting-Maize-Tassels-in-the-Wild-via-Deep-Neural-Network/actions/workflows/quality.yml)
+[![Python 3.11–3.12](https://img.shields.io/badge/Python-3.11%E2%80%933.12-3776AB.svg)](https://www.python.org/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-required-4169E1.svg)](https://www.postgresql.org/)
+[![Git LFS](https://img.shields.io/badge/models-Git%20LFS-F64935.svg)](https://git-lfs.com/)
 
-## Core capabilities
+An assessment-ready final-year project for detecting and counting maize tassels
+in field images. It combines real YOLO inference, calibrated maize leaf-disease
+screening, PostgreSQL persistence, secure image handling, role-based workflows,
+and an installable mobile Progressive Web App (PWA).
 
-- Count and highlight maize tassels with the team-trained YOLO26s model.
-- Accept single or batch images and preserve analysis history.
-- Store uploaded image content securely and record results in PostgreSQL.
-- Support Farmer, Researcher, Agronomist, and Admin permissions.
-- Provide mobile-friendly capture and upload through an installable PWA.
-- Screen close-up maize leaves for four supported disease outcomes.
-- Reject low-quality, unfamiliar, or low-confidence leaf images rather than
-  forcing a diagnosis.
-- Export results and retain model and testing evidence for assessment.
+- Project website: [GitHub Pages](https://zhabgjialu2003-sudo.github.io/Counting-Maize-Tassels-in-the-Wild-via-Deep-Neural-Network/)
+- Assessment entry point: [Assessment Evidence Index](docs/ASSESSMENT_INDEX.md)
+- User instructions: [User Manual](docs/manuals/USER_MANUAL.md)
+- Developer instructions: [Technical Manual](docs/manuals/TECHNICAL_MANUAL.md)
 
-## Evidence preview
+## Project scope
 
-| Input | Annotated tassel result |
+| Actor | Implemented workflow |
 |---|---|
-| [`DJI_0243 (2).JPG`](examples/tassel-counting/input/DJI_0243%20(2).JPG) | [`DJI_0243 (2)_annotated.jpg`](examples/tassel-counting/output/DJI_0243%20(2)_annotated.jpg) |
+| Farmer | Capture or upload field images, count and highlight tassels, review history, use the leaf-screening assistant, and manage an email-based account. |
+| Researcher | Review and flag results, compare validated models, analyse history, access approved datasets, and export reports. |
+| Agronomist | Review assigned field evidence, monitor growth and anomalies, assess disease-screening records, and provide recommendations. |
+| Admin | Manage users, permissions, datasets, access policies, storage, logs, backups, and model deployment. |
+| System | Validate and preprocess images, run inference, record model provenance, support training/evaluation, and expose health checks. |
 
-More inputs and expected outputs are available under [`examples/`](examples/).
+The primary research objective is maize-tassel counting. Disease screening is a
+human-centred Agronomist extension: uncertain, unsupported, or poor-quality
+images produce a safe retake/review response instead of a forced diagnosis.
 
-## System flow
+## Key capabilities
 
-```text
-Desktop or mobile browser
-          |
-          v
-Flask API: authentication, validation and authorization
-          |
-          +----> encrypted image storage
-          |
-          +----> tassel detector or disease-screening model
-          |
-          v
-PostgreSQL result, audit and model records
-          |
-          v
-Role-specific result, history, report and export views
-```
+- Single and batch JPG/PNG upload with mobile data-saving preparation.
+- Retry-safe, user-scoped upload idempotency for unstable 4G/5G connections.
+- Fast and accurate YOLO tassel-counting modes with bounding-box evidence.
+- Encrypted image storage and authenticated image delivery.
+- PostgreSQL-backed users, images, results, fields, reviews, reports, models,
+  datasets, logs, backups, and schema migrations.
+- Model comparison guarded by approved directories and SHA-256 verification.
+- Auditable results containing model version, inference mode, confidence,
+  quality status, and protected asset URLs without server path disclosure.
+- Responsive desktop views and an installable mobile PWA.
 
-Detailed architecture, AI logic, database design, tests, reports, and manuals
-are indexed in [`docs/ASSESSMENT_INDEX.md`](docs/ASSESSMENT_INDEX.md).
-
-## Repository structure
+## Architecture
 
 ```text
-backend/       Flask API, security, persistence and inference integration
-frontend/      Desktop pages, mobile pages and PWA assets
-database/      SQL schema, ordered migrations and demo seeds
-models/        Git LFS deployment models, model cards and provenance
-training/      Tassel and disease notebooks with evaluation evidence
-datasets/      Dataset sources, licences and download guidance
-examples/      Small demonstration inputs and expected outputs
-tests/         Automated unit, integration and static contract tests
-docs/          Requirements, design, testing, manuals, reports and evidence
-coursework/    Historical assessed submission packages
+Desktop browser / Mobile PWA
+              |
+              v
+Flask API: authentication, validation, authorization, rate limits
+              |
+      +-------+--------------------+
+      |                            |
+      v                            v
+Encrypted image storage     Tassel / disease model
+      |                            |
+      +-------------+--------------+
+                    v
+     PostgreSQL results, provenance, reviews and audit logs
+                    |
+                    v
+       Role-specific dashboards, history and reports
 ```
+
+More detail is available in the [system architecture](docs/design/architecture/system-architecture.md),
+[AI logic design](docs/design/ai/ai-logic-design.md), and
+[PostgreSQL ERD](docs/design/database/erd.md).
+
+## Repository map
+
+```text
+backend/       Flask API, security, persistence, inference and training controls
+frontend/      Desktop pages, mobile PWA, shared API and authentication clients
+database/      Canonical schema, ordered migrations and privacy-safe demo seeds
+models/        Git LFS deployment artefacts, model cards and provenance
+training/      Training notebooks, evaluation outputs and dataset manifests
+datasets/      Dataset sources, licences and reproducible download guidance
+examples/      Small demonstration inputs and expected annotated outputs
+tests/         Unit, integration, security, mobile and repository contract tests
+docs/          Requirements, designs, test evidence, manuals and reports
+coursework/    Archived assessed packages retained for submission history
+```
+
+`coursework/` is historical evidence. Current source code, requirements,
+verification results, and manuals are linked through
+[`docs/ASSESSMENT_INDEX.md`](docs/ASSESSMENT_INDEX.md).
 
 ## Prerequisites
 
-- Windows, macOS or Linux
 - Python 3.11 or 3.12
 - PostgreSQL
-- Git LFS
-- VS Code with the Python extension, recommended
+- Git and Git LFS
+- VS Code with the Python extension (recommended)
 
-## Run in VS Code
+## Quick start in VS Code
+
+Clone the repository and materialize the deployment models:
 
 ```powershell
+git clone https://github.com/zhabgjialu2003-sudo/Counting-Maize-Tassels-in-the-Wild-via-Deep-Neural-Network.git
+Set-Location Counting-Maize-Tassels-in-the-Wild-via-Deep-Neural-Network
 git lfs install
 git lfs pull
+```
+
+Create the environment and install dependencies:
+
+```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
 python -m pip install -r backend\requirements.txt
 Copy-Item backend\.env.example backend\.env
 ```
 
-Edit `backend/.env` locally. Set the PostgreSQL password, a long random
+Edit `backend/.env` locally. Set a PostgreSQL password, a long random
 `SECRET_KEY`, and a Fernet `FILE_ENCRYPTION_KEY`. Never commit this file.
 
-Create the database and apply the current schema:
+Create the database and apply the canonical schema and migrations:
 
 ```powershell
 createdb -U postgres maize_detector
 psql -U postgres -d maize_detector -f database\schema\schema_postgresql.sql
-psql -U postgres -d maize_detector -f database\migrations\001_user_story_compliance.sql
-psql -U postgres -d maize_detector -f database\migrations\002_disease_agronomist.sql
+python -m backend.migrations
+python -m backend.migrations --check
+python -m backend.scripts.bootstrap_admin
 ```
 
-Start the application with the VS Code `Run Maize Detector` launch
-configuration, or run:
+The bootstrap command prompts for the first administrator email, name, and a
+hidden password. The repository contains no deployable default password. Sample
+identities remain disabled until an administrator assigns individual passwords.
+
+Run the VS Code launch configuration named `Run Maize Detector`, or start the
+production-oriented local server directly:
 
 ```powershell
 python backend\server.py
 ```
 
-Open:
+Open the following authenticated entry points:
 
-```text
-http://127.0.0.1:5000/frontend/pages/login.html
-```
+| Interface | URL |
+|---|---|
+| Desktop login | `http://127.0.0.1:5000/frontend/pages/login.html` |
+| Mobile Farmer interface | `http://127.0.0.1:5000/frontend/pages/mobile.html` |
+| API health check | `http://127.0.0.1:5000/api/health` |
 
-The mobile entry page is:
-
-```text
-http://127.0.0.1:5000/frontend/pages/mobile.html
-```
-
-See the [User Manual](docs/manuals/USER_MANUAL.md) and
-[Technical Manual](docs/manuals/TECHNICAL_MANUAL.md) for complete instructions.
+The mobile interface does not replace or modify the desktop interface. Both use
+the same authenticated API and PostgreSQL data.
 
 ## Deployment models
 
+Deployment weights are tracked with Git LFS and verified before use.
+
 | Task | Runtime file | SHA-256 |
 |---|---|---|
-| Tassel counting | `models/deployment/tassel-best.pt` | `37BCA6B8E817D911424DBD22F720F9CBE00248036E0FC6305EF853F8B38D9913` |
-| Disease screening | `models/deployment/maize-disease.torchscript.pt` | `4F48A440E2EB35BEF220107F9E777F9A3A10DC8FA0B79E0296A022CBA700EF17` |
+| Tassel counting | `models/deployment/tassel-best.pt` | `37bca6b8e817d911424dbd22f720f9cbe00248036e0fc6305ef853f8b38d9913` |
+| Disease screening | `models/deployment/maize-disease.torchscript.pt` | `4f48a440e2eb35bef220107f9e777f9a3a10dc8fa0b79e0296a022cba700ef17` |
 
-Model paths can be overridden with `TASSEL_MODEL_PATH` and
-`DISEASE_MODEL_PATH`. Startup checks reject missing files and Git LFS pointer
-files. Provenance and model cards are under [`models/`](models/).
+See [tassel model provenance](models/tassel/MODEL_PROVENANCE.md), the
+[disease model card](models/disease/MODEL_CARD.md), and
+[training and evaluation guidance](training/README.md).
 
-## Recorded disease evaluation
+## Dataset policy
 
-| Evaluation set | Samples | Accuracy | Macro F1 | Accepted accuracy | Coverage |
-|---|---:|---:|---:|---:|---:|
-| Internal test | 794 | 96.85% | 95.70% | 99.61% | 63.85% |
-| External field test | 523 | 98.47% | 95.46% | 99.77% | 83.75% |
-| PlantDoc field audit | 14 | 71.43% | 69.44% | 87.50% | 57.14% |
-| CDS field test | 509 | 99.21% | 99.31% | 100.00% | 84.48% |
+Large third-party datasets are not committed as a miscellaneous image dump.
+[`datasets/README.md`](datasets/README.md) records sources, licences, expected
+layout, and download instructions. Small redistribution-safe examples are kept
+under [`examples/`](examples/) for assessment and UI verification.
 
-The PlantDoc result is advisory because only 14 supported samples were
-available. Full thresholds, confidence intervals, dataset revisions, leakage
-checks, and deployment gates are in
-[`training/results/disease/metadata.json`](training/results/disease/metadata.json).
+## Verification
 
-## Tests
+Run the complete local suite against the configured PostgreSQL database:
 
 ```powershell
 python -m unittest discover -s tests -v
 ```
 
-The current baseline is 54 automated tests. The latest verified result is recorded in
+The latest verified baseline is **91 automated tests with zero failures**.
+Exact environment notes, real-model smoke tests, and SHA-256 evidence are in
 [`docs/testing/TEST_RESULTS.md`](docs/testing/TEST_RESULTS.md).
+
+GitHub Actions performs fast deterministic checks on each push and pull request.
+The full PostgreSQL- and model-backed suite remains the authoritative local
+acceptance run because it uses 103 MB of Git LFS deployment artefacts and the
+configured database.
+
+## Assessment deliverables
+
+- [User stories](docs/requirements/user-stories.md)
+- [Extension user stories](docs/requirements/user-story-extensions.md)
+- [Requirement-to-code guide](docs/requirements/user-story-code-guide.md)
+- [Extended technical documentation](docs/reports/technical/preliminary-technical-documentation-extended.docx)
+- [Current regression test cases](docs/testing/current-regression-test-cases.md)
+- [BCE and sequence diagrams](docs/design/uml/)
+- [Extended ERD](docs/design/database/erd-extended.mmd)
+- [UI and output evidence](docs/evidence/)
+
+The original 30 user stories are retained. The extension package adds 15
+implemented stories across Farmer, Researcher, Agronomist, Admin, and System.
 
 ## Responsible use and limitations
 
-- Tassel counts depend on image resolution, viewpoint, occlusion, lighting and
-  field conditions.
-- Disease screening supports only the classes listed in its model card.
-- A supported output is a field-screening aid, not a laboratory diagnosis or
+- Counts vary with resolution, viewpoint, occlusion, growth stage, lighting,
+  camera height, and field density.
+- Disease screening supports only the classes and thresholds in its model card.
+- Screening is a field decision-support aid, not a laboratory diagnosis or a
   pesticide prescription.
-- PlantDoc evidence is explicitly marked advisory because of its small supported
-  sample count.
-- Private farmer uploads, local database credentials and encryption keys must
-  never be committed.
+- Results with weak evidence require a better image or Agronomist review.
+- Private farmer uploads, database credentials, encryption keys, and local
+  environment files must never be committed.
 
-## Assessment and project history
+## Project governance
 
-- [Assessment Evidence Index](docs/ASSESSMENT_INDEX.md)
-- [Privacy-safe Project Deliverables](docs/requirements/PROJECT_DELIVERABLES.md)
-- [Training and Evaluation](training/README.md)
-- [Database ERD](docs/design/database/erd.md)
-- [Historical Coursework Archive](coursework/README.md)
+- Contribution workflow: [`CONTRIBUTING.md`](CONTRIBUTING.md)
+- Security policy: [`SECURITY.md`](SECURITY.md)
+- Repository licence: no open-source licence has been granted
+
+Copyright remains with the project contributors. Public visibility does not by
+itself grant permission to copy, redistribute, or reuse the source or models.

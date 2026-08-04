@@ -1,0 +1,19 @@
+classDiagram
+direction LR
+class UploadAPI["Boundary: UploadAPI"] {
+  +receiveMultipart()
+  +returnImageId()
+  +returnValidationError()
+}
+class ImageValidationControl["Control: ImageValidationControl"] {
+  +validateBytesAndMime()
+  +generateUuidAndDigest()
+  +encryptValidatedBytes()
+}
+class ImageFile["Entity: ImageFile"] {
+  +originalFilename
+  +contentSha256
+  +encryptedData
+}
+UploadAPI --> ImageValidationControl : calls
+ImageValidationControl --> ImageFile : reads / persists

@@ -1,13 +1,15 @@
 # Verified Test Results
 
-Verification date: 2026-08-03 (Asia/Shanghai)
+Latest repository verification: 2026-08-05 (Asia/Shanghai)
 
 ## Summary
 
 | Check | Result |
 |---|---|
-| Automated test suite | 54 passed, 0 failed |
+| Automated test suite | 91 passed, 0 failed in 32.706 seconds |
 | PostgreSQL-backed API tests | Passed |
+| Submission-readiness contract tests | 4 passed, 0 failed |
+| GitHub Actions fast-check subset | 29 passed, 0 failed |
 | Tassel deployment model | Loaded and completed real inference |
 | Disease deployment model | Loaded, ready and completed real inference |
 | API health endpoint | HTTP 200, service status `ok` |
@@ -25,7 +27,18 @@ python -m unittest discover -s tests -v
 The PostgreSQL password was supplied only to the local process environment. It
 was not written to a tracked file.
 
+The 2026-08-05 acceptance run covered authentication and authorization,
+actor-specific workflows, account recovery, PostgreSQL migrations, secure image
+handling, mobile PWA behaviour, model integrity and approved-path validation,
+human-centred disease guidance, repository links, governance files and tracked
+artifact hygiene. A final security review also removed the public demo-password
+path and added an interactive administrator bootstrap command.
+
 ## Real inference smoke test
+
+The real-inference evidence below was recorded on 2026-08-03 and remains the
+deployment-artifact smoke-test record. The 2026-08-05 acceptance run independently
+revalidated model integrity and model-backed application health.
 
 ### Tassel counting
 

@@ -1,0 +1,43 @@
+flowchart LR
+  subgraph B["Boundary"]
+    Mobile["Mobile PWA"]
+    Desktop["Desktop Web UI"]
+    AdminUI["Admin Console"]
+  end
+  subgraph C["Control"]
+    Auth["Authentication and Session Control"]
+    Upload["Upload Validation Control"]
+    Tassel["Tassel Inference Control"]
+    Disease["Disease Assistance Control"]
+    Field["Field Assignment and Review Control"]
+    Model["Model and Training Governance"]
+    Migration["Migration and Startup Control"]
+  end
+  subgraph E["Entity"]
+    User[("User / Role / Session Version")]
+    Image[("Image / Encrypted Image File")]
+    Result[("Detection Result")]
+    Diagnosis[("Disease Diagnosis / Review")]
+    FieldEntity[("Field / Field Assignment")]
+    Dataset[("Dataset / Training Run")]
+    ModelEntity[("Model / Artifact Digest")]
+    Log[("System Log / Schema Migration")]
+  end
+
+  Mobile --> Auth & Upload & Tassel & Disease
+  Desktop --> Auth & Upload & Tassel & Disease & Field
+  AdminUI --> Auth & Field & Model & Migration
+  Auth --> User & Log
+  Upload --> Image & Log
+  Tassel --> Image & Result & ModelEntity
+  Disease --> Image & Diagnosis & FieldEntity
+  Field --> FieldEntity & Diagnosis & Log
+  Model --> Dataset & ModelEntity & Log
+  Migration --> Log
+
+  classDef boundary fill:#d9eaf7,stroke:#366091,color:#17365d;
+  classDef control fill:#fff2cc,stroke:#bf9000,color:#5b4700;
+  classDef entity fill:#e2f0d9,stroke:#548235,color:#274e13;
+  class Mobile,Desktop,AdminUI boundary;
+  class Auth,Upload,Tassel,Disease,Field,Model,Migration control;
+  class User,Image,Result,Diagnosis,FieldEntity,Dataset,ModelEntity,Log entity;

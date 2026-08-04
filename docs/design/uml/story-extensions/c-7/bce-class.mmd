@@ -1,0 +1,19 @@
+classDiagram
+direction LR
+class DiagnosisReviewPanel["Boundary: DiagnosisReviewPanel"] {
+  +showEvidence()
+  +selectDecision()
+  +submitReview()
+}
+class DiagnosisReviewControl["Control: DiagnosisReviewControl"] {
+  +validateAssignment()
+  +validateDecision()
+  +auditReview()
+}
+class DiseaseDiagnosis["Entity: DiseaseDiagnosis"] {
+  +reviewerUserId
+  +reviewDecision
+  +reviewedAt
+}
+DiagnosisReviewPanel --> DiagnosisReviewControl : calls
+DiagnosisReviewControl --> DiseaseDiagnosis : reads / persists

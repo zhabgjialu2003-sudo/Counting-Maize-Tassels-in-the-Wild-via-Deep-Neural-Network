@@ -1,0 +1,11 @@
+sequenceDiagram
+actor Admin as Admin
+participant AdminSystemConsole as Boundary: AdminSystemConsole
+participant GovernanceControl as Control: GovernanceControl
+participant SystemLog as Entity: SystemLog
+Admin->>+AdminSystemConsole: Request operational status or work
+AdminSystemConsole->>+GovernanceControl: Apply trust and capacity controls
+GovernanceControl->>+SystemLog: Load governance evidence
+SystemLog-->>-GovernanceControl: Return checksums, digests and status
+GovernanceControl-->>-AdminSystemConsole: Execute only approved bounded work
+AdminSystemConsole-->>-Admin: Display safe audit result

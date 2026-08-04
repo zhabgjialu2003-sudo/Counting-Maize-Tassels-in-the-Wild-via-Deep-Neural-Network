@@ -1,0 +1,40 @@
+flowchart LR
+  Farmer["Farmer"]
+  Researcher["Researcher"]
+  Agronomist["Agronomist"]
+  Admin["Admin"]
+  System["AI System"]
+
+  subgraph Platform["Maize Tassel and Disease Assistance Platform"]
+    UC1(["Upload field photograph"])
+    UC2(["Count and highlight tassels"])
+    UC3(["Screen leaf condition"])
+    UC4(["Receive bilingual guidance"])
+    UC5(["Manage email and password"])
+    UC6(["Review history and export data"])
+    UC7(["Compare validated models"])
+    UC8(["Review assigned field evidence"])
+    UC9(["Confirm or correct screening"])
+    UC10(["Assign Agronomists to fields"])
+    UC11(["Manage users, datasets, and backups"])
+    UC12(["Validate uploads and model artifacts"])
+    UC13(["Run bounded inference and training"])
+    UC14(["Persist encrypted evidence and audit logs"])
+  end
+
+  Farmer --> UC1 & UC2 & UC3 & UC4 & UC5
+  Researcher --> UC6 & UC7
+  Agronomist --> UC8 & UC9
+  Admin --> UC10 & UC11
+  System --> UC12 & UC13 & UC14
+  UC1 -. "includes" .-> UC12
+  UC2 -. "includes" .-> UC13
+  UC3 -. "includes" .-> UC13
+  UC8 -. "requires assignment" .-> UC10
+  UC2 -. "persists" .-> UC14
+  UC3 -. "persists" .-> UC14
+
+  classDef actor fill:#17365d,color:#fff,stroke:#0f243e,stroke-width:2px;
+  classDef case fill:#eaf4ea,color:#183b20,stroke:#397449,stroke-width:1.5px;
+  class Farmer,Researcher,Agronomist,Admin,System actor;
+  class UC1,UC2,UC3,UC4,UC5,UC6,UC7,UC8,UC9,UC10,UC11,UC12,UC13,UC14 case;

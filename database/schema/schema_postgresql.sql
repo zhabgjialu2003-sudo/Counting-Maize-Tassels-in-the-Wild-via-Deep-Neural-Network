@@ -229,14 +229,14 @@ INSERT INTO roles (role_name) VALUES
     ('Admin');
 
 -- Users
--- The first five accounts are fixed demo logins. The generated rows bring
--- the table to exactly 100 stable accounts for Admin user-management demos.
+-- Sample identities are disabled until an administrator is configured through
+-- backend/scripts/bootstrap_admin.py. No deployable default password is stored.
 INSERT INTO users (name, email, password_hash, role_id, status) VALUES
-    ('John Smith',    'john@farm.com',        'sha256$8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 1, 'active'),
-    ('Dr. Li Wei',    'liwei@research.org',   'sha256$8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 2, 'active'),
-    ('Maria Garcia',  'maria@agro.com',       'sha256$8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 3, 'active'),
-    ('Admin User',    'admin@system.com',     'sha256$8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 4, 'active'),
-    ('Bob Brown',     'bob@farm.com',         'sha256$8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 1, 'disabled');
+    ('John Smith',    'john@farm.com',        'disabled$bootstrap-required', 1, 'disabled'),
+    ('Dr. Li Wei',    'liwei@research.org',   'disabled$bootstrap-required', 2, 'disabled'),
+    ('Maria Garcia',  'maria@agro.com',       'disabled$bootstrap-required', 3, 'disabled'),
+    ('Admin User',    'admin@system.com',     'disabled$bootstrap-required', 4, 'disabled'),
+    ('Bob Brown',     'bob@farm.com',         'disabled$bootstrap-required', 1, 'disabled');
 
 INSERT INTO users (name, email, password_hash, role_id, status)
 SELECT
@@ -264,7 +264,7 @@ SELECT
         WHEN 3 THEN 'farm.com'
         ELSE 'farm.com'
     END AS email,
-    'sha256$8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92' AS password_hash,
+    'disabled$bootstrap-required' AS password_hash,
     CASE ((n - 1) % 5)
         WHEN 0 THEN 1
         WHEN 1 THEN 2
@@ -272,7 +272,7 @@ SELECT
         WHEN 3 THEN 1
         ELSE 1
     END AS role_id,
-    CASE WHEN n % 17 = 0 THEN 'disabled'::user_status ELSE 'active'::user_status END AS status
+        'disabled'::user_status AS status
 FROM generate_series(1, 95) AS n;
 
 -- Images (sample uploads)
@@ -368,3 +368,50 @@ ORDER BY d.created_at DESC;
 -- 4. Open this file and click Execute (F5) to run everything
 -- 5. Refresh Schemas -> public -> Tables to see all 7 tables
 -- ============================================================
+
+-- Compatibility-first hardening fields (migration 003).
+ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS session_version BIGINT NOT NULL DEFAULT 1;
+
+ALTER TABLE images
+    ADD COLUMN IF NOT EXISTS original_filename VARCHAR(255),
+    ADD COLUMN IF NOT EXISTS content_sha256 CHAR(64),
+    ADD COLUMN IF NOT EXISTS mime_type VARCHAR(100),
+    ADD COLUMN IF NOT EXISTS image_width INTEGER,
+    ADD COLUMN IF NOT EXISTS image_height INTEGER,
+    ADD COLUMN IF NOT EXISTS validated BOOLEAN NOT NULL DEFAULT FALSE;
+
+ALTER TABLE fields
+    ADD COLUMN IF NOT EXISTS owner_user_id INTEGER REFERENCES users(user_id) ON DELETE SET NULL;
+
+ALTER TABLE models
+    ADD COLUMN IF NOT EXISTS artifact_sha256 CHAR(64),
+    ADD COLUMN IF NOT EXISTS artifact_validated_at TIMESTAMP;
+
+-- Retry-safe uploads and auditable inference provenance (migration 005).
+ALTER TABLE images
+    ADD COLUMN IF NOT EXISTS upload_idempotency_key VARCHAR(128);
+
+ALTER TABLE detection_results
+    ADD COLUMN IF NOT EXISTS model_id INTEGER REFERENCES models(model_id) ON DELETE SET NULL,
+    ADD COLUMN IF NOT EXISTS model_version VARCHAR(50),
+    ADD COLUMN IF NOT EXISTS inference_mode VARCHAR(20);
+
+CREATE INDEX IF NOT EXISTS idx_images_content_sha256 ON images(content_sha256);
+CREATE INDEX IF NOT EXISTS idx_fields_owner_user_id ON fields(owner_user_id);
+CREATE INDEX IF NOT EXISTS idx_models_active_status ON models(status) WHERE status = 'active';
+CREATE UNIQUE INDEX IF NOT EXISTS uq_images_user_upload_idempotency_key
+    ON images (user_id, upload_idempotency_key)
+    WHERE upload_idempotency_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_detection_results_model_id ON detection_results(model_id);
+
+CREATE TABLE IF NOT EXISTS field_assignments (
+    field_id INTEGER NOT NULL REFERENCES fields(field_id) ON DELETE CASCADE,
+    agronomist_user_id INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    assigned_by_user_id INTEGER REFERENCES users(user_id) ON DELETE SET NULL,
+    assigned_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (field_id, agronomist_user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_field_assignments_agronomist
+    ON field_assignments (agronomist_user_id, field_id);

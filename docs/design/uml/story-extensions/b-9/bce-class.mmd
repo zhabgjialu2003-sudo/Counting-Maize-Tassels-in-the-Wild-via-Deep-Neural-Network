@@ -1,0 +1,19 @@
+classDiagram
+direction LR
+class ModelEvaluationPage["Boundary: ModelEvaluationPage"] {
+  +selectModel()
+  +selectDataset()
+  +showMetrics()
+}
+class ModelGovernanceControl["Control: ModelGovernanceControl"] {
+  +validateArtifact()
+  +validateDatasetYaml()
+  +persistMetrics()
+}
+class Model["Entity: Model"] {
+  +modelVersion
+  +artifactSha256
+  +map50
+}
+ModelEvaluationPage --> ModelGovernanceControl : calls
+ModelGovernanceControl --> Model : reads / persists

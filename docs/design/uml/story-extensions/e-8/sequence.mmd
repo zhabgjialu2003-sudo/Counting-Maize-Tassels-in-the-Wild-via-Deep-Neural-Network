@@ -1,0 +1,11 @@
+sequenceDiagram
+actor System as System
+participant HealthStartupInterface as Boundary: HealthStartupInterface
+participant WorkloadMigrationControl as Control: WorkloadMigrationControl
+participant SchemaMigration as Entity: SchemaMigration
+System->>+HealthStartupInterface: Start service or submit bounded work
+HealthStartupInterface->>+WorkloadMigrationControl: Acquire lock and enforce capacity
+WorkloadMigrationControl->>+SchemaMigration: Read migration and workload state
+SchemaMigration-->>-WorkloadMigrationControl: Return recorded checksums and availability
+WorkloadMigrationControl-->>-HealthStartupInterface: Apply pending work transactionally
+HealthStartupInterface-->>-System: Report safe readiness or retry

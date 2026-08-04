@@ -1,0 +1,11 @@
+sequenceDiagram
+actor Researcher as Researcher
+participant ModelEvaluationPage as Boundary: ModelEvaluationPage
+participant ModelGovernanceControl as Control: ModelGovernanceControl
+participant Model as Entity: Model
+Researcher->>+ModelEvaluationPage: Request model evaluation
+ModelEvaluationPage->>+ModelGovernanceControl: Authorize and validate inputs
+ModelGovernanceControl->>+Model: Load registered artifact digest
+Model-->>-ModelGovernanceControl: Return model and dataset metadata
+ModelGovernanceControl-->>-ModelEvaluationPage: Run or retrieve validated metrics
+ModelEvaluationPage-->>-Researcher: Display reproducible result

@@ -260,13 +260,19 @@ class DiseaseAssistantApiContractTests(unittest.TestCase):
         old_factory = backend.get_disease_predictor
         old_db_connection = backend.db_connection
 
+        connection_count = 0
+
         @contextmanager
-        def unavailable_test_database():
-            raise RuntimeError("simulated persistence failure")
-            yield
+        def persistence_failure_database():
+            nonlocal connection_count
+            connection_count += 1
+            if connection_count > 1:
+                raise RuntimeError("simulated persistence failure")
+            with old_db_connection() as conn:
+                yield conn
 
         backend.get_disease_predictor = lambda: FakePredictor()
-        backend.db_connection = unavailable_test_database
+        backend.db_connection = persistence_failure_database
         try:
             image = Image.new("RGB", (320, 320), color=(80, 160, 60))
             content = io.BytesIO()

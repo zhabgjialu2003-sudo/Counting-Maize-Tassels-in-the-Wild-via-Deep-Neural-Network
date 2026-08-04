@@ -1,0 +1,11 @@
+sequenceDiagram
+actor Farmer as Farmer
+participant AccountPage as Boundary: AccountPage
+participant AuthenticationSessionControl as Control: AuthenticationSessionControl
+participant User as Entity: User
+Farmer->>+AccountPage: Submit account change
+AccountPage->>+AuthenticationSessionControl: Verify current password and input
+AuthenticationSessionControl->>+User: Update user and session version
+User-->>-AuthenticationSessionControl: Return updated account state
+AuthenticationSessionControl-->>-AccountPage: Issue fresh token
+AccountPage-->>-Farmer: Confirm secure change

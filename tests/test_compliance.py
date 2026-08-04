@@ -28,6 +28,11 @@ class ComplianceApiTests(unittest.TestCase):
         response = self.client.get("/api/users")
         self.assertEqual(response.status_code, 401)
 
+    def test_security_headers_are_applied_to_api_responses(self):
+        response = self.client.get("/api/health")
+        self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
+        self.assertEqual(response.headers["X-Frame-Options"], "DENY")
+
     def test_admin_endpoint_rejects_farmer(self):
         response = self.client.get("/api/users", headers=self.headers("Farmer"))
         self.assertEqual(response.status_code, 403)

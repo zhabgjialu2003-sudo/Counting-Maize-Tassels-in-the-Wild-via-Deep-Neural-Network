@@ -1,0 +1,19 @@
+classDiagram
+direction LR
+class LeafAssistantPage["Boundary: LeafAssistantPage"] {
+  +selectLanguage()
+  +uploadLeaf()
+  +showGuidance()
+}
+class DiseaseAssistanceControl["Control: DiseaseAssistanceControl"] {
+  +validateQuality()
+  +screenLeaf()
+  +buildAdvice()
+}
+class DiseaseDiagnosis["Entity: DiseaseDiagnosis"] {
+  +status
+  +confidenceBand
+  +responseData
+}
+LeafAssistantPage --> DiseaseAssistanceControl : calls
+DiseaseAssistanceControl --> DiseaseDiagnosis : reads / persists
