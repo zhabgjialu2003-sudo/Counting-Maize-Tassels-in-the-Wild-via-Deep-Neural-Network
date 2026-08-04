@@ -1,6 +1,6 @@
 param(
     [string]$ReferenceDocx = (Join-Path $env:USERPROFILE 'Desktop\FYP-26-S2-7_ProgressReport\Preliminary_Technical_Documentation.docx'),
-    [string]$DesktopOutput = (Join-Path $env:USERPROFILE 'Desktop\Preliminary_Technical_Documentation_Extended_User_Stories.docx')
+    [string]$DesktopOutput = (Join-Path $env:USERPROFILE 'Desktop\Preliminary_Technical_Documentation_Extended_User_Stories_Corrected.docx')
 )
 
 $ErrorActionPreference = 'Stop'

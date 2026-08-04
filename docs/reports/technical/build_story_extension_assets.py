@@ -57,7 +57,6 @@ def sequence_source(story: dict) -> str:
     steps = [escape_mermaid(item) for item in story["sequence_steps"]]
     return "\n".join([
         "sequenceDiagram",
-        "autonumber",
         f"actor {actor} as {escape_mermaid(story['role'])}",
         f"participant {boundary} as Boundary: {escape_mermaid(story['boundary'])}",
         f"participant {control} as Control: {escape_mermaid(story['control'])}",

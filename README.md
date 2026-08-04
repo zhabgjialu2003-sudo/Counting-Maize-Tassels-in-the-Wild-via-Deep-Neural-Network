@@ -49,6 +49,7 @@ are indexed in [`docs/ASSESSMENT_INDEX.md`](docs/ASSESSMENT_INDEX.md).
 
 ## Final documentation package
 
+- [Extension User Stories review copy](docs/reports/technical/extension-user-stories-review-copy.docx) — contains only the 15 newly added stories for focused checking
 - [Template-complete extension document](docs/reports/technical/preliminary-technical-documentation-extended.docx) — preserves the original 30 User Stories and adds the 15 new stories using the submitted Word template
 - [Supplementary integrated requirements, design, and testing summary](docs/reports/technical/final-requirements-design-testing.docx)
 - [Extension User Stories](docs/requirements/user-story-extensions.md)
