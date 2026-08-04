@@ -3,9 +3,9 @@ actor System as System
 participant UploadAPI as Boundary: UploadAPI
 participant ImageValidationControl as Control: ImageValidationControl
 participant ImageFile as Entity: ImageFile
-System->>UploadAPI: Receive candidate upload
-UploadAPI->>ImageValidationControl: Validate bytes, MIME, decode and pixels
-ImageValidationControl->>ImageFile: Create trusted image metadata
-ImageFile-->>ImageValidationControl: Return UUID and digest identity
-ImageValidationControl-->>UploadAPI: Encrypt and persist validated bytes
-UploadAPI-->>System: Return safe upload result
+System->>+UploadAPI: Receive candidate upload
+UploadAPI->>+ImageValidationControl: Validate bytes, MIME, decode and pixels
+ImageValidationControl->>+ImageFile: Create trusted image metadata
+ImageFile-->>-ImageValidationControl: Return UUID and digest identity
+ImageValidationControl-->>-UploadAPI: Encrypt and persist validated bytes
+UploadAPI-->>-System: Return safe upload result

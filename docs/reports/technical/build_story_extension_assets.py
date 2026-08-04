@@ -61,12 +61,12 @@ def sequence_source(story: dict) -> str:
         f"participant {boundary} as Boundary: {escape_mermaid(story['boundary'])}",
         f"participant {control} as Control: {escape_mermaid(story['control'])}",
         f"participant {entity} as Entity: {escape_mermaid(story['entity'])}",
-        f"{actor}->>{boundary}: {steps[0]}",
-        f"{boundary}->>{control}: {steps[1]}",
-        f"{control}->>{entity}: {steps[2]}",
-        f"{entity}-->>{control}: {steps[3]}",
-        f"{control}-->>{boundary}: {steps[4]}",
-        f"{boundary}-->>{actor}: {steps[5]}",
+        f"{actor}->>+{boundary}: {steps[0]}",
+        f"{boundary}->>+{control}: {steps[1]}",
+        f"{control}->>+{entity}: {steps[2]}",
+        f"{entity}-->>-{control}: {steps[3]}",
+        f"{control}-->>-{boundary}: {steps[4]}",
+        f"{boundary}-->>-{actor}: {steps[5]}",
     ]) + "\n"
 
 

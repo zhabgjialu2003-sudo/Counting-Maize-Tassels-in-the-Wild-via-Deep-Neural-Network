@@ -3,9 +3,9 @@ actor Agronomist as Agronomist
 participant DiagnosisReviewPanel as Boundary: DiagnosisReviewPanel
 participant DiagnosisReviewControl as Control: DiagnosisReviewControl
 participant DiseaseDiagnosis as Entity: DiseaseDiagnosis
-Agronomist->>DiagnosisReviewPanel: Open assigned diagnosis
-DiagnosisReviewPanel->>DiagnosisReviewControl: Validate reviewer and decision
-DiagnosisReviewControl->>DiseaseDiagnosis: Load original diagnosis evidence
-DiseaseDiagnosis-->>DiagnosisReviewControl: Return immutable model evidence
-DiagnosisReviewControl-->>DiagnosisReviewPanel: Persist review metadata and audit
-DiagnosisReviewPanel-->>Agronomist: Display reviewed status
+Agronomist->>+DiagnosisReviewPanel: Open assigned diagnosis
+DiagnosisReviewPanel->>+DiagnosisReviewControl: Validate reviewer and decision
+DiagnosisReviewControl->>+DiseaseDiagnosis: Load original diagnosis evidence
+DiseaseDiagnosis-->>-DiagnosisReviewControl: Return immutable model evidence
+DiagnosisReviewControl-->>-DiagnosisReviewPanel: Persist review metadata and audit
+DiagnosisReviewPanel-->>-Agronomist: Display reviewed status

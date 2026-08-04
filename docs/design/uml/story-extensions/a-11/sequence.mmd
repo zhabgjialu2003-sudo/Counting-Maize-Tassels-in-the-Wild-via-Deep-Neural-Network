@@ -3,9 +3,9 @@ actor Farmer as Farmer
 participant MobileUploadPage as Boundary: MobileUploadPage
 participant UploadValidationControl as Control: UploadValidationControl
 participant ImageFile as Entity: ImageFile
-Farmer->>MobileUploadPage: Select and prepare image
-MobileUploadPage->>UploadValidationControl: Upload with progress
-UploadValidationControl->>ImageFile: Validate MIME, bytes and pixels
-ImageFile-->>UploadValidationControl: Persist UUID and encrypted data
-UploadValidationControl-->>MobileUploadPage: Return image identifier
-MobileUploadPage-->>Farmer: Show completion or retry
+Farmer->>+MobileUploadPage: Select and prepare image
+MobileUploadPage->>+UploadValidationControl: Upload with progress
+UploadValidationControl->>+ImageFile: Validate MIME, bytes and pixels
+ImageFile-->>-UploadValidationControl: Persist UUID and encrypted data
+UploadValidationControl-->>-MobileUploadPage: Return image identifier
+MobileUploadPage-->>-Farmer: Show completion or retry

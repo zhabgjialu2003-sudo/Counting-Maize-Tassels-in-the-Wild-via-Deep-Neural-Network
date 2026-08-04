@@ -3,9 +3,9 @@ actor Researcher as Researcher
 participant DatasetAccessPage as Boundary: DatasetAccessPage
 participant DatasetExportControl as Control: DatasetExportControl
 participant Dataset as Entity: Dataset
-Researcher->>DatasetAccessPage: Select dataset export
-DatasetAccessPage->>DatasetExportControl: Verify permission and format
-DatasetExportControl->>Dataset: Resolve approved dataset path
-Dataset-->>DatasetExportControl: Return approved file list
-DatasetExportControl-->>DatasetAccessPage: Build archive and manifest
-DatasetAccessPage-->>Researcher: Download governed archive
+Researcher->>+DatasetAccessPage: Select dataset export
+DatasetAccessPage->>+DatasetExportControl: Verify permission and format
+DatasetExportControl->>+Dataset: Resolve approved dataset path
+Dataset-->>-DatasetExportControl: Return approved file list
+DatasetExportControl-->>-DatasetAccessPage: Build archive and manifest
+DatasetAccessPage-->>-Researcher: Download governed archive

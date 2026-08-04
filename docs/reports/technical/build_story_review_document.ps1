@@ -1,11 +1,14 @@
 param(
     [string]$SourceDocx = (Join-Path $env:USERPROFILE 'Desktop\Preliminary_Technical_Documentation_Extended_User_Stories_Corrected.docx'),
-    [string]$DesktopOutput = (Join-Path $env:USERPROFILE 'Desktop\Extension_User_Stories_Review_Copy.docx')
+    [string]$DesktopOutput = (Join-Path $env:USERPROFILE 'Desktop\Extension_User_Stories_Review_Copy_Corrected.docx')
 )
 
 $ErrorActionPreference = 'Stop'
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 $RepoOutput = Join-Path $RepoRoot 'docs\reports\technical\extension-user-stories-review-copy.docx'
+$DataPath = Join-Path $RepoRoot 'docs\requirements\user-story-extension-details.json'
+$UmlRoot = Join-Path $RepoRoot 'docs\design\uml\story-extensions'
+$Stories = Get-Content -LiteralPath $DataPath -Raw -Encoding UTF8 | ConvertFrom-Json
 
 if (-not (Test-Path -LiteralPath $SourceDocx)) {
     throw "Source document not found: $SourceDocx"
@@ -53,9 +56,38 @@ function Replace-ExactText([string]$oldText, [string]$newText) {
     $find.Execute($oldText, $false, $false, $false, $false, $false, $true, 1, $false, $newText, 2) | Out-Null
 }
 
+function Replace-SequenceImages {
+    foreach ($story in $script:Stories) {
+        $altText = "$($story.id) Sequence Diagram"
+        $target = $null
+        foreach ($image in $script:doc.InlineShapes) {
+            if ($image.AlternativeText -eq $altText) {
+                $target = $image
+                break
+            }
+        }
+        if (-not $target) { throw "Sequence image not found: $altText" }
+
+        $slug = $story.id.ToLower().Replace('.', '-')
+        $path = Join-Path $script:UmlRoot "$slug\sequence.png"
+        if (-not (Test-Path -LiteralPath $path)) { throw "Sequence image missing: $path" }
+
+        $width = $target.Width
+        $range = $target.Range.Duplicate
+        $target.Delete()
+        $replacement = $script:doc.InlineShapes.AddPicture($path, $false, $true, $range)
+        $replacement.LockAspectRatio = -1
+        $replacement.Width = $width
+        $replacement.Title = $altText
+        $replacement.AlternativeText = $altText
+    }
+}
+
 try {
     $doc = $word.Documents.Open($DesktopOutput, $false, $false)
     $script:doc = $doc
+    $script:Stories = $Stories
+    $script:UmlRoot = $UmlRoot
 
     $locks = @{}
     foreach ($control in $doc.ContentControls) {
@@ -82,6 +114,8 @@ try {
     Replace-ExactText 'C. Agronomist (8 User Stories)' 'C. Agronomist (3 Extension User Stories)'
     Replace-ExactText 'D. Admin (9 User Stories)' 'D. Admin (3 Extension User Stories)'
     Replace-ExactText 'E. System (8 User Stories)' 'E. System (3 Extension User Stories)'
+
+    Replace-SequenceImages
 
     $intro = $doc.Range(0, 0)
     $intro.Text = "Extension User Stories - Review Copy`rNewly added stories only: A.9-A.11, B.7-B.9, C.6-C.8, D.7-D.9 and E.6-E.8.`r`r"

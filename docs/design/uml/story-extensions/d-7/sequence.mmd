@@ -3,9 +3,9 @@ actor Admin as Admin
 participant AdminConsole as Boundary: AdminConsole
 participant FieldAssignmentControl as Control: FieldAssignmentControl
 participant FieldAssignment as Entity: FieldAssignment
-Admin->>AdminConsole: Submit assignment change
-AdminConsole->>FieldAssignmentControl: Validate Admin, field and user
-FieldAssignmentControl->>FieldAssignment: Insert or remove unique assignment
-FieldAssignment-->>FieldAssignmentControl: Return current assignment
-FieldAssignmentControl-->>AdminConsole: Write audit log
-AdminConsole-->>Admin: Refresh access-management view
+Admin->>+AdminConsole: Submit assignment change
+AdminConsole->>+FieldAssignmentControl: Validate Admin, field and user
+FieldAssignmentControl->>+FieldAssignment: Insert or remove unique assignment
+FieldAssignment-->>-FieldAssignmentControl: Return current assignment
+FieldAssignmentControl-->>-AdminConsole: Write audit log
+AdminConsole-->>-Admin: Refresh access-management view
