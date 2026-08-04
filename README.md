@@ -47,6 +47,19 @@ Role-specific result, history, report and export views
 Detailed architecture, AI logic, database design, tests, reports, and manuals
 are indexed in [`docs/ASSESSMENT_INDEX.md`](docs/ASSESSMENT_INDEX.md).
 
+## Final documentation package
+
+- [Final Requirements, Design, and Testing document](docs/reports/technical/final-requirements-design-testing.docx)
+- [Extension User Stories](docs/requirements/user-story-extensions.md)
+- [Extended system description](docs/design/system-description-extended.md)
+- [Editable Use Case, BCE, and Sequence diagrams](docs/design/uml/extensions/)
+- [Editable extended ERD](docs/design/database/erd-extended.mmd)
+- [Current regression test cases](docs/testing/current-regression-test-cases.md)
+
+The original 30 User Stories remain unchanged. The extension package adds 15
+implemented stories grouped under Farmer, Researcher, Agronomist, Admin, and
+System.
+
 ## Repository structure
 
 ```text
@@ -89,8 +102,8 @@ Create the database and apply the current schema:
 ```powershell
 createdb -U postgres maize_detector
 psql -U postgres -d maize_detector -f database\schema\schema_postgresql.sql
-psql -U postgres -d maize_detector -f database\migrations\001_user_story_compliance.sql
-psql -U postgres -d maize_detector -f database\migrations\002_disease_agronomist.sql
+python -m backend.migrations
+python -m backend.migrations --check
 ```
 
 Start the application with the VS Code `Run Maize Detector` launch
@@ -146,7 +159,7 @@ checks, and deployment gates are in
 python -m unittest discover -s tests -v
 ```
 
-The current baseline is 54 automated tests. The latest verified result is recorded in
+The current baseline is 78 automated tests. The latest verified result is recorded in
 [`docs/testing/TEST_RESULTS.md`](docs/testing/TEST_RESULTS.md).
 
 ## Responsible use and limitations

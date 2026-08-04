@@ -1,0 +1,26 @@
+sequenceDiagram
+  autonumber
+  actor Farmer
+  participant UI as Mobile PWA
+  participant API as Flask API
+  participant Auth as Session Control
+  participant Guard as Image Validator
+  participant AI as Tassel Predictor
+  participant DB as PostgreSQL
+
+  Farmer->>UI: Select or capture maize field photo
+  UI->>API: Upload image with Bearer token
+  API->>Auth: Validate token against current account
+  Auth->>DB: Read status, role, permissions, session_version
+  DB-->>Auth: Active account state
+  Auth-->>API: Authorized Farmer
+  API->>Guard: Validate size, MIME, decoding, and pixels
+  Guard-->>API: UUID name, SHA-256, dimensions
+  API->>DB: Store Image and encrypted ImageFile
+  API-->>UI: image_id
+  UI->>API: Request tassel prediction
+  API->>AI: Infer with content/model cache key
+  AI-->>API: Count, boxes, confidence, timing
+  API->>DB: Store DetectionResult and audit log
+  API-->>UI: Structured result
+  UI-->>Farmer: Highlight tassels and explain result

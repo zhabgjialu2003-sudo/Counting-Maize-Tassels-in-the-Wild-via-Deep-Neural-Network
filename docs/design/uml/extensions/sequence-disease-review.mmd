@@ -1,0 +1,30 @@
+sequenceDiagram
+  autonumber
+  actor Farmer
+  actor Agronomist
+  participant UI as Web / Mobile UI
+  participant API as Flask API
+  participant AI as Disease Predictor
+  participant Advice as Advice Engine
+  participant DB as PostgreSQL
+
+  Farmer->>UI: Upload leaf photo and optional field context
+  UI->>API: Request bilingual screening
+  API->>AI: Quality gate and calibrated classification
+  alt Photo quality is insufficient
+    AI-->>API: retake_required + quality issues
+  else Evidence can be screened
+    AI-->>API: condition evidence + uncertainty metrics
+  end
+  API->>Advice: Add language and field context
+  Advice-->>API: Human-centred observations and next steps
+  API->>DB: Store DiseaseDiagnosis and encrypted evidence
+  API-->>UI: Screening result with safety note
+  UI-->>Farmer: Explain result, uncertainty, and next action
+  Agronomist->>API: Open diagnoses for assigned fields
+  API->>DB: Verify FieldAssignment and load permitted records
+  DB-->>API: Assigned diagnoses only
+  API-->>Agronomist: Review evidence
+  Agronomist->>API: Confirm, correct, or mark inconclusive
+  API->>DB: Save reviewer decision and audit log
+  API-->>Agronomist: Review persisted

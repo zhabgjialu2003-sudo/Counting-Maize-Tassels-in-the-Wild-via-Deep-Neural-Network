@@ -1,0 +1,36 @@
+sequenceDiagram
+  autonumber
+  actor Farmer
+  participant UI as Mobile / Web UI
+  participant API as Flask API
+  participant Auth as Session Control
+  participant Guard as Image Validator
+  participant Tassel as Tassel Predictor
+  participant Disease as Disease Predictor
+  participant Advice as Bilingual Advice Engine
+  participant DB as PostgreSQL
+  participant Store as Encrypted Storage
+
+  Farmer->>UI: Select maize field or leaf photo
+  UI->>API: Multipart upload + Bearer token
+  API->>Auth: Reload current user, role, status, permissions
+  Auth->>DB: Read user and session_version
+  DB-->>Auth: Current active account
+  Auth-->>API: Authorized identity
+  API->>Guard: Enforce byte, MIME, decode, pixel limits
+  Guard-->>API: UUID name + SHA-256 + dimensions
+  API->>Store: Encrypt validated bytes
+  API->>DB: Save Image metadata and encrypted blob
+  alt Tassel counting
+    API->>Tassel: Infer by content digest and active model
+    Tassel-->>API: Count, boxes, confidence, timing
+    API->>DB: Save DetectionResult
+  else Leaf screening
+    API->>Disease: Quality gate and calibrated classification
+    Disease-->>API: Condition evidence or retake state
+    API->>Advice: Add context and selected language
+    Advice-->>API: Human-centred observations and next steps
+    API->>DB: Save DiseaseDiagnosis
+  end
+  API-->>UI: Structured bilingual result
+  UI-->>Farmer: Clear outcome, uncertainty, and next action

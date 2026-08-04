@@ -6,7 +6,7 @@ Verification date: 2026-08-03 (Asia/Shanghai)
 
 | Check | Result |
 |---|---|
-| Automated test suite | 54 passed, 0 failed |
+| Automated test suite | 78 passed, 0 failed in 11.695 seconds |
 | PostgreSQL-backed API tests | Passed |
 | Tassel deployment model | Loaded and completed real inference |
 | Disease deployment model | Loaded, ready and completed real inference |

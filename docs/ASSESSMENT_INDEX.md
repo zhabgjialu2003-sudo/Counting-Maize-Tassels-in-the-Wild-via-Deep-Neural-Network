@@ -10,7 +10,9 @@ requirements to their repository locations.
 |---|---|
 | Privacy-safe supervisor deliverables summary | [Project Deliverables](requirements/PROJECT_DELIVERABLES.md) |
 | User stories | [User Stories](requirements/user-stories.md) |
+| Added stories by all five roles | [Extension User Stories](requirements/user-story-extensions.md) |
 | Requirement-to-code traceability | [User Story Code Guide](requirements/user-story-code-guide.md) |
+| Final integrated Word document | [Final Requirements, Design, and Testing](reports/technical/final-requirements-design-testing.docx) |
 
 ## Analysis and design
 
@@ -19,8 +21,11 @@ requirements to their repository locations.
 | System architecture | [System Architecture](design/architecture/system-architecture.md) |
 | AI logic design | [AI Logic Design](design/ai/ai-logic-design.md) |
 | Database design | [PostgreSQL ERD](design/database/erd.md) |
+| Extended system description | [Extended System Description](design/system-description-extended.md) |
+| Extended editable ERD | [Extended ERD source](design/database/erd-extended.mmd) |
 | BCE diagrams | [BCE diagram directory](design/uml/bce/) |
 | Sequence diagrams | [Sequence diagram directory](design/uml/sequence/) |
+| Extended Use Case, BCE and Sequence diagrams | [Extension diagram package](design/uml/extensions/) |
 | Core activity and sequence flow | [Core-flow directory](design/uml/core-flow/) |
 | Repository organization | [Repository Reorganization Design](design/repository/2026-08-03-repository-reorganization-design.md) |
 
@@ -52,6 +57,7 @@ requirements to their repository locations.
 |---|---|
 | Automated tests | [`tests/`](../tests/) |
 | Test strategy and cases | [`docs/testing/`](testing/) |
+| Current extension regression cases | [Current Regression Test Cases](testing/current-regression-test-cases.md) |
 | Latest verified results | [Test Results](testing/TEST_RESULTS.md) |
 | Historical compliance audits | [`docs/testing/audits/`](testing/audits/) |
 
