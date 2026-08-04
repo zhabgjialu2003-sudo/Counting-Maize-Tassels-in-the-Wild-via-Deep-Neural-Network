@@ -12,7 +12,8 @@ requirements to their repository locations.
 | User stories | [User Stories](requirements/user-stories.md) |
 | Added stories by all five roles | [Extension User Stories](requirements/user-story-extensions.md) |
 | Requirement-to-code traceability | [User Story Code Guide](requirements/user-story-code-guide.md) |
-| Final integrated Word document | [Final Requirements, Design, and Testing](reports/technical/final-requirements-design-testing.docx) |
+| Template-complete Word extension | [Preliminary Technical Documentation — Extended User Stories](reports/technical/preliminary-technical-documentation-extended.docx) |
+| Supplementary integrated summary | [Final Requirements, Design, and Testing](reports/technical/final-requirements-design-testing.docx) |
 
 ## Analysis and design
 

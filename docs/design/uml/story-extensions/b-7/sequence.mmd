@@ -1,0 +1,12 @@
+sequenceDiagram
+autonumber
+actor Researcher as Researcher
+participant ResearchDashboard as Boundary: ResearchDashboard
+participant InferenceResultControl as Control: InferenceResultControl
+participant DetectionResult as Entity: DetectionResult
+Researcher->>ResearchDashboard: Request research records
+ResearchDashboard->>InferenceResultControl: Authorize and apply filters
+InferenceResultControl->>DetectionResult: Load result and model evidence
+DetectionResult-->>InferenceResultControl: Return sanitized provenance
+InferenceResultControl-->>ResearchDashboard: Format uncertainty metadata
+ResearchDashboard-->>Researcher: Review record suitability

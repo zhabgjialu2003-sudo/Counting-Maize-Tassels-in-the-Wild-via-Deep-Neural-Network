@@ -1,0 +1,19 @@
+classDiagram
+direction LR
+class AdminConsole["Boundary: AdminConsole"] {
+  +listAssignments()
+  +assignAgronomist()
+  +removeAssignment()
+}
+class FieldAssignmentControl["Control: FieldAssignmentControl"] {
+  +validateAdmin()
+  +validateAgronomist()
+  +auditChange()
+}
+class FieldAssignment["Entity: FieldAssignment"] {
+  +fieldId
+  +agronomistUserId
+  +assignedByUserId
+}
+AdminConsole --> FieldAssignmentControl : calls
+FieldAssignmentControl --> FieldAssignment : reads / persists

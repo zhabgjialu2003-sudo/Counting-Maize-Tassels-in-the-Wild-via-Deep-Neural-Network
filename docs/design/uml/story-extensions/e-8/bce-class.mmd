@@ -1,0 +1,19 @@
+classDiagram
+direction LR
+class HealthStartupInterface["Boundary: HealthStartupInterface"] {
+  +checkReadiness()
+  +reportCapacity()
+  +reportMigrationStatus()
+}
+class WorkloadMigrationControl["Control: WorkloadMigrationControl"] {
+  +applyChecksummedMigrations()
+  +boundCacheAndQueue()
+  +limitRequests()
+}
+class SchemaMigration["Entity: SchemaMigration"] {
+  +migrationName
+  +sha256
+  +appliedAt
+}
+HealthStartupInterface --> WorkloadMigrationControl : calls
+WorkloadMigrationControl --> SchemaMigration : reads / persists

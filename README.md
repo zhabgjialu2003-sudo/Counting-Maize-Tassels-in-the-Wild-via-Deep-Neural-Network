@@ -49,7 +49,8 @@ are indexed in [`docs/ASSESSMENT_INDEX.md`](docs/ASSESSMENT_INDEX.md).
 
 ## Final documentation package
 
-- [Final Requirements, Design, and Testing document](docs/reports/technical/final-requirements-design-testing.docx)
+- [Template-complete extension document](docs/reports/technical/preliminary-technical-documentation-extended.docx) — preserves the original 30 User Stories and adds the 15 new stories using the submitted Word template
+- [Supplementary integrated requirements, design, and testing summary](docs/reports/technical/final-requirements-design-testing.docx)
 - [Extension User Stories](docs/requirements/user-story-extensions.md)
 - [Extended system description](docs/design/system-description-extended.md)
 - [Editable Use Case, BCE, and Sequence diagrams](docs/design/uml/extensions/)

@@ -1,0 +1,19 @@
+classDiagram
+direction LR
+class MobileUploadPage["Boundary: MobileUploadPage"] {
+  +prepareImage()
+  +showProgress()
+  +retryUpload()
+}
+class UploadValidationControl["Control: UploadValidationControl"] {
+  +readLimited()
+  +validateContent()
+  +storeEncrypted()
+}
+class ImageFile["Entity: ImageFile"] {
+  +uuidName
+  +sha256
+  +encryptedData
+}
+MobileUploadPage --> UploadValidationControl : calls
+UploadValidationControl --> ImageFile : reads / persists

@@ -1,0 +1,12 @@
+sequenceDiagram
+autonumber
+actor Farmer as Farmer
+participant LeafAssistantPage as Boundary: LeafAssistantPage
+participant DiseaseAssistanceControl as Control: DiseaseAssistanceControl
+participant DiseaseDiagnosis as Entity: DiseaseDiagnosis
+Farmer->>LeafAssistantPage: Submit leaf photo and context
+LeafAssistantPage->>DiseaseAssistanceControl: Validate image and quality
+DiseaseAssistanceControl->>DiseaseDiagnosis: Store validated evidence
+DiseaseDiagnosis-->>DiseaseAssistanceControl: Return evidence identifier
+DiseaseAssistanceControl-->>LeafAssistantPage: Run calibrated screening and advice
+LeafAssistantPage-->>Farmer: Display bilingual guidance

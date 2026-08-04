@@ -1,0 +1,19 @@
+classDiagram
+direction LR
+class AgronomistDashboard["Boundary: AgronomistDashboard"] {
+  +loadAssignedFields()
+  +openDiagnosis()
+  +viewProtectedImage()
+}
+class FieldAssignmentReviewControl["Control: FieldAssignmentReviewControl"] {
+  +resolveAssignments()
+  +scopeEvidence()
+  +denyUnassigned()
+}
+class FieldAssignment["Entity: FieldAssignment"] {
+  +fieldId
+  +agronomistUserId
+  +assignedAt
+}
+AgronomistDashboard --> FieldAssignmentReviewControl : calls
+FieldAssignmentReviewControl --> FieldAssignment : reads / persists
