@@ -19,15 +19,15 @@
 
 <div class="container">
   <!-- USER STORY A.1 Boundary: select, validate, preview, and upload maize images. -->
-  <a href="mobile.html" class="mobile-only" id="mobileBack" style="color:var(--mobile-green);font-weight:750;text-decoration:none">‹ 返回首页</a>
+  <a href="mobile.html" class="mobile-only" id="mobileBack" style="color:var(--mobile-green);font-weight:750;text-decoration:none">‹ Back home</a>
   <h2 class="page-title" id="uploadTitle">Upload Maize Image</h2>
   <p class="page-subtitle" id="uploadSubtitle">Select maize field images for tassel detection (JPG / PNG only)</p>
 
   <div class="mobile-guide mobile-only" id="mobileTasselGuide" style="margin-bottom:1rem">
-    <strong>拍摄前看一眼</strong>
-    ✓ 横向拍摄整片植株<br>
-    ✓ 光线均匀，不要逆光<br>
-    ✓ 尽量避免叶片遮挡
+    <strong>Before you take the photo</strong>
+    ✓ Use a wide field view<br>
+    ✓ Avoid backlight and deep shade<br>
+    ✓ Reduce leaf obstruction where possible
   </div>
 
   <!-- USER STORY A.5 Boundary: enable multiple-image batch upload. -->
@@ -42,14 +42,18 @@
     <div class="form-group">
       <label class="desktop-only">Select Image<small id="batchHint" style="display:none;"> - hold Ctrl/Cmd to select multiple</small></label>
       <!-- USER STORY A.7 Boundary: capture="environment" opens the rear camera on mobile. -->
-      <input class="desktop-only" type="file" id="fileInput" accept="image/jpeg,image/png" capture="environment" onchange="handleFiles(this.files)" style="padding:0.5rem;">
+      <input type="file" id="fileInput" accept="image/jpeg,image/png" capture="environment" onchange="handleFiles(this.files)" style="display:none !important;">
+      <div class="desktop-only" style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
+        <label for="fileInput" class="btn btn-outline" style="margin:0;">Choose field image</label>
+        <span id="desktopFileStatus" class="info-text">No image selected</span>
+      </div>
       <label class="mobile-file-label mobile-only">
         <div class="mobile-file-prompt" id="mobileFilePrompt">
           <div style="font-size:2.7rem" aria-hidden="true">📷</div>
-          <strong>点这里拍摄田间照片</strong>
-          <span>也可以从相册选择 · JPG / PNG</span>
+          <strong>Tap to photograph the field</strong>
+          <span>Or choose from your library · JPG / PNG</span>
         </div>
-        <input type="file" id="mobileFileInput" accept="image/jpeg,image/png" capture="environment" onchange="handleFiles(this.files)" aria-label="拍摄或选择玉米田间照片">
+        <input type="file" id="mobileFileInput" accept="image/jpeg,image/png" capture="environment" onchange="handleFiles(this.files)" aria-label="Photograph or choose a maize field image">
       </label>
     </div>
 
@@ -64,7 +68,7 @@
       <div class="progress-bar"><div class="fill" id="progressFill" style="width:0%;"></div></div>
     </div>
     <div id="mobileUploadProgress" class="mobile-only" style="display:none;margin:1rem 0">
-      <div class="high-contrast-note"><span id="mobileProgressText">正在准备图片…</span>
+      <div class="high-contrast-note"><span id="mobileProgressText">Preparing the photo…</span>
         <div class="upload-meter" style="margin-top:0.5rem"><span id="mobileProgressFill"></span></div>
       </div>
     </div>
@@ -82,9 +86,9 @@
 </div>
 
 <nav class="mobile-bottom-nav" aria-label="Mobile navigation">
-  <a href="mobile.html"><span aria-hidden="true">⌂</span><b id="uploadNavHome">首页</b></a>
-  <a href="history.html"><span aria-hidden="true">◷</span><b id="uploadNavHistory">历史</b></a>
-  <a href="profile.html"><span aria-hidden="true">○</span><b id="uploadNavMine">我的</b></a>
+  <a href="mobile.html"><span aria-hidden="true">⌂</span><b id="uploadNavHome">Home</b></a>
+  <a href="history.html"><span aria-hidden="true">◷</span><b id="uploadNavHistory">History</b></a>
+  <a href="profile.html"><span aria-hidden="true">○</span><b id="uploadNavMine">My account</b></a>
 </nav>
 
 <script src="../js/api.js"></script>
@@ -131,12 +135,18 @@ async function handleFiles(files) {
     }
     selectedFiles.push(f);
   }
+  const desktopFileStatus = document.getElementById('desktopFileStatus');
+  if (desktopFileStatus) {
+    desktopFileStatus.textContent = selectedFiles.length
+      ? selectedFiles.map(file => file.name).join(', ')
+      : 'No image selected';
+  }
   if (window.matchMedia('(max-width: 768px)').matches && selectedFiles.length === 1) {
     const original = selectedFiles[0];
     const progress = document.getElementById('mobileUploadProgress');
     progress.style.display = 'block';
     document.getElementById('mobileProgressText').textContent =
-      mobileLanguage() === 'zh-CN' ? '正在安全压缩图片，帮你节省流量…' : 'Preparing a smaller photo to save mobile data…';
+      'Preparing a smaller photo to save mobile data…';
     try {
       // Field acceptance showed 2560 px could reduce the count. 4096/q0.90
       // retained the 121-tassel baseline while still reducing transfer size.
@@ -146,8 +156,8 @@ async function handleFiles(files) {
       const url = URL.createObjectURL(original);
       prompt.innerHTML = '<img src="' + url + '" alt="Selected maize field" style="width:100%;max-height:360px;object-fit:contain">';
       document.getElementById('fileInfo').textContent =
-        `${mobileLanguage() === 'zh-CN' ? '原图' : 'Original'}: ${formatFileSize(mobilePreparedInfo.originalBytes)} · ` +
-        `${mobileLanguage() === 'zh-CN' ? '上传' : 'Upload'}: ${formatFileSize(mobilePreparedInfo.preparedBytes)} · ` +
+        `Original: ${formatFileSize(mobilePreparedInfo.originalBytes)} · ` +
+        `Upload: ${formatFileSize(mobilePreparedInfo.preparedBytes)} · ` +
         `${mobilePreparedInfo.width}×${mobilePreparedInfo.height}`;
       progress.style.display = 'none';
     } catch (error) {
@@ -261,9 +271,8 @@ async function submitUpload() {
     const mobileProgress = document.getElementById('mobileUploadProgress');
     if (window.matchMedia('(max-width: 768px)').matches) mobileProgress.style.display = 'block';
     const outcome = await uploadAndPredict(selectedFiles[0], percent => {
-      const zh = mobileLanguage() === 'zh-CN';
       document.getElementById('mobileProgressText').textContent =
-        percent < 100 ? `${zh ? '正在上传' : 'Uploading'} ${percent}%` : (zh ? '图片已上传，模型正在计数…' : 'Photo uploaded. The model is counting…');
+        percent < 100 ? `Uploading ${percent}%` : 'Photo uploaded. The model is counting…';
       document.getElementById('mobileProgressFill').style.width = `${percent}%`;
     });
     mobileProgress.style.display = 'none';
@@ -300,33 +309,28 @@ function resetUpload() {
   document.getElementById('batchProgress').style.display = 'none';
   sessionStorage.removeItem('lastImageDataUrl');
   document.getElementById('estimateText').textContent = '';
+  document.getElementById('desktopFileStatus').textContent = 'No image selected';
   updatePreview();
   renderUploadLanguage();
 }
 
 function renderUploadLanguage() {
-  const zh = mobileLanguage() === 'zh-CN';
   if (!window.matchMedia('(max-width: 768px)').matches) return;
-  document.documentElement.lang = zh ? 'zh-CN' : 'en';
-  document.getElementById('mobileBack').textContent = zh ? '‹ 返回首页' : '‹ Back home';
-  document.getElementById('uploadTitle').textContent = zh ? '拍摄玉米田间照片' : 'Photograph the maize field';
-  document.getElementById('uploadSubtitle').textContent = zh
-    ? '模型会标记并统计照片中可见的玉米穗'
-    : 'The model will mark and count visible tassels in the photo';
-  document.getElementById('mobileTasselGuide').innerHTML = zh
-    ? '<strong>拍摄前看一眼</strong>✓ 横向拍摄整片植株<br>✓ 光线均匀，不要逆光<br>✓ 尽量避免叶片遮挡'
-    : '<strong>Before you take the photo</strong>✓ Use a wide field view<br>✓ Avoid backlight and deep shade<br>✓ Reduce leaf obstruction where possible';
+  document.documentElement.lang = 'en';
+  document.getElementById('mobileBack').textContent = '‹ Back home';
+  document.getElementById('uploadTitle').textContent = 'Photograph the maize field';
+  document.getElementById('uploadSubtitle').textContent = 'The model will mark and count visible tassels in the photo';
+  document.getElementById('mobileTasselGuide').innerHTML = '<strong>Before you take the photo</strong>✓ Use a wide field view<br>✓ Avoid backlight and deep shade<br>✓ Reduce leaf obstruction where possible';
   if (!selectedFiles.length) {
     document.getElementById('mobileFilePrompt').innerHTML =
-      '<div style="font-size:2.7rem" aria-hidden="true">📷</div><strong>' +
-      (zh ? '点这里拍摄田间照片' : 'Tap to photograph the field') +
-      '</strong><span>' + (zh ? '也可以从相册选择 · JPG / PNG' : 'Or choose from your library · JPG / PNG') + '</span>';
+      '<div style="font-size:2.7rem" aria-hidden="true">📷</div><strong>Tap to photograph the field</strong>' +
+      '<span>Or choose from your library · JPG / PNG</span>';
   }
-  document.getElementById('analyzeBtn').textContent = zh ? '上传并开始计数' : 'Upload and count';
-  document.getElementById('clearButton').textContent = zh ? '清除' : 'Clear';
-  document.getElementById('uploadNavHome').textContent = zh ? '首页' : 'Home';
-  document.getElementById('uploadNavHistory').textContent = zh ? '历史' : 'History';
-  document.getElementById('uploadNavMine').textContent = zh ? '我的' : 'My account';
+  document.getElementById('analyzeBtn').textContent = 'Upload and count';
+  document.getElementById('clearButton').textContent = 'Clear';
+  document.getElementById('uploadNavHome').textContent = 'Home';
+  document.getElementById('uploadNavHistory').textContent = 'History';
+  document.getElementById('uploadNavMine').textContent = 'My account';
 }
 renderUploadLanguage();
 </script>

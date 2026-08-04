@@ -1,6 +1,6 @@
 param(
     [string]$SourceDocx = (Join-Path $env:USERPROFILE 'Desktop\Preliminary_Technical_Documentation_Extended_User_Stories_Corrected.docx'),
-    [string]$DesktopOutput = (Join-Path $env:USERPROFILE 'Desktop\Extension_User_Stories_Review_Copy_Corrected.docx')
+    [string]$DesktopOutput = (Join-Path $env:USERPROFILE 'Desktop\Extension_User_Stories_Review_Copy_English.docx')
 )
 
 $ErrorActionPreference = 'Stop'
@@ -8,6 +8,7 @@ $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 $RepoOutput = Join-Path $RepoRoot 'docs\reports\technical\extension-user-stories-review-copy.docx'
 $DataPath = Join-Path $RepoRoot 'docs\requirements\user-story-extension-details.json'
 $UmlRoot = Join-Path $RepoRoot 'docs\design\uml\story-extensions'
+$UiRoot = Join-Path $RepoRoot 'docs\evidence\user-story-extensions\ui'
 $Stories = Get-Content -LiteralPath $DataPath -Raw -Encoding UTF8 | ConvertFrom-Json
 
 if (-not (Test-Path -LiteralPath $SourceDocx)) {
@@ -83,11 +84,39 @@ function Replace-SequenceImages {
     }
 }
 
+function Replace-UiImages {
+    foreach ($story in $script:Stories) {
+        $altText = "$($story.id) Current User Interface"
+        $target = $null
+        foreach ($image in $script:doc.InlineShapes) {
+            if ($image.AlternativeText -eq $altText) {
+                $target = $image
+                break
+            }
+        }
+        if (-not $target) { throw "UI image not found: $altText" }
+
+        $fileStem = $story.id.Replace('.', '_')
+        $path = Join-Path $script:UiRoot "$fileStem.png"
+        if (-not (Test-Path -LiteralPath $path)) { throw "UI image missing: $path" }
+
+        $width = $target.Width
+        $range = $target.Range.Duplicate
+        $target.Delete()
+        $replacement = $script:doc.InlineShapes.AddPicture($path, $false, $true, $range)
+        $replacement.LockAspectRatio = -1
+        $replacement.Width = $width
+        $replacement.Title = $altText
+        $replacement.AlternativeText = $altText
+    }
+}
+
 try {
     $doc = $word.Documents.Open($DesktopOutput, $false, $false)
     $script:doc = $doc
     $script:Stories = $Stories
     $script:UmlRoot = $UmlRoot
+    $script:UiRoot = $UiRoot
 
     $locks = @{}
     foreach ($control in $doc.ContentControls) {
@@ -116,6 +145,7 @@ try {
     Replace-ExactText 'E. System (8 User Stories)' 'E. System (3 Extension User Stories)'
 
     Replace-SequenceImages
+    Replace-UiImages
 
     $intro = $doc.Range(0, 0)
     $intro.Text = "Extension User Stories - Review Copy`rNewly added stories only: A.9-A.11, B.7-B.9, C.6-C.8, D.7-D.9 and E.6-E.8.`r`r"
@@ -140,6 +170,7 @@ try {
     }
 
     $doc.Fields.Update() | Out-Null
+    $doc.RemoveDocumentInformation(4)
     $doc.Save()
     $pages = $doc.ComputeStatistics(2)
     $doc.Close($false)
