@@ -149,7 +149,7 @@ tr:hover { background: var(--gray-50); }
 .alert-warning { background: #fff3cd; color: #b8860b; border: 1px solid #ffeaa7; }
 
 /* Preview */
-.preview-box { border: 2px dashed var(--gray-300); border-radius: var(--radius); padding: 2rem; text-align: center; margin: 1rem 0; min-height: 200px; display: flex; align-items: center; justify-content: center; }
+.preview-box { border: 2px dashed var(--gray-300); border-radius: var(--radius); padding: 2rem; text-align: center; margin: 1rem 0; min-height: 200px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
 .preview-box img { max-width: 100%; max-height: 400px; border-radius: 6px; }
 
 /* Tabs */

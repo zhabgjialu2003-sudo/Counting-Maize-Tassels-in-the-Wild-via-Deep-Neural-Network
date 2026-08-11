@@ -95,6 +95,7 @@ class MobilePwaStaticTests(unittest.TestCase):
         self.assertIn('capture="environment"', camera.group(0))
         self.assertNotIn("capture=", gallery.group(0))
         self.assertIn('<label class="mobile-file-label mobile-only" for="mobileGalleryInput">', source)
+        self.assertIn('<label class="preview-box desktop-only" id="previewBox" for="fileInput"', source)
         self.assertIn(".form-group .mobile-file-label {", styles)
         self.assertIn(".form-group .mobile-file-label.mobile-only { display: grid; }", styles)
         self.assertIn("Take photo", source)
