@@ -15,6 +15,7 @@
       guideTwoTitle: '2. Use soft light', guideTwoText: 'Avoid deep shadows, glare and digital zoom.',
       guideThreeTitle: '3. Show the symptom', guideThreeText: 'Include both affected and nearby healthy tissue.',
       filePromptTitle: 'Take or choose a leaf photo', filePromptText: 'JPG or PNG · up to 10 MB',
+      takePhotoText: 'Take photo', chooseGalleryText: 'Choose from gallery',
       fieldLabel: 'Field for optional Agronomist review', noField: 'No field selected',
       fieldHelp: 'A field is only required if you later ask an Agronomist to review the result.',
       cropStageLabel: 'Growth stage (optional)', cropPlaceholder: 'For example: before tasseling',
@@ -52,6 +53,7 @@
       guideTwoTitle: '2. 使用柔和光线', guideTwoText: '避免浓重阴影、反光和数码变焦。',
       guideThreeTitle: '3. 拍清病变位置', guideThreeText: '同时保留病变组织和附近健康组织。',
       filePromptTitle: '拍摄或选择叶片照片', filePromptText: 'JPG 或 PNG · 最大 10 MB',
+      takePhotoText: '拍照', chooseGalleryText: '从相册选择',
       fieldLabel: '选择田块（申请农艺师复核时使用）', noField: '暂不选择田块',
       fieldHelp: '初步筛查不要求田块；只有申请农艺师复核时才必须选择。',
       cropStageLabel: '生育期（可不填）', cropPlaceholder: '例如：抽雄前',
@@ -100,7 +102,7 @@
     const simpleIds = [
       'pageEyebrow', 'pageTitle', 'pageIntro', 'languageLabel', 'backLink', 'purposeTitle', 'purposeText',
       'purposeLink', 'guideOneTitle', 'guideOneText', 'guideTwoTitle', 'guideTwoText', 'guideThreeTitle',
-      'guideThreeText', 'filePromptTitle', 'filePromptText', 'fieldLabel', 'fieldHelp', 'cropStageLabel',
+      'guideThreeText', 'filePromptTitle', 'filePromptText', 'takePhotoText', 'chooseGalleryText', 'fieldLabel', 'fieldHelp', 'cropStageLabel',
       'weatherLabel', 'spreadLabel', 'submitButton', 'resultEyebrow', 'emptyResultTitle', 'emptyResultText',
       'reviewEyebrow', 'reviewTitle', 'reviewIntro', 'reviewReasonLabel', 'requestReviewButton', 'historyEyebrow',
       'historyTitle', 'refreshHistory', 'navHome', 'navHistory', 'navProfile'
@@ -142,6 +144,7 @@
   }
 
   async function choosePhoto(file) {
+    if (!file) return;
     text('uploadState', copy('preparing'));
     try {
       state.prepared = await prepareImageForUpload(file, { maxLongEdge: 2200, quality: 0.88 });
@@ -314,7 +317,15 @@
     setActiveNav();
     setInterfaceLanguage(state.language);
     await loadFields();
-    byId('leafPhoto').addEventListener('change', event => choosePhoto(event.target.files[0]));
+    ['leafDesktopPhoto', 'leafCameraPhoto', 'leafGalleryPhoto'].forEach(id => {
+      byId(id).addEventListener('change', async event => {
+        const input = event.currentTarget;
+        const file = input.files && input.files[0];
+        if (!file) return;
+        await choosePhoto(file);
+        input.value = '';
+      });
+    });
     byId('leafForm').addEventListener('submit', submitScreening);
     byId('requestReviewButton').addEventListener('click', requestReview);
     byId('refreshHistory').addEventListener('click', loadHistory);

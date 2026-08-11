@@ -41,20 +41,30 @@
   <div class="card">
     <div class="form-group">
       <label class="desktop-only">Select Image<small id="batchHint" style="display:none;"> - hold Ctrl/Cmd to select multiple</small></label>
-      <!-- USER STORY A.7 Boundary: capture="environment" opens the rear camera on mobile. -->
-      <input type="file" id="fileInput" accept="image/jpeg,image/png" capture="environment" onchange="handleFiles(this.files)" style="display:none !important;">
+      <input type="file" id="fileInput" accept="image/jpeg,image/png" onchange="handleFileInput(this)" style="display:none !important;">
       <div class="desktop-only" style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
         <label for="fileInput" class="btn btn-outline" style="margin:0;">Choose field image</label>
         <span id="desktopFileStatus" class="info-text">No image selected</span>
       </div>
-      <label class="mobile-file-label mobile-only">
+      <div class="mobile-file-label mobile-only">
         <div class="mobile-file-prompt" id="mobileFilePrompt">
           <div style="font-size:2.7rem" aria-hidden="true">📷</div>
-          <strong>Tap to photograph the field</strong>
-          <span>Or choose from your library · JPG / PNG</span>
+          <strong>Add a maize-field photo</strong>
+          <span>Take a new photo or choose one from your gallery · JPG / PNG</span>
         </div>
-        <input type="file" id="mobileFileInput" accept="image/jpeg,image/png" capture="environment" onchange="handleFiles(this.files)" aria-label="Photograph or choose a maize field image">
-      </label>
+      </div>
+      <div class="photo-source-actions mobile-only" aria-label="Choose photo source">
+        <label class="btn btn-primary photo-source-control" for="mobileCameraInput">
+          <span aria-hidden="true">📷</span>
+          <span id="mobileTakePhotoText">Take photo</span>
+          <input type="file" id="mobileCameraInput" accept="image/jpeg,image/png" capture="environment" onchange="handleFileInput(this)" aria-label="Take a maize field photo">
+        </label>
+        <label class="btn btn-outline photo-source-control" for="mobileGalleryInput">
+          <span aria-hidden="true">▣</span>
+          <span id="mobileChooseGalleryText">Choose from gallery</span>
+          <input type="file" id="mobileGalleryInput" accept="image/jpeg,image/png" onchange="handleFileInput(this)" aria-label="Choose a maize field photo from gallery">
+        </label>
+      </div>
     </div>
 
     <div class="preview-box desktop-only" id="previewBox">
@@ -201,6 +211,13 @@ async function handleFiles(files) {
   updatePreview();
 }
 
+async function handleFileInput(input) {
+  const files = Array.from(input.files || []);
+  if (!files.length) return;
+  await handleFiles(files);
+  input.value = '';
+}
+
 function updatePreview() {
   const box = document.getElementById('previewBox');
   const btn = document.getElementById('analyzeBtn');
@@ -339,7 +356,8 @@ function resetUpload() {
   selectedFiles = [];
   uploadIdempotencyKeys = new WeakMap();
   document.getElementById('fileInput').value = '';
-  document.getElementById('mobileFileInput').value = '';
+  document.getElementById('mobileCameraInput').value = '';
+  document.getElementById('mobileGalleryInput').value = '';
   document.getElementById('errorBox').innerHTML = '';
   document.getElementById('batchProgress').style.display = 'none';
   sessionStorage.removeItem('lastImageDataUrl');
@@ -358,9 +376,11 @@ function renderUploadLanguage() {
   document.getElementById('mobileTasselGuide').innerHTML = '<strong>Before you take the photo</strong>✓ Use a wide field view<br>✓ Avoid backlight and deep shade<br>✓ Reduce leaf obstruction where possible';
   if (!selectedFiles.length) {
     document.getElementById('mobileFilePrompt').innerHTML =
-      '<div style="font-size:2.7rem" aria-hidden="true">📷</div><strong>Tap to photograph the field</strong>' +
-      '<span>Or choose from your library · JPG / PNG</span>';
+      '<div style="font-size:2.7rem" aria-hidden="true">📷</div><strong>Add a maize-field photo</strong>' +
+      '<span>Take a new photo or choose one from your gallery · JPG / PNG</span>';
   }
+  document.getElementById('mobileTakePhotoText').textContent = 'Take photo';
+  document.getElementById('mobileChooseGalleryText').textContent = 'Choose from gallery';
   document.getElementById('analyzeBtn').textContent = 'Upload and count';
   document.getElementById('clearButton').textContent = 'Clear';
   document.getElementById('uploadNavHome').textContent = 'Home';

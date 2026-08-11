@@ -276,6 +276,33 @@ tr:hover { background: var(--gray-50); }
   transform: translateY(-1px);
 }
 
+.photo-source-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 0.85rem 0;
+}
+
+.photo-source-control {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: 50px;
+  text-align: center;
+  overflow: hidden;
+}
+
+.photo-source-control input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
 .leaf-dropzone input {
   position: absolute;
   inset: 0;
@@ -380,6 +407,10 @@ tr:hover { background: var(--gray-50); }
   }
 
   .photo-guide {
+    grid-template-columns: 1fr;
+  }
+
+  .photo-source-actions {
     grid-template-columns: 1fr;
   }
 

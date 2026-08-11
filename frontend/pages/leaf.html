@@ -47,15 +47,27 @@
         </div>
 
         <form id="leafForm" novalidate>
-          <label class="leaf-dropzone" id="leafDropzone" for="leafPhoto">
+          <label class="leaf-dropzone" id="leafDropzone" for="leafDesktopPhoto">
             <img class="leaf-preview" id="leafPreview" alt="Selected maize leaf" hidden>
             <span id="filePrompt" class="leaf-file-prompt">
               <span class="leaf-camera-icon" aria-hidden="true">▣</span>
               <strong id="filePromptTitle">Take or choose a leaf photo</strong>
               <small id="filePromptText">JPG or PNG · up to 10 MB</small>
             </span>
-            <input id="leafPhoto" type="file" accept="image/jpeg,image/png" capture="environment">
+            <input class="desktop-only" id="leafDesktopPhoto" type="file" accept="image/jpeg,image/png" aria-label="Choose a maize leaf photo">
           </label>
+          <div class="photo-source-actions mobile-only" aria-label="Choose photo source">
+            <label class="btn btn-primary photo-source-control" for="leafCameraPhoto">
+              <span aria-hidden="true">📷</span>
+              <span id="takePhotoText">Take photo</span>
+              <input id="leafCameraPhoto" type="file" accept="image/jpeg,image/png" capture="environment" aria-label="Take a maize leaf photo">
+            </label>
+            <label class="btn btn-outline photo-source-control" for="leafGalleryPhoto">
+              <span aria-hidden="true">▣</span>
+              <span id="chooseGalleryText">Choose from gallery</span>
+              <input id="leafGalleryPhoto" type="file" accept="image/jpeg,image/png" aria-label="Choose a maize leaf photo from gallery">
+            </label>
+          </div>
           <p id="sizeNote" class="info-text" aria-live="polite"></p>
 
           <div class="leaf-form-grid">
