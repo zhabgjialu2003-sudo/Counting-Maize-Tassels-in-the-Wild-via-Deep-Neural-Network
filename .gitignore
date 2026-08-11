@@ -22,6 +22,7 @@ Thumbs.db
 # Temp
 *.tmp
 *.log
+output/
 backend/uploads/
 backend/backups/
 datasets/*.zip
