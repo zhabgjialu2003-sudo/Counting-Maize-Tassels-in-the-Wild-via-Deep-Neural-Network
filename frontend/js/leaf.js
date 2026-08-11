@@ -326,6 +326,20 @@
         input.value = '';
       });
     });
+    const dropzone = byId('leafDropzone');
+    const openDropzonePicker = event => {
+      if (event && event.target === byId('leafDesktopPhoto')) return;
+      const input = window.matchMedia('(max-width: 768px)').matches
+        ? byId('leafGalleryPhoto')
+        : byId('leafDesktopPhoto');
+      input.click();
+    };
+    dropzone.addEventListener('click', openDropzonePicker);
+    dropzone.addEventListener('keydown', event => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      openDropzonePicker(event);
+    });
     byId('leafForm').addEventListener('submit', submitScreening);
     byId('requestReviewButton').addEventListener('click', requestReview);
     byId('refreshHistory').addEventListener('click', loadHistory);

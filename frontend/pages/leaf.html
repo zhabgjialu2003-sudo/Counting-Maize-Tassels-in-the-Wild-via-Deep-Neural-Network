@@ -47,7 +47,7 @@
         </div>
 
         <form id="leafForm" novalidate>
-          <label class="leaf-dropzone" id="leafDropzone" for="leafDesktopPhoto">
+          <div class="leaf-dropzone" id="leafDropzone" role="button" tabindex="0" aria-label="Choose a maize leaf photo">
             <img class="leaf-preview" id="leafPreview" alt="Selected maize leaf" hidden>
             <span id="filePrompt" class="leaf-file-prompt">
               <span class="leaf-camera-icon" aria-hidden="true">▣</span>
@@ -55,7 +55,7 @@
               <small id="filePromptText">JPG or PNG · up to 10 MB</small>
             </span>
             <input class="desktop-only" id="leafDesktopPhoto" type="file" accept="image/jpeg,image/png" aria-label="Choose a maize leaf photo">
-          </label>
+          </div>
           <div class="photo-source-actions mobile-only" aria-label="Choose photo source">
             <label class="btn btn-primary photo-source-control" for="leafCameraPhoto">
               <span aria-hidden="true">📷</span>

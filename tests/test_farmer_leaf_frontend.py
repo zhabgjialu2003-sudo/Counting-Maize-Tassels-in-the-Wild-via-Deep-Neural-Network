@@ -42,6 +42,8 @@ class FarmerLeafFrontendTests(unittest.TestCase):
         self.assertIn('capture="environment"', camera.group(0))
         self.assertNotIn("capture=", gallery.group(0))
         self.assertIn("'leafDesktopPhoto', 'leafCameraPhoto', 'leafGalleryPhoto'", script)
+        self.assertIn("? byId('leafGalleryPhoto')", script)
+        self.assertIn("dropzone.addEventListener('click', openDropzonePicker)", script)
         self.assertIn("从相册选择", script)
 
 

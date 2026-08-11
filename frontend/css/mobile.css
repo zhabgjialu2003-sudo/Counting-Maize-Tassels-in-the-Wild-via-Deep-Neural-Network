@@ -187,9 +187,9 @@
 .profile-help { color: #536157; font-size: 0.88rem; line-height: 1.5; }
 .profile-notice { margin-top: 0.85rem; }
 
-.mobile-file-label {
+.form-group .mobile-file-label {
   position: relative;
-  display: grid;
+  display: none;
   min-height: 190px;
   place-items: center;
   margin: 0.9rem 0;
@@ -199,10 +199,10 @@
   background: #f2f8ef;
   color: var(--mobile-ink);
   text-align: center;
-  cursor: default;
+  cursor: pointer;
 }
 
-.mobile-file-label input {
+.form-group .mobile-file-label input {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -211,7 +211,7 @@
   cursor: pointer;
 }
 
-.mobile-file-label img {
+.form-group .mobile-file-label img {
   width: 100%;
   max-height: 360px;
   object-fit: contain;
@@ -251,7 +251,7 @@
   body { color: var(--mobile-ink); font-size: 16px; padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
   .desktop-only { display: none !important; }
   .mobile-only { display: revert; }
-  .mobile-file-label.mobile-only { display: grid; }
+  .form-group .mobile-file-label.mobile-only { display: grid; }
   .photo-source-actions.mobile-only { display: grid; }
   .nav { display: none; }
   .container { padding: 1rem 0.8rem; }

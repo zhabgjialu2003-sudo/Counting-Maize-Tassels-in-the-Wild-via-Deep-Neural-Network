@@ -87,12 +87,16 @@ class MobilePwaStaticTests(unittest.TestCase):
 
     def test_mobile_upload_offers_camera_and_gallery_separately(self):
         source = (FRONTEND / "pages" / "upload.html").read_text("utf-8")
+        styles = (FRONTEND / "css" / "mobile.css").read_text("utf-8")
         camera = re.search(r'<input[^>]+id="mobileCameraInput"[^>]*>', source)
         gallery = re.search(r'<input[^>]+id="mobileGalleryInput"[^>]*>', source)
         self.assertIsNotNone(camera)
         self.assertIsNotNone(gallery)
         self.assertIn('capture="environment"', camera.group(0))
         self.assertNotIn("capture=", gallery.group(0))
+        self.assertIn('<label class="mobile-file-label mobile-only" for="mobileGalleryInput">', source)
+        self.assertIn(".form-group .mobile-file-label {", styles)
+        self.assertIn(".form-group .mobile-file-label.mobile-only { display: grid; }", styles)
         self.assertIn("Take photo", source)
         self.assertIn("Choose from gallery", source)
 
