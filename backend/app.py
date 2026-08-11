@@ -2343,24 +2343,39 @@ def dataset_download(dataset_id: int):
     except Exception as exc:
         return db_error_response(exc)
 
-    try:
-        source = resolve_approved_path(
-            str(dataset.get("dataset_path") or ""),
-            roots=configured_dataset_roots(),
-        )
-    except ApprovedPathError as exc:
-        app.logger.warning("Rejected dataset download path: %s", exc)
-        return fail("Dataset files are not available from approved storage", 409)
+    source = None
+    dataset_path = str(dataset.get("dataset_path") or "").strip()
+    if dataset_path:
+        try:
+            source = resolve_approved_path(
+                dataset_path,
+                roots=configured_dataset_roots(),
+            )
+        except ApprovedPathError as exc:
+            app.logger.warning("Rejected dataset download path: %s", exc)
+            return fail("Dataset files are not available from approved storage", 409)
     memory = tempfile.SpooledTemporaryFile(max_size=20 * 1024 * 1024)
-    manifest = json.dumps(jsonable(dataset), indent=2, ensure_ascii=False).encode("utf-8")
+    manifest_data = jsonable(dataset)
+    manifest_data["export"] = {
+        "content_mode": "files" if source is not None else "manifest_only",
+        "files_included": source is not None,
+    }
+    manifest = json.dumps(manifest_data, indent=2, ensure_ascii=False).encode("utf-8")
+    metadata_notice = (
+        "This archive contains dataset metadata only. The original dataset files "
+        "were not uploaded to managed storage. Ask an administrator to upload the "
+        "dataset package if image and annotation files are required.\n"
+    ).encode("utf-8")
     if archive_format == "zip":
         with zipfile.ZipFile(memory, "w", zipfile.ZIP_DEFLATED) as archive:
             archive.writestr("dataset-manifest.json", manifest)
-            if source.exists() and source.is_dir():
+            if source is None:
+                archive.writestr("README.txt", metadata_notice)
+            elif source.is_dir():
                 for path in source.rglob("*"):
                     if path.is_file() and path.stat().st_size <= 25 * 1024 * 1024:
                         archive.write(path, path.relative_to(source))
-            elif source.exists() and source.is_file():
+            elif source.is_file():
                 archive.write(source, source.name)
         mime = "application/zip"
         suffix = "zip"
@@ -2369,18 +2384,24 @@ def dataset_download(dataset_id: int):
             info = tarfile.TarInfo("dataset-manifest.json")
             info.size = len(manifest)
             archive.addfile(info, fileobj=io.BytesIO(manifest))
-            if source.exists() and source.is_dir():
+            if source is None:
+                info = tarfile.TarInfo("README.txt")
+                info.size = len(metadata_notice)
+                archive.addfile(info, fileobj=io.BytesIO(metadata_notice))
+            elif source.is_dir():
                 for path in source.rglob("*"):
                     if path.is_file() and path.stat().st_size <= 25 * 1024 * 1024:
                         archive.add(path, arcname=str(path.relative_to(source)))
-            elif source.exists() and source.is_file():
+            elif source.is_file():
                 archive.add(source, arcname=source.name)
         mime = "application/gzip"
         suffix = "tar.gz"
     memory.seek(0)
     filename = secure_filename(str(dataset["dataset_name"])) or f"dataset-{dataset_id}"
+    payload = memory.read()
+    memory.close()
     return Response(
-        memory.read(),
+        payload,
         mimetype=mime,
         headers={"Content-Disposition": f'attachment; filename="{filename}.{suffix}"'},
     )

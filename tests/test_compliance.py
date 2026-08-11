@@ -1,6 +1,10 @@
+import io
+import json
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
+from unittest.mock import patch
 
 import backend.app as backend
 
@@ -57,6 +61,45 @@ class ComplianceApiTests(unittest.TestCase):
         payload = response.get_json()
         self.assertEqual(len(payload["models"]), 2)
         self.assertIn(payload["winner_model_id"], [1, 2])
+
+    def test_researcher_can_download_metadata_only_dataset_manifest(self):
+        response = self.client.get(
+            "/api/datasets/1/download?format=zip",
+            headers=self.headers("Researcher", 2),
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.mimetype, "application/zip")
+        with zipfile.ZipFile(io.BytesIO(response.data)) as archive:
+            self.assertEqual(
+                set(archive.namelist()),
+                {"dataset-manifest.json", "README.txt"},
+            )
+            manifest = json.loads(archive.read("dataset-manifest.json"))
+            notice = archive.read("README.txt").decode("utf-8")
+        self.assertEqual(manifest["dataset_id"], 1)
+        self.assertEqual(manifest["export"]["content_mode"], "manifest_only")
+        self.assertFalse(manifest["export"]["files_included"])
+        self.assertIn("metadata only", notice)
+
+    def test_researcher_dataset_page_surfaces_download_errors(self):
+        source = (Path(__file__).resolve().parents[1] / "frontend" / "pages" / "researcher.html").read_text("utf-8")
+        self.assertIn('id="datasetDownloadStatus"', source)
+        self.assertIn("payload.message || payload.error", source)
+        self.assertIn("Cannot reach the server", source)
+        self.assertNotIn("alert('Dataset download failed.')", source)
+
+    def test_dataset_download_still_rejects_an_unapproved_nonempty_path(self):
+        with patch.object(
+            backend,
+            "resolve_approved_path",
+            side_effect=backend.ApprovedPathError("outside approved storage"),
+        ):
+            response = self.client.get(
+                "/api/datasets/4/download?format=zip",
+                headers=self.headers("Researcher", 2),
+            )
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("approved storage", response.get_json()["message"])
 
     def test_farmer_cannot_compare_models(self):
         response = self.client.post(
