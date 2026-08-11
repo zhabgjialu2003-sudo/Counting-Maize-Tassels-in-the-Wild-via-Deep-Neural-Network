@@ -19,6 +19,12 @@ class FarmerLeafFrontendTests(unittest.TestCase):
         self.assertIn("Count Maize Tassels", dashboard)
         self.assertIn("Check Leaf Health", dashboard)
 
+    def test_dashboard_uses_balanced_wide_desktop_container(self):
+        dashboard = (ROOT / "frontend/pages/dashboard.html").read_text(encoding="utf-8")
+        styles = (ROOT / "frontend/css/style.css").read_text(encoding="utf-8")
+        self.assertIn('class="container farmer-dashboard-container"', dashboard)
+        self.assertIn(".farmer-dashboard-container { max-width: 1440px; }", styles)
+
     def test_leaf_page_uses_external_safe_renderer(self):
         page = (ROOT / "frontend/pages/leaf.html").read_text(encoding="utf-8")
         script = (ROOT / "frontend/js/leaf.js").read_text(encoding="utf-8")
