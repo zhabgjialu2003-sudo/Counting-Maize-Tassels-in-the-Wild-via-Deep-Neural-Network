@@ -63,6 +63,31 @@ class MobilePwaStaticTests(unittest.TestCase):
         self.assertIn("isSensitiveRequest", source)
         self.assertIn("request.method !== 'GET'", source)
 
+    def test_service_worker_network_failures_always_return_a_response(self):
+        source = (FRONTEND / "sw.js").read_text("utf-8")
+        self.assertIn("async function offlineNavigationResponse()", source)
+        self.assertIn("async function cachedAssetOrError(request)", source)
+        self.assertIn("return offlineNavigationResponse();", source)
+        self.assertIn("return cachedAssetOrError(request);", source)
+        self.assertGreaterEqual(source.count("new Response("), 2)
+
+    def test_offline_document_uses_root_relative_assets(self):
+        source = (FRONTEND / "offline.html").read_text("utf-8")
+        self.assertIn('href="/frontend/icons/maize-icon-192.png"', source)
+        self.assertIn('href="/frontend/css/style.css"', source)
+        self.assertIn('href="/frontend/css/mobile.css"', source)
+        self.assertNotIn('href="./css/', source)
+
+    def test_pwa_metadata_and_install_prompt_are_current(self):
+        source = (FRONTEND / "js" / "pwa.js").read_text("utf-8")
+        self.assertIn("ensureCapableMeta('mobile-web-app-capable')", source)
+        self.assertIn("ensureCapableMeta('apple-mobile-web-app-capable')", source)
+        self.assertIn("if (!installButtons.length) return;", source)
+        self.assertLess(
+            source.index("if (!installButtons.length) return;"),
+            source.index("event.preventDefault();"),
+        )
+
     def test_status_text_colors_meet_wcag_aa(self):
         pairs = [
             ("#142018", "#e3f1df"),

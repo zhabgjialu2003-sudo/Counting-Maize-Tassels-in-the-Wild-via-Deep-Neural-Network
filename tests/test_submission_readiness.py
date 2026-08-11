@@ -45,7 +45,7 @@ class SubmissionReadinessTests(unittest.TestCase):
             "Admin",
             "System",
             "Assessment Evidence Index",
-            "116 automated tests with zero failures",
+            "119 automated tests with zero failures",
             "models/deployment/tassel-best.pt",
             "models/deployment/maize-disease.torchscript.pt",
         ):

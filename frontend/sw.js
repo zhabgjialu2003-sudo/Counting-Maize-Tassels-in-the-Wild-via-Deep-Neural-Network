@@ -1,4 +1,4 @@
-const SHELL_CACHE = 'maize-shell-v7';
+const SHELL_CACHE = 'maize-shell-v10';
 const SHELL_ASSETS = [
   './offline.html',
   './pages/login.html',
@@ -39,6 +39,26 @@ function isSensitiveRequest(url) {
     url.pathname.startsWith('/storage/');
 }
 
+async function offlineNavigationResponse() {
+  const offlineUrl = new URL('./offline.html', self.location.href).href;
+  return (await caches.match(offlineUrl)) || new Response(
+    '<!doctype html><html lang="en"><meta charset="utf-8"><title>Offline</title>' +
+    '<body><h1>You are offline</h1><p>Reconnect and try again.</p></body></html>',
+    {
+      status: 503,
+      statusText: 'Offline',
+      headers: { 'Content-Type': 'text/html; charset=utf-8' },
+    },
+  );
+}
+
+async function cachedAssetOrError(request) {
+  return (await caches.match(request)) || new Response('', {
+    status: 504,
+    statusText: 'Offline asset unavailable',
+  });
+}
+
 self.addEventListener('fetch', event => {
   const request = event.request;
   if (request.method !== 'GET') return;
@@ -47,20 +67,29 @@ self.addEventListener('fetch', event => {
 
   if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(request).catch(() => caches.match('./offline.html'))
+      (async () => {
+        try {
+          return await fetch(request);
+        } catch (error) {
+          return offlineNavigationResponse();
+        }
+      })()
     );
     return;
   }
 
   event.respondWith(
-    fetch(request)
-      .then(response => {
+    (async () => {
+      try {
+        const response = await fetch(request);
         if (response.ok) {
-          const copy = response.clone();
-          caches.open(SHELL_CACHE).then(cache => cache.put(request, copy));
+          const cache = await caches.open(SHELL_CACHE);
+          await cache.put(request, response.clone());
         }
         return response;
-      })
-      .catch(() => caches.match(request))
+      } catch (error) {
+        return cachedAssetOrError(request);
+      }
+    })()
   );
 });
