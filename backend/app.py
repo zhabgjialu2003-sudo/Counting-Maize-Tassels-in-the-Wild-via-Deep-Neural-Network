@@ -1153,6 +1153,7 @@ def auth_login():
             "role": user["role"],
             "status": user["status"],
             "permissions": permissions_for(user),
+            "session_version": user["session_version"],
         }
         return ok({
             "status": "success",

@@ -153,7 +153,12 @@ class FarmerAccountApiTests(unittest.TestCase):
         new_login = self.client.post("/api/auth/login", json={"email": self.email, "password": new_password})
         self.assertEqual(old_login.status_code, 401)
         self.assertEqual(new_login.status_code, 200)
+        fresh_session = self.client.get(
+            "/api/auth/me",
+            headers={"Authorization": "Bearer " + new_login.get_json()["access_token"]},
+        )
         stale_session = self.client.get("/api/auth/me", headers=self.headers)
+        self.assertEqual(fresh_session.status_code, 200)
         self.assertEqual(stale_session.status_code, 401)
 
     def test_disabled_account_cannot_reuse_an_existing_token(self):
