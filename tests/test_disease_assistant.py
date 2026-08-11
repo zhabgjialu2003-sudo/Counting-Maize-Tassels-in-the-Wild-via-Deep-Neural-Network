@@ -1,5 +1,6 @@
 import io
 import json
+import re
 import tempfile
 import unittest
 from contextlib import contextmanager
@@ -311,6 +312,20 @@ class DiseaseAssistantApiContractTests(unittest.TestCase):
         self.assertIn("Leaf Assistant (C.1+)", html)
         self.assertIn("叶片助手（C.1+）", html)
         self.assertIn("apiDiagnoseDisease", api)
+
+    def test_agronomist_mobile_offers_camera_and_gallery_sources(self):
+        root = Path(__file__).resolve().parents[1]
+        html = (root / "frontend/pages/agronomist.html").read_text(encoding="utf-8")
+        camera = re.search(r'<input[^>]+id="agronomistCameraPhoto"[^>]*>', html)
+        gallery = re.search(r'<input[^>]+id="agronomistGalleryPhoto"[^>]*>', html)
+        self.assertIsNotNone(camera)
+        self.assertIsNotNone(gallery)
+        self.assertIn('accept="image/jpeg,image/png"', camera.group(0))
+        self.assertIn('capture="environment"', camera.group(0))
+        self.assertIn('accept="image/jpeg,image/png"', gallery.group(0))
+        self.assertNotIn("capture=", gallery.group(0))
+        self.assertIn("handleDiagnosisPhotoSelection", html)
+        self.assertIn("['agronomistCameraPhoto', 'agronomistGalleryPhoto']", html)
 
 
 if __name__ == "__main__":
