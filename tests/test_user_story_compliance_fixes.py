@@ -83,7 +83,13 @@ class UserStoryComplianceFixTests(unittest.TestCase):
         self.temp_uploads.cleanup()
 
     def headers(self, role="Farmer", user_id=1, *, idempotency_key=None):
-        token = backend.issue_access_token({"user_id": user_id})
+        with db_connection() as conn:
+            row = conn.execute(
+                "SELECT session_version FROM users WHERE user_id = %s", (user_id,)
+            ).fetchone()
+        token = backend.issue_access_token(
+            {"user_id": user_id, "session_version": row["session_version"]}
+        )
         headers = {"Authorization": f"Bearer {token}"}
         if idempotency_key:
             headers["Idempotency-Key"] = idempotency_key
@@ -137,9 +143,15 @@ class UserStoryComplianceFixTests(unittest.TestCase):
 
     def test_idempotency_key_is_scoped_to_user_and_new_keys_create_new_records(self):
         shared_key = f"field-upload-{uuid4()}"
-        first = self.upload(1, shared_key)
-        second_user = self.upload(9, shared_key)
-        new_intent = self.upload(1, f"field-upload-{uuid4()}")
+        with db_connection() as conn:
+            conn.execute("UPDATE users SET status = 'active' WHERE user_id = %s", (9,))
+        try:
+            first = self.upload(1, shared_key)
+            second_user = self.upload(9, shared_key)
+            new_intent = self.upload(1, f"field-upload-{uuid4()}")
+        finally:
+            with db_connection() as conn:
+                conn.execute("UPDATE users SET status = 'disabled' WHERE user_id = %s", (9,))
 
         self.assertEqual(first.status_code, 201)
         self.assertEqual(second_user.status_code, 201)

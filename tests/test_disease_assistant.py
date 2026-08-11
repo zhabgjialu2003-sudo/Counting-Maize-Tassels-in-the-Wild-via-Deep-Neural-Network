@@ -199,9 +199,14 @@ class DiseaseAssistantApiContractTests(unittest.TestCase):
         self.client = backend.app.test_client()
 
     def token(self, role="Agronomist", user_id=3):
+        with backend.db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT session_version FROM users WHERE user_id = %s", (user_id,))
+                row = cur.fetchone()
         return backend.issue_access_token(
             {
                 "user_id": user_id,
+                "session_version": row["session_version"],
                 "name": "Disease Assistant Test",
                 "email": "disease@example.com",
                 "role": role,
@@ -266,7 +271,9 @@ class DiseaseAssistantApiContractTests(unittest.TestCase):
         def persistence_failure_database():
             nonlocal connection_count
             connection_count += 1
-            if connection_count > 1:
+            # One connection issues the current-version token and one refreshes
+            # the authenticated user; fail only the diagnosis persistence step.
+            if connection_count > 2:
                 raise RuntimeError("simulated persistence failure")
             with old_db_connection() as conn:
                 yield conn

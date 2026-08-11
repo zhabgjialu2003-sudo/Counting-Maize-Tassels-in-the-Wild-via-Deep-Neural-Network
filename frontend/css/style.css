@@ -15,6 +15,81 @@
   --shadow: 0 2px 8px rgba(0,0,0,0.08);
 }
 
+/* Farmer dashboard and independent Leaf Health workflow. */
+.farmer-task-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1rem; margin-bottom:1.5rem; }
+.farmer-task-card { display:flex; min-height:190px; flex-direction:column; gap:.55rem; padding:1.25rem; color:#173523; text-decoration:none; background:#fff; border:1px solid #d9e2dc; border-radius:18px; box-shadow:0 8px 24px rgba(24,61,40,.07); transition:transform 160ms ease,box-shadow 160ms ease,border-color 160ms ease; }
+.farmer-task-card:hover,.farmer-task-card:focus-visible { transform:translateY(-3px); border-color:#397a56; box-shadow:0 12px 28px rgba(24,61,40,.13); }
+.farmer-task-card strong { font-size:1.25rem; }
+.farmer-task-card b { margin-top:auto; color:#246443; }
+.farmer-task-kicker { color:#6b756e; font-size:.78rem; font-weight:800; letter-spacing:.06em; text-transform:uppercase; }
+.farmer-task-primary { background:#153f2a; color:#fff; }
+.farmer-task-primary b,.farmer-task-primary .farmer-task-kicker { color:#d9f0c1; }
+.farmer-task-leaf { background:#fff7df; border-color:#ead18b; }
+.dashboard-section-title { margin-bottom:.75rem; color:var(--green); }
+.leaf-health-container { max-width:1180px; padding-bottom:5rem; }
+.leaf-back-link { color:#1f633f; font-weight:800; text-decoration:none; }
+.eyebrow { margin:0 0 .35rem; color:#5e765f; font-size:.76rem; font-weight:850; letter-spacing:.09em; text-transform:uppercase; }
+.leaf-purpose-note { display:flex; align-items:center; gap:.65rem 1rem; margin:0 0 1.25rem; padding:.9rem 1rem; border:1px solid #e6d199; border-radius:14px; background:#fff7dc; color:#483812; }
+.leaf-purpose-note span { flex:1; }
+.leaf-purpose-note a { color:#275f40; font-weight:800; white-space:nowrap; }
+.leaf-capture-panel { background:#fff; }
+.leaf-file-prompt { display:grid; gap:.3rem; pointer-events:none; }
+.leaf-camera-icon { font-size:2.15rem; color:#366d4b; }
+.photo-guide-item b { display:block; margin-bottom:.25rem; color:#7a520b; }
+.leaf-form-grid { display:grid; grid-template-columns:1fr 1fr; gap:0 1rem; margin-top:.7rem; }
+.leaf-form-grid .form-group:first-child,.leaf-form-grid .form-group:last-child { grid-column:1/-1; }
+.field-help { display:block; margin-top:.35rem; color:#647169; line-height:1.4; }
+.leaf-primary-action { width:100%; }
+.form-message { margin:.75rem 0 0; color:#744b09; font-weight:650; }
+.leaf-progress-track { height:8px; margin-bottom:.55rem; overflow:hidden; border-radius:999px; background:#e6d9aa; }
+.leaf-progress-track span { display:block; width:0; height:100%; background:#34784e; transition:width 180ms ease; }
+.diagnosis-progress p { margin:0; }
+.leaf-result-column { display:grid; gap:1rem; }
+.leaf-empty-result { min-height:240px; display:grid; align-content:center; }
+.leaf-empty-result h2 { color:#214d33; }
+.diagnosis-result h2 { margin:.25rem 0 1rem; color:#fff5cf; line-height:1.3; }
+.diagnosis-result .eyebrow { color:#bad6bf; }
+.diagnosis-result .diagnosis-section h3 { margin:0 0 .55rem; color:#dff0b7; font-size:1rem; }
+.leaf-result-summary { display:grid; grid-template-columns:1fr 1fr; gap:.65rem; }
+.leaf-result-metric { display:grid; gap:.22rem; padding:.75rem; border-radius:12px; background:rgba(255,255,255,.1); }
+.leaf-result-metric span { font-size:.78rem; color:#c9dfce; }
+.leaf-saved-note { margin:1rem 0 0; color:#d9f0c1; font-weight:700; }
+.review-request-panel { background:#fff9e8; border-color:#e5ca79; }
+.review-request-panel h2 { margin-top:0; color:#234e34; }
+.review-request-panel textarea { margin:.45rem 0 .75rem; }
+.review-recommended { border-left:5px solid #d18a16; }
+.leaf-history-section { margin-top:1.4rem; }
+.leaf-section-heading { display:flex; align-items:end; justify-content:space-between; gap:1rem; margin-bottom:.8rem; }
+.leaf-section-heading h2 { margin:0; color:#214d33; }
+.leaf-history-list { display:grid; gap:.65rem; }
+.leaf-history-item { display:grid; grid-template-columns:1fr auto; align-items:center; gap:.75rem; padding:.85rem; border:1px solid #e1e8e3; border-radius:12px; background:#fbfcfb; }
+.leaf-history-item time { display:block; margin-top:.2rem; color:#6d776f; font-size:.82rem; }
+.review-status { padding:.3rem .6rem; border-radius:999px; background:#edf1ee; color:#3c4f42; font-size:.78rem; font-weight:800; }
+.review-status-requested { background:#fff0c6; color:#79520c; }
+.review-status-in_review { background:#dceaf9; color:#24527f; }
+.review-status-reviewed { background:#dcefdc; color:#225b31; }
+.leaf-review-note { grid-column:1/-1; margin:0; padding-top:.65rem; border-top:1px solid #e3e9e5; }
+.agronomist-review-queue { margin-top:1.4rem; }
+.agronomist-review-list { display:grid; gap:.8rem; }
+.agronomist-review-item { padding:1rem; border:1px solid #dce5df; border-radius:14px; background:#fbfcfb; }
+.agronomist-review-item .info-text { margin:.2rem 0 0; }
+.review-request-reason { padding:.7rem; border-left:4px solid #d18a16; background:#fff7dc; }
+.review-queue-form { display:grid; grid-template-columns:1fr 1fr; gap:.75rem; margin-top:.75rem; }
+.review-queue-form label { display:grid; gap:.3rem; font-weight:700; }
+.review-queue-form label:nth-of-type(3),.review-queue-form .form-message { grid-column:1/-1; }
+.review-queue-form button { justify-self:start; }
+@media (max-width:900px) { .farmer-task-grid { grid-template-columns:1fr; } .farmer-task-card { min-height:150px; } }
+@media (max-width:820px) {
+  .leaf-purpose-note { align-items:flex-start; flex-direction:column; }
+  .leaf-form-grid,.leaf-result-summary { grid-template-columns:1fr; }
+  .leaf-form-grid .form-group { grid-column:1; }
+  .leaf-history-item { grid-template-columns:1fr; }
+  .leaf-review-note { grid-column:1; }
+  .review-queue-form { grid-template-columns:1fr; }
+  .review-queue-form label:nth-of-type(3),.review-queue-form .form-message { grid-column:1; }
+  .leaf-health-page { padding-bottom:68px; }
+}
+
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--gray-50); color: var(--gray-800); line-height: 1.6; }
 

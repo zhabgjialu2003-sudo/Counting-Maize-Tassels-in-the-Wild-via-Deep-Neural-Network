@@ -154,6 +154,7 @@ try:
     )
     from .security.passwords import password_policy_error
     from .security.rate_limits import InMemoryRateLimiter
+    from .services.disease_review import build_review_recommendation
     from .services.training_jobs import BoundedJobExecutor
 except ImportError:
     from database import db_config, db_connection
@@ -166,6 +167,7 @@ except ImportError:
     )
     from security.passwords import password_policy_error
     from security.rate_limits import InMemoryRateLimiter
+    from services.disease_review import build_review_recommendation
     from services.training_jobs import BoundedJobExecutor
 
 
@@ -3122,13 +3124,21 @@ def backup():
 
 # USER STORY C.4 - List fields with optional region filtering.
 @app.route("/api/fields", methods=["GET"])
-@require_roles("Researcher", "Agronomist", "Admin")
+@require_roles("Farmer", "Researcher", "Agronomist", "Admin")
 def fields():
     region = request.args.get("region")
     try:
         with db_connection() as conn:
             with conn.cursor() as cur:
-                if request.auth_user["role"] == "Agronomist":
+                if request.auth_user["role"] == "Farmer":
+                    query = "SELECT * FROM fields WHERE owner_user_id = %s"
+                    params: list[Any] = [request.auth_user["user_id"]]
+                    if region:
+                        query += " AND location = %s"
+                        params.append(region)
+                    query += " ORDER BY field_id"
+                    cur.execute(query, tuple(params))
+                elif request.auth_user["role"] == "Agronomist":
                     query = (
                         "SELECT f.* FROM fields f JOIN field_assignments fa "
                         "ON fa.field_id = f.field_id "
@@ -3363,6 +3373,7 @@ def diagnose_maize_leaf():
         predictor = get_disease_predictor()
         prediction = predictor.predict_bytes(image_bytes)
         response = build_advice(prediction, language=language, context=context)
+        response["review"] = build_review_recommendation(response)
     except InvalidDiseaseImage as exc:
         return fail(str(exc), 400)
     except DiseaseModelUnavailable as exc:
@@ -3470,8 +3481,10 @@ def list_maize_leaf_diagnoses():
     role = request.auth_user["role"]
     own_records_only = role in {"Farmer", "Researcher"}
     query = """
-        SELECT diagnosis_id, image_id, status, predicted_condition,
-               response_data, created_at
+        SELECT diagnosis_id, field_id, image_id, status, predicted_condition,
+               response_data, review_status, review_requested_at,
+               review_request_reason, reviewer_decision, reviewed_condition,
+               reviewer_note, reviewed_at, created_at
         FROM disease_diagnoses
     """
     params: list[Any] = []
@@ -3481,7 +3494,8 @@ def list_maize_leaf_diagnoses():
     elif role == "Agronomist":
         query += (
             " WHERE field_id IN (SELECT field_id FROM field_assignments "
-            "WHERE agronomist_user_id = %s)"
+            "WHERE agronomist_user_id = %s) "
+            "AND review_status <> 'not_requested'"
         )
         params.append(request.auth_user["user_id"])
     query += " ORDER BY created_at DESC LIMIT %s"
@@ -3507,11 +3521,27 @@ def list_maize_leaf_diagnoses():
         records.append(
             {
                 "diagnosis_id": row["diagnosis_id"],
+                "field_id": row.get("field_id"),
                 "image_id": row.get("image_id"),
                 "status": row["status"],
                 "condition_code": row.get("predicted_condition"),
                 "condition_name": condition.get("display_name"),
                 "headline": response_data.get("headline"),
+                "review_status": row.get("review_status") or "not_requested",
+                "review_requested_at": (
+                    row["review_requested_at"].isoformat()
+                    if row.get("review_requested_at")
+                    else None
+                ),
+                "review_request_reason": row.get("review_request_reason"),
+                "reviewer_decision": row.get("reviewer_decision"),
+                "reviewed_condition": row.get("reviewed_condition"),
+                "reviewer_note": row.get("reviewer_note"),
+                "reviewed_at": (
+                    row["reviewed_at"].isoformat()
+                    if row.get("reviewed_at")
+                    else None
+                ),
                 "created_at": (
                     row["created_at"].isoformat()
                     if row.get("created_at")
@@ -3520,6 +3550,175 @@ def list_maize_leaf_diagnoses():
             }
         )
     return ok({"records": records})
+
+
+@app.route(
+    "/api/agronomy/diagnoses/<int:diagnosis_id>/review-request",
+    methods=["POST"],
+)
+@require_roles("Farmer")
+@limit_requests("disease-review-request", 20, 60)
+def request_maize_leaf_review(diagnosis_id: int):
+    """Let a Farmer idempotently request help for an owned field diagnosis."""
+    payload = request.get_json(silent=True) or {}
+    reason = str(payload.get("reason") or "").strip()
+    if len(reason) > 500:
+        return fail("Review request reason must be 500 characters or fewer", 400)
+    try:
+        field_id = int(payload.get("field_id") or payload.get("fieldId"))
+    except (TypeError, ValueError):
+        return fail("A Farmer-owned field is required for review", 400)
+
+    try:
+        with db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT diagnosis_id, user_id, field_id, review_status,
+                           review_requested_at, review_request_reason
+                    FROM disease_diagnoses
+                    WHERE diagnosis_id = %s
+                    FOR UPDATE
+                    """,
+                    (diagnosis_id,),
+                )
+                diagnosis = cur.fetchone()
+                if not diagnosis or diagnosis["user_id"] != request.auth_user["user_id"]:
+                    return fail("Diagnosis record not found", 404)
+
+                cur.execute(
+                    """
+                    SELECT f.field_id,
+                           EXISTS (
+                               SELECT 1
+                               FROM field_assignments fa
+                               JOIN users u ON u.user_id = fa.agronomist_user_id
+                               JOIN roles r ON r.role_id = u.role_id
+                               WHERE fa.field_id = f.field_id
+                                 AND r.role_name = 'Agronomist'
+                                 AND u.status = 'active'
+                           ) AS has_active_reviewer
+                    FROM fields f
+                    WHERE f.field_id = %s AND f.owner_user_id = %s
+                    """,
+                    (field_id, request.auth_user["user_id"]),
+                )
+                field = cur.fetchone()
+                if not field:
+                    return fail("Farmer-owned field not found", 404)
+                if not field["has_active_reviewer"]:
+                    return fail("No Agronomist is assigned to this field yet", 409)
+
+                current_status = diagnosis.get("review_status") or "not_requested"
+                if current_status == "reviewed":
+                    return fail("This diagnosis has already been reviewed", 409)
+                if current_status in {"requested", "in_review"}:
+                    if diagnosis.get("field_id") != field_id:
+                        return fail("This review request is linked to another field", 409)
+                    return ok({
+                        "status": "success",
+                        "review_status": current_status,
+                        "review_requested_at": diagnosis.get("review_requested_at"),
+                        "review_request_reason": diagnosis.get("review_request_reason"),
+                        "idempotent_replay": True,
+                    })
+
+                cur.execute(
+                    """
+                    UPDATE disease_diagnoses
+                    SET field_id = %s,
+                        review_status = 'requested',
+                        review_requested_at = CURRENT_TIMESTAMP,
+                        review_request_reason = %s
+                    WHERE diagnosis_id = %s
+                    RETURNING review_status, review_requested_at,
+                              review_request_reason
+                    """,
+                    (field_id, reason or None, diagnosis_id),
+                )
+                requested = cur.fetchone()
+            log_action(
+                conn,
+                "maize_leaf_review_requested",
+                f"diagnosis_id={diagnosis_id}; field_id={field_id}",
+                request.auth_user["user_id"],
+            )
+        return ok({"status": "success", **requested, "idempotent_replay": False})
+    except Exception as exc:
+        return db_error_response(exc)
+
+
+@app.route(
+    "/api/agronomy/diagnoses/<int:diagnosis_id>/review-status",
+    methods=["PATCH"],
+)
+@require_roles("Agronomist", "Admin")
+def start_maize_leaf_review(diagnosis_id: int):
+    """Claim an assigned review without allowing cross-field access."""
+    payload = request.get_json(silent=True) or {}
+    requested_status = str(payload.get("status") or "").strip().lower()
+    if requested_status != "in_review":
+        return fail("status must be in_review", 400)
+
+    try:
+        with db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT diagnosis_id, field_id, review_status, reviewer_user_id
+                    FROM disease_diagnoses
+                    WHERE diagnosis_id = %s
+                    FOR UPDATE
+                    """,
+                    (diagnosis_id,),
+                )
+                diagnosis = cur.fetchone()
+                if not diagnosis:
+                    return fail("Diagnosis record not found", 404)
+                if request.auth_user["role"] != "Admin" and not user_can_reference_field(
+                    conn, diagnosis.get("field_id"), request.auth_user
+                ):
+                    return fail("Diagnosis record not found", 404)
+
+                current_status = diagnosis.get("review_status") or "not_requested"
+                if current_status == "not_requested":
+                    return fail("This diagnosis has not been requested for review", 409)
+                if current_status == "reviewed":
+                    return fail("This diagnosis has already been reviewed", 409)
+                if current_status == "in_review":
+                    if (
+                        request.auth_user["role"] != "Admin"
+                        and diagnosis.get("reviewer_user_id")
+                        not in {None, request.auth_user["user_id"]}
+                    ):
+                        return fail("This review is already being handled", 409)
+                    return ok({
+                        "status": "success",
+                        "review_status": "in_review",
+                        "idempotent_replay": True,
+                    })
+
+                cur.execute(
+                    """
+                    UPDATE disease_diagnoses
+                    SET review_status = 'in_review', reviewer_user_id = %s
+                    WHERE diagnosis_id = %s AND review_status = 'requested'
+                    RETURNING review_status
+                    """,
+                    (request.auth_user["user_id"], diagnosis_id),
+                )
+                started = cur.fetchone()
+                if not started:
+                    return fail("Review status changed; refresh and try again", 409)
+            log_action(
+                conn,
+                "maize_leaf_review_started",
+                f"diagnosis_id={diagnosis_id}",
+                request.auth_user["user_id"],
+            )
+        return ok({"status": "success", **started, "idempotent_replay": False})
+    except Exception as exc:
+        return db_error_response(exc)
 
 
 @app.route("/api/agronomy/diagnoses/<int:diagnosis_id>/review", methods=["POST"])
@@ -3558,8 +3757,10 @@ def review_maize_leaf_diagnosis(diagnosis_id: int):
                         reviewer_decision = %s,
                         reviewed_condition = %s,
                         reviewer_note = %s,
-                        reviewed_at = CURRENT_TIMESTAMP
+                        reviewed_at = CURRENT_TIMESTAMP,
+                        review_status = 'reviewed'
                     WHERE diagnosis_id = %s
+                      AND review_status IN ('requested', 'in_review')
                       AND (
                           %s = 'Admin'
                           OR field_id IN (
@@ -3567,8 +3768,13 @@ def review_maize_leaf_diagnosis(diagnosis_id: int):
                               WHERE agronomist_user_id = %s
                           )
                       )
+                      AND (
+                          %s = 'Admin'
+                          OR reviewer_user_id IS NULL
+                          OR reviewer_user_id = %s
+                      )
                     RETURNING diagnosis_id, status, predicted_condition,
-                              reviewer_decision, reviewed_condition,
+                              review_status, reviewer_decision, reviewed_condition,
                               reviewer_note, reviewed_at
                     """,
                     (
@@ -3577,6 +3783,8 @@ def review_maize_leaf_diagnosis(diagnosis_id: int):
                         reviewed_condition,
                         note,
                         diagnosis_id,
+                        request.auth_user["role"],
+                        request.auth_user["user_id"],
                         request.auth_user["role"],
                         request.auth_user["user_id"],
                     ),

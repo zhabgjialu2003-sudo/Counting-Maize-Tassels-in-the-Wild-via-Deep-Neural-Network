@@ -11,9 +11,14 @@ class ComplianceApiTests(unittest.TestCase):
         self.client = backend.app.test_client()
 
     def token(self, role, user_id=1):
+        with backend.db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT session_version FROM users WHERE user_id = %s", (user_id,))
+                row = cur.fetchone()
         return backend.issue_access_token(
             {
                 "user_id": user_id,
+                "session_version": row["session_version"],
                 "name": f"{role} Test",
                 "email": f"{role.lower()}@example.com",
                 "role": role,
@@ -106,9 +111,9 @@ class ComplianceApiTests(unittest.TestCase):
         self.assertIn("image_id is required", response.get_json()["message"])
 
     def test_a8_signed_session_can_be_validated(self):
-        response = self.client.get("/api/auth/me", headers=self.headers("Farmer", 9))
+        response = self.client.get("/api/auth/me", headers=self.headers("Farmer", 1))
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.get_json()["user"]["user_id"], 9)
+        self.assertEqual(response.get_json()["user"]["user_id"], 1)
 
     def test_b6_report_requires_valid_ordered_date_range(self):
         response = self.client.post(

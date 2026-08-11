@@ -1,211 +1,133 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<meta name="theme-color" content="#1f5136">
-<title>Maize Leaf Assistant / 玉米叶片助手</title>
-<link rel="manifest" href="../manifest.webmanifest">
-<link rel="icon" href="../icons/maize-icon-192.png">
-<link rel="apple-touch-icon" href="../icons/maize-icon-192.png">
-<link rel="stylesheet" href="../css/style.css">
-<link rel="stylesheet" href="../css/mobile.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#1f5136">
+  <title>Leaf Health | Maize Detector</title>
+  <link rel="manifest" href="../manifest.webmanifest">
+  <link rel="icon" href="../icons/maize-icon-192.png">
+  <link rel="apple-touch-icon" href="../icons/maize-icon-192.png">
+  <link rel="stylesheet" href="../css/style.css">
+  <link rel="stylesheet" href="../css/mobile.css">
 </head>
-<body>
-<div id="networkStatus" class="network-status" role="status" hidden></div>
-<nav class="nav" id="mainNav"></nav>
+<body class="leaf-health-page">
+  <div id="networkStatus" class="network-status" role="status" hidden></div>
+  <nav class="nav" id="mainNav"></nav>
 
-<main class="container" style="max-width:900px">
-  <div style="display:flex;justify-content:space-between;gap:0.75rem;align-items:start;margin-bottom:1rem">
-    <div>
-      <a href="mobile.html" class="mobile-only" id="backLink" style="color:var(--mobile-green);font-weight:750;text-decoration:none">‹ 返回首页</a>
-      <h1 class="page-title" id="pageTitle">我们一起仔细看看这片叶子</h1>
-      <p class="page-subtitle" id="pageIntro">照片越清楚，再加上一点田间情况，判断越有帮助。</p>
-    </div>
-    <select id="languageSelect" aria-label="Language / 语言" style="min-height:44px;border-radius:12px;padding:0.45rem;font-weight:750">
-      <option value="zh-CN">中文</option><option value="en">EN</option>
-    </select>
-  </div>
-
-  <div class="diagnosis-shell">
-    <section class="mobile-capture-card">
-      <div class="mobile-guide" id="photoGuide">
-        <strong>拍摄前看一眼</strong>
-        ✓ 光线柔和，避免阴影和反光<br>
-        ✓ 让一片叶子占据大部分画面<br>
-        ✓ 拿稳手机，先对焦再拍摄
+  <main class="container leaf-health-container">
+    <header class="agronomy-toolbar">
+      <div>
+        <a href="mobile.html" class="mobile-only leaf-back-link" id="backLink">‹ Home</a>
+        <p class="eyebrow" id="pageEyebrow">Farmer leaf screening</p>
+        <h1 class="page-title" id="pageTitle">Check leaf health</h1>
+        <p class="page-subtitle" id="pageIntro">Upload one clear, close-up maize leaf photo for an initial screening.</p>
       </div>
-      <form id="leafForm">
-        <label class="mobile-file-label">
-          <div class="mobile-file-prompt" id="filePrompt">
-            <div style="font-size:2.7rem" aria-hidden="true">📷</div>
-            <strong>点这里拍摄叶片</strong>
-            <span>也可以从相册选择 · JPG / PNG</span>
+      <label class="language-picker" for="languageSelect">
+        <span id="languageLabel">Language</span>
+        <select id="languageSelect" aria-label="Language / 语言">
+          <option value="en">English</option>
+          <option value="zh-CN">中文</option>
+        </select>
+      </label>
+    </header>
+
+    <div class="leaf-purpose-note" role="note">
+      <strong id="purposeTitle">Use the right photo</strong>
+      <span id="purposeText">Leaf Health needs a close-up of one affected leaf. Tassel Counting needs a wide maize-field photo.</span>
+      <a href="upload.html" id="purposeLink">Go to Tassel Counting</a>
+    </div>
+
+    <div class="diagnosis-shell leaf-health-layout">
+      <section class="diagnosis-panel leaf-capture-panel" aria-labelledby="pageTitle">
+        <div class="photo-guide" id="photoGuide">
+          <div class="photo-guide-item"><b id="guideOneTitle">1. Fill the frame</b><span id="guideOneText">Keep one affected leaf large and in focus.</span></div>
+          <div class="photo-guide-item"><b id="guideTwoTitle">2. Use soft light</b><span id="guideTwoText">Avoid deep shadows, glare and digital zoom.</span></div>
+          <div class="photo-guide-item"><b id="guideThreeTitle">3. Show the symptom</b><span id="guideThreeText">Include both affected and nearby healthy tissue.</span></div>
+        </div>
+
+        <form id="leafForm" novalidate>
+          <label class="leaf-dropzone" id="leafDropzone" for="leafPhoto">
+            <img class="leaf-preview" id="leafPreview" alt="Selected maize leaf" hidden>
+            <span id="filePrompt" class="leaf-file-prompt">
+              <span class="leaf-camera-icon" aria-hidden="true">▣</span>
+              <strong id="filePromptTitle">Take or choose a leaf photo</strong>
+              <small id="filePromptText">JPG or PNG · up to 10 MB</small>
+            </span>
+            <input id="leafPhoto" type="file" accept="image/jpeg,image/png" capture="environment">
+          </label>
+          <p id="sizeNote" class="info-text" aria-live="polite"></p>
+
+          <div class="leaf-form-grid">
+            <div class="form-group">
+              <label id="fieldLabel" for="leafField">Field for optional Agronomist review</label>
+              <select id="leafField"><option value="">No field selected</option></select>
+              <small class="field-help" id="fieldHelp">A field is only required if you later ask an Agronomist to review the result.</small>
+            </div>
+            <div class="form-group">
+              <label id="cropStageLabel" for="cropStage">Growth stage (optional)</label>
+              <input id="cropStage" maxlength="200" autocomplete="off" placeholder="For example: before tasseling">
+            </div>
+            <div class="form-group">
+              <label id="weatherLabel" for="recentWeather">Recent weather (optional)</label>
+              <input id="recentWeather" maxlength="500" autocomplete="off" placeholder="For example: humid with frequent rain">
+            </div>
+            <div class="form-group">
+              <label id="spreadLabel" for="symptomSpread">How symptoms are spreading (optional)</label>
+              <textarea id="symptomSpread" rows="3" maxlength="500" placeholder="For example: started on lower leaves three days ago"></textarea>
+            </div>
           </div>
-          <input id="leafPhoto" type="file" accept="image/jpeg,image/png" capture="environment" aria-label="选择或拍摄玉米叶片">
-        </label>
-        <p id="sizeNote" class="info-text" aria-live="polite"></p>
-        <div class="form-group"><label id="cropStageLabel" for="cropStage">生育期（可不填）</label><input id="cropStage" maxlength="200" placeholder="例如：抽雄前"></div>
-        <div class="form-group"><label id="weatherLabel" for="recentWeather">近期天气（可不填）</label><input id="recentWeather" maxlength="500" placeholder="例如：湿度大、经常下雨"></div>
-        <div class="form-group"><label id="spreadLabel" for="symptomSpread">症状怎样扩散？（可不填）</label><textarea id="symptomSpread" rows="3" maxlength="500" placeholder="例如：三天前从下部叶片开始"></textarea></div>
-        <button class="btn btn-primary btn-lg" id="submitButton" type="submit" disabled>帮我看看这片叶子</button>
-        <div id="uploadState" role="status" aria-live="polite" style="margin-top:0.9rem"></div>
-      </form>
+
+          <button class="btn btn-primary btn-lg leaf-primary-action" id="submitButton" type="submit" disabled>Screen this leaf</button>
+          <div id="diagnosisProgress" class="diagnosis-progress" role="status" aria-live="polite" hidden>
+            <div class="leaf-progress-track"><span id="progressBar"></span></div>
+            <p id="progressText"></p>
+          </div>
+          <p id="uploadState" class="form-message" role="status" aria-live="polite"></p>
+        </form>
+      </section>
+
+      <aside class="leaf-result-column" aria-live="polite">
+        <section id="leafResult" class="diagnosis-panel leaf-empty-result">
+          <p class="eyebrow" id="resultEyebrow">Screening result</p>
+          <h2 id="emptyResultTitle">Your result will appear here</h2>
+          <p id="emptyResultText">We will explain what the model noticed, how certain it is, and what you can safely do next.</p>
+        </section>
+
+        <section id="reviewPanel" class="diagnosis-panel review-request-panel" hidden>
+          <p class="eyebrow" id="reviewEyebrow">Human review</p>
+          <h2 id="reviewTitle">Ask an Agronomist</h2>
+          <p id="reviewIntro">You stay in control. Nothing is shared unless you choose to request a review.</p>
+          <label for="reviewReason" id="reviewReasonLabel">What would you like help with? (optional)</label>
+          <textarea id="reviewReason" rows="3" maxlength="500" placeholder="Add a short note for the Agronomist"></textarea>
+          <button class="btn btn-outline" id="requestReviewButton" type="button">Request Agronomist review</button>
+          <p id="reviewState" class="form-message" role="status" aria-live="polite"></p>
+        </section>
+      </aside>
+    </div>
+
+    <section class="card leaf-history-section" id="historySection">
+      <div class="leaf-section-heading">
+        <div>
+          <p class="eyebrow" id="historyEyebrow">Follow-up</p>
+          <h2 id="historyTitle">Recent leaf checks</h2>
+        </div>
+        <button class="btn btn-sm btn-outline" id="refreshHistory" type="button">Refresh</button>
+      </div>
+      <div id="leafHistory" class="leaf-history-list" aria-live="polite"></div>
     </section>
-    <aside id="leafResult" aria-live="polite"></aside>
-  </div>
-</main>
+  </main>
 
-<nav class="mobile-bottom-nav" aria-label="Mobile navigation">
-  <a href="mobile.html"><span aria-hidden="true">⌂</span><b id="navHome">首页</b></a>
-  <a href="history.html"><span aria-hidden="true">◷</span><b id="navHistory">历史</b></a>
-  <a href="profile.html"><span aria-hidden="true">○</span><b id="navMine">我的</b></a>
-</nav>
+  <nav class="mobile-bottom-nav" aria-label="Mobile navigation">
+    <a href="mobile.html"><span aria-hidden="true">⌂</span><b id="navHome">Home</b></a>
+    <a href="history.html"><span aria-hidden="true">◷</span><b id="navHistory">History</b></a>
+    <a href="profile.html"><span aria-hidden="true">○</span><b id="navProfile">Account</b></a>
+  </nav>
 
-<script src="../js/api.js"></script>
-<script src="../js/auth.js"></script>
-<script src="../js/mobile.js"></script>
-<script src="../js/pwa.js"></script>
-<script>
-if (!requireRole(["Farmer", "Researcher", "Agronomist", "Admin"])) throw new Error('Access denied');
-initNav();
-
-const LEAF_COPY = {
-  "zh-CN": {
-    back:"‹ 返回首页", title:"我们一起仔细看看这片叶子", intro:"照片越清楚，再加上一点田间情况，判断越有帮助。",
-    guide:"<strong>拍摄前看一眼</strong>✓ 光线柔和，避免阴影和反光<br>✓ 让一片叶子占据大部分画面<br>✓ 拿稳手机，先对焦再拍摄",
-    choose:"点这里拍摄叶片", library:"也可以从相册选择 · JPG / PNG",
-    stage:"生育期（可不填）", stageHint:"例如：抽雄前", weather:"近期天气（可不填）", weatherHint:"例如：湿度大、经常下雨",
-    spread:"症状怎样扩散？（可不填）", spreadHint:"例如：三天前从下部叶片开始", submit:"帮我看看这片叶子",
-    preparing:"正在安全压缩图片，帮你节省流量…", original:"原图", upload:"上传", analysing:"图片已上传，模型正在分析…",
-    condition:"可能的情况", observed:"我看到的情况", questions:"再确认几个细节", next:"接下来可以这样做",
-    saved:"这次结果已经安全保存。", notSaved:"判断已完成，但暂时没有保存到历史记录。",
-    technical:"供专业人员查看的技术信息", retry:"重新上传", home:"首页", history:"历史", mine:"我的",
-  },
-  en: {
-    back:"‹ Back home", title:"Let’s take a careful look at this leaf", intro:"A clear photo plus a little field context helps the system give an honest, useful answer.",
-    guide:"<strong>Before you take the photo</strong>✓ Use soft light without glare<br>✓ Let one leaf fill most of the frame<br>✓ Hold steady and focus on the leaf",
-    choose:"Tap to photograph the leaf", library:"Or choose from your library · JPG / PNG",
-    stage:"Crop stage (optional)", stageHint:"For example: before tasseling", weather:"Recent weather (optional)", weatherHint:"For example: humid with frequent rain",
-    spread:"How are symptoms spreading? (optional)", spreadHint:"For example: began on lower leaves three days ago", submit:"Help me check this leaf",
-    preparing:"Preparing a smaller, model-safe photo to save your data…", original:"Original", upload:"Upload", analysing:"Photo uploaded. The model is analysing it…",
-    condition:"Possible condition", observed:"What the image suggests", questions:"A few details to confirm", next:"Useful next steps",
-    saved:"This result was saved securely.", notSaved:"The screening finished, but it was not saved to history.",
-    technical:"Technical information for professionals", retry:"Upload again", home:"Home", history:"History", mine:"My account",
-  }
-};
-
-let originalFile = null;
-let preparedFile = null;
-let previewUrl = null;
-
-function lc() { return LEAF_COPY[mobileLanguage()]; }
-function renderLeafLanguage() {
-  const c = lc();
-  document.documentElement.lang = mobileLanguage();
-  document.getElementById('languageSelect').value = mobileLanguage();
-  const mappings = {
-    backLink:'back', pageTitle:'title', pageIntro:'intro', cropStageLabel:'stage',
-    weatherLabel:'weather', spreadLabel:'spread', submitButton:'submit',
-    navHome:'home', navHistory:'history', navMine:'mine'
-  };
-  Object.entries(mappings).forEach(([id,key]) => document.getElementById(id).textContent = c[key]);
-  document.getElementById('photoGuide').innerHTML = c.guide;
-  document.getElementById('cropStage').placeholder = c.stageHint;
-  document.getElementById('recentWeather').placeholder = c.weatherHint;
-  document.getElementById('symptomSpread').placeholder = c.spreadHint;
-  if (!originalFile) {
-    document.getElementById('filePrompt').innerHTML =
-      '<div style="font-size:2.7rem" aria-hidden="true">📷</div><strong>' + esc(c.choose) + '</strong><span>' + esc(c.library) + '</span>';
-  }
-  bindNetworkStatus();
-}
-
-document.getElementById('languageSelect').addEventListener('change', event => {
-  setMobileLanguage(event.target.value);
-  renderLeafLanguage();
-});
-
-document.getElementById('leafPhoto').addEventListener('change', async event => {
-  const file = event.target.files && event.target.files[0];
-  if (!file) return;
-  originalFile = file;
-  preparedFile = null;
-  const state = document.getElementById('uploadState');
-  state.innerHTML = '<div class="high-contrast-note">' + esc(lc().preparing) + '</div>';
-  document.getElementById('submitButton').disabled = true;
-  try {
-    const prepared = await prepareImageForUpload(file, { maxLongEdge: 1600, quality: 0.86 });
-    preparedFile = prepared.file;
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
-    previewUrl = URL.createObjectURL(file);
-    document.getElementById('filePrompt').outerHTML = '<img id="filePrompt" src="' + previewUrl + '" alt="Selected maize leaf">';
-    document.getElementById('sizeNote').textContent =
-      `${lc().original}: ${formatFileSize(prepared.originalBytes)} · ${lc().upload}: ${formatFileSize(prepared.preparedBytes)} · ${prepared.width}×${prepared.height}`;
-    state.innerHTML = '';
-    document.getElementById('submitButton').disabled = false;
-  } catch (error) {
-    state.innerHTML = '<div class="alert alert-error">' + esc(error.message) + '</div>';
-  }
-});
-
-document.getElementById('leafForm').addEventListener('submit', async event => {
-  event.preventDefault();
-  if (!preparedFile || !navigator.onLine) {
-    document.getElementById('uploadState').innerHTML =
-      '<div class="alert alert-warning">' + esc(navigator.onLine ? lc().choose : (mobileLanguage() === 'zh-CN' ? '当前没有网络，请联网后重试。' : 'You are offline. Reconnect and try again.')) + '</div>';
-    return;
-  }
-  const button = document.getElementById('submitButton');
-  const state = document.getElementById('uploadState');
-  button.disabled = true;
-  state.innerHTML = '<div class="high-contrast-note"><span id="progressCopy">0%</span><div class="upload-meter"><span id="progressBar"></span></div></div>';
-  const details = {
-    language: mobileLanguage(),
-    crop_stage: document.getElementById('cropStage').value.trim(),
-    recent_weather: document.getElementById('recentWeather').value.trim(),
-    symptom_spread: document.getElementById('symptomSpread').value.trim(),
-  };
-  const response = await apiDiagnoseDiseaseWithProgress(preparedFile, details, percent => {
-    document.getElementById('progressCopy').textContent = percent < 100 ? `${lc().upload}: ${percent}%` : lc().analysing;
-    document.getElementById('progressBar').style.width = `${percent}%`;
-  });
-  button.disabled = false;
-  if (!response.ok) {
-    state.innerHTML = '<div class="alert alert-warning">' + esc(response.error) +
-      '</div><button class="btn btn-outline" type="submit">' + esc(lc().retry) + '</button>';
-    return;
-  }
-  state.innerHTML = '';
-  renderLeafResult(response.data);
-});
-
-function renderList(items) {
-  return (items || []).length ? '<ul>' + items.map(item => '<li>' + esc(item) + '</li>').join('') + '</ul>' : '';
-}
-
-function renderLeafResult(result) {
-  const c = lc();
-  const confidenceLabels = mobileLanguage() === 'zh-CN'
-    ? { strong_match: '图像特征较为相似', needs_confirmation: '还需要进一步确认' }
-    : { strong_match: 'Strong image match', needs_confirmation: 'Needs confirmation' };
-  const condition = result.possible_condition
-    ? '<section class="diagnosis-section"><h4>' + esc(c.condition) + '</h4><p><strong>' +
-      esc(result.possible_condition.display_name) + '</strong></p><span class="confidence-language">' +
-      esc(confidenceLabels[result.possible_condition.confidence_band] || result.possible_condition.confidence_band || '') + '</span></section>'
-    : '';
-  document.getElementById('leafResult').innerHTML =
-    '<article class="diagnosis-result"><h3>' + esc(result.headline || '') + '</h3>' + condition +
-    '<section class="diagnosis-section"><h4>' + esc(c.observed) + '</h4>' + renderList(result.observation) + '</section>' +
-    ((result.follow_up_questions || []).length ? '<section class="diagnosis-section"><h4>' + esc(c.questions) + '</h4>' + renderList(result.follow_up_questions) + '</section>' : '') +
-    '<section class="diagnosis-section"><h4>' + esc(c.next) + '</h4>' + renderList(result.next_steps) + '</section>' +
-    '<div class="diagnosis-safety">' + esc(result.safety_note || '') + '</div>' +
-    '<p class="info-text" style="color:#e4f3dc">' + esc(result.persistence?.status === 'saved' ? c.saved : c.notSaved) + '</p>' +
-    '<details class="diagnosis-technical"><summary>' + esc(c.technical) + '</summary><pre>' + esc(JSON.stringify(result.technical || {}, null, 2)) + '</pre></details></article>';
-  document.getElementById('leafResult').scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-
-renderLeafLanguage();
-</script>
+  <script src="../js/api.js?v=20260811-1"></script>
+  <script src="../js/auth.js?v=20260811-1"></script>
+  <script src="../js/mobile.js?v=20260811-1"></script>
+  <script src="../js/pwa.js?v=20260811-1"></script>
+  <script src="../js/leaf.js?v=20260811-1"></script>
 </body>
 </html>
