@@ -12,10 +12,15 @@
     theme.content = '#1f5136';
     head.appendChild(theme);
   }
-  const apple = document.createElement('meta');
-  apple.name = 'apple-mobile-web-app-capable';
-  apple.content = 'yes';
-  head.appendChild(apple);
+  function ensureCapableMeta(name) {
+    if (head.querySelector(`meta[name="${name}"]`)) return;
+    const meta = document.createElement('meta');
+    meta.name = name;
+    meta.content = 'yes';
+    head.appendChild(meta);
+  }
+  ensureCapableMeta('mobile-web-app-capable');
+  ensureCapableMeta('apple-mobile-web-app-capable');
 
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     window.addEventListener('load', () => {
@@ -27,9 +32,11 @@
 
   let installPrompt = null;
   window.addEventListener('beforeinstallprompt', event => {
+    const installButtons = document.querySelectorAll('[data-install-app]');
+    if (!installButtons.length) return;
     event.preventDefault();
     installPrompt = event;
-    document.querySelectorAll('[data-install-app]').forEach(button => {
+    installButtons.forEach(button => {
       button.hidden = false;
     });
   });
