@@ -145,6 +145,7 @@ except ImportError:
 
 try:
     from .database import db_config, db_connection
+    from .demo_access import demo_access_payload
     from .security.model_paths import ModelArtifactError, validate_model_artifact
     from .security.path_controls import (
         ApprovedPathError,
@@ -158,6 +159,7 @@ try:
     from .services.training_jobs import BoundedJobExecutor
 except ImportError:
     from database import db_config, db_connection
+    from demo_access import demo_access_payload
     from security.model_paths import ModelArtifactError, validate_model_artifact
     from security.path_controls import (
         ApprovedPathError,
@@ -207,7 +209,7 @@ def add_security_headers(response):
         response.headers.setdefault(
             "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
         )
-    if request.path.startswith("/api/auth/"):
+    if request.path.startswith("/api/auth/") or request.path == "/api/demo-access":
         response.headers.setdefault("Cache-Control", "no-store")
     return response
 
@@ -1031,6 +1033,13 @@ def detection_for_result(conn, result_id: int) -> dict[str, Any] | None:
         )
         row = cur.fetchone()
     return normalize_detection_row(row) if row else None
+
+
+# Local demonstration access is environment-gated and loopback-only.
+@app.route("/api/demo-access", methods=["GET"])
+def local_demo_access():
+    """Expose configured demo credentials only to a loopback browser."""
+    return ok(demo_access_payload(request.host))
 
 
 # Shared secure file compatibility route (A.4, D.2).

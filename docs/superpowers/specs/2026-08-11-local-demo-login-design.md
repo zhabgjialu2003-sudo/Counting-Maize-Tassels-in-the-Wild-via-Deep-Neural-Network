@@ -25,9 +25,11 @@ An unauthenticated configuration endpoint returns `{ "enabled": false }` unless 
 
 1. local demo access is explicitly enabled by environment configuration;
 2. a demo password is configured outside Git; and
-3. the request host is `localhost`, `127.0.0.1`, or `[::1]`.
+3. the request host is `localhost`, `127.0.0.1`, or `[::1]`; alternatively, an
+   explicit private-network flag may allow an RFC 1918 or private IPv6 address
+   for a controlled same-Wi-Fi mobile demonstration.
 
-Only when all checks pass may the endpoint return the four fixed demo identities and the configured shared password. Therefore a public HTTPS tunnel, LAN address, or production deployment cannot expose the credentials even if it reaches the same development server.
+Only when all checks pass may the endpoint return the four fixed demo identities and the configured shared password. Public hostnames and production deployments cannot expose the credentials even if they reach the same development server. Private-network access remains disabled by default and must be explicitly enabled for a controlled mobile demonstration.
 
 The tracked `.env.example` documents disabled defaults but contains no working demo password. The local `backend/.env` may enable the feature and store the agreed shared demo password; that file remains ignored by Git.
 
@@ -51,7 +53,7 @@ Failure to load Demo configuration is silent and leaves the normal login form fu
 
 ## Verification
 
-- Unit tests cover disabled defaults, missing configuration, local-host access, and rejection through public or LAN hosts.
+- Unit tests cover disabled defaults, missing configuration, local-host access, opt-in private-network access, and rejection through public hosts.
 - Frontend tests verify the compact role controls, manual-submit behaviour, and absence of hard-coded credentials.
 - API login checks verify Farmer, Researcher, Agronomist, and Admin accounts with the local shared password.
 - Browser testing checks desktop and mobile layouts, field filling, manual Sign In, and role routing.
