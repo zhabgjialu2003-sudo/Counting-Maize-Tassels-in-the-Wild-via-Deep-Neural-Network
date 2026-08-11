@@ -69,6 +69,7 @@
           <tbody id="datasetRows"></tbody>
         </table>
       </div>
+      <p id="datasetDownloadStatus" class="info-text" role="status" aria-live="polite" style="margin-top:0.75rem;"></p>
     </div>
   </div>
 
@@ -177,11 +178,20 @@ async function compareSelectedModels() {
 async function downloadDataset(datasetId) {
   const format = prompt('Package format: zip or tar', 'zip');
   if (!format || !['zip', 'tar'].includes(format.toLowerCase())) return;
-  const response = await fetch(API_BASE + '/api/datasets/' + datasetId + '/download?format=' + format.toLowerCase(), {
-    headers: authHeaders(),
-  });
+  const status = document.getElementById('datasetDownloadStatus');
+  status.textContent = 'Preparing the dataset package...';
+  let response;
+  try {
+    response = await fetch(API_BASE + '/api/datasets/' + datasetId + '/download?format=' + format.toLowerCase(), {
+      headers: authHeaders(),
+    });
+  } catch (error) {
+    status.textContent = 'Cannot reach the server. Check your connection and try the download again.';
+    return;
+  }
   if (!response.ok) {
-    alert('Dataset download failed.');
+    const payload = await response.json().catch(() => ({}));
+    status.textContent = payload.message || payload.error || 'Dataset download failed. Please try again.';
     return;
   }
   const blob = await response.blob();
@@ -191,6 +201,7 @@ async function downloadDataset(datasetId) {
   anchor.download = 'maize-dataset-' + datasetId + (format.toLowerCase() === 'tar' ? '.tar.gz' : '.zip');
   anchor.click();
   URL.revokeObjectURL(url);
+  status.textContent = 'Dataset package downloaded. Metadata-only records include a README explaining which source files are unavailable.';
 }
 
 loadResearcherDashboard();
