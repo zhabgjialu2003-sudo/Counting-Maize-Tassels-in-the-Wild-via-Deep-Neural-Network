@@ -1,4 +1,4 @@
-const SHELL_CACHE = 'maize-shell-v6';
+const SHELL_CACHE = 'maize-shell-v7';
 const SHELL_ASSETS = [
   './offline.html',
   './pages/login.html',

@@ -95,9 +95,23 @@ let resultData = null;
 const stored = sessionStorage.getItem('lastResult');
 const uploadedImageDataUrl = sessionStorage.getItem('lastImageDataUrl');
 const params = new URLSearchParams(location.search);
-const resultId = params.get('id');
-// Track whether this is a fresh result (just predicted) or cached
-const resultTimestamp = params.get('ts');
+const requestedResultId = params.get('id');
+
+function rememberResult(result) {
+  if (!result) return;
+  try {
+    sessionStorage.setItem('lastResult', JSON.stringify(result));
+  } catch (error) {
+    console.warn('The latest result could not be cached in this browser.', error);
+  }
+}
+
+function keepResultIdInAddress(result) {
+  if (!result || !result.resultId || requestedResultId) return;
+  const url = new URL(location.href);
+  url.searchParams.set('id', result.resultId);
+  history.replaceState(null, '', url);
+}
 
 // USER STORY A.3 Control call: retrieve one persisted detection result.
 async function loadResult() {
@@ -105,24 +119,36 @@ async function loadResult() {
   document.getElementById('confidenceDisplay').textContent = '--';
   document.getElementById('timeDisplay').textContent = 'Calculating...';
 
+  let storedResult = null;
   if (stored) {
-    try { resultData = normalizeResult(JSON.parse(stored)); } catch (e) { resultData = null; }
-    // Only use stored result if it's fresh (< 10 seconds old)
-    if (resultData && resultData.createdAt) {
-      const age = Date.now() - new Date(resultData.createdAt).getTime();
-      if (age > 15000) resultData = null; // stale: fetch from server
-    }
+    try { storedResult = normalizeResult(JSON.parse(stored)); } catch (error) { storedResult = null; }
   }
 
-  if (resultId && (!resultData || String(resultData.resultId) !== resultId || !resultData.originalAssetUrl)) {
-    const response = await apiGet(`/api/results/${resultId}`);
-    if (response.ok) resultData = normalizeResult(response.data);
+  const effectiveResultId = requestedResultId || (storedResult && storedResult.resultId);
+  if (effectiveResultId !== null && effectiveResultId !== undefined && effectiveResultId !== '') {
+    const response = await apiGet(`/api/results/${encodeURIComponent(effectiveResultId)}`);
+    if (response.ok) {
+      resultData = normalizeResult(response.data);
+    } else if (storedResult && String(storedResult.resultId) === String(effectiveResultId)) {
+      resultData = storedResult;
+    }
+  } else {
+    const historyResponse = await apiGet('/api/history?limit=1');
+    const records = historyResponse.ok && Array.isArray(historyResponse.data.records)
+      ? historyResponse.data.records
+      : [];
+    if (records.length) resultData = normalizeResult(records[0]);
+  }
+
+  if (resultData) {
+    rememberResult(resultData);
+    keepResultIdInAddress(resultData);
   }
 
   if (!resultData) {
     document.getElementById('sourceNotice').className = 'alert alert-error';
     document.getElementById('sourceNotice').textContent =
-      'Result data is unavailable. Return to Upload and run a new detection.';
+      'No saved tassel result is available. Upload a maize-field photo to create one.';
     document.getElementById('countDisplay').textContent = '--';
     document.getElementById('timeDisplay').textContent = '--';
     return;
@@ -150,7 +176,7 @@ async function displayResult(data) {
 
   var imageId = data.imageId;
   var protectedPath = data.originalAssetUrl || (imageId ? '/api/images/' + imageId + '/file/original' : null);
-  var filePath = (!resultId && uploadedImageDataUrl) || protectedPath;
+  var filePath = (!requestedResultId && uploadedImageDataUrl) || protectedPath;
   var imgUrl = null;
   try {
     imgUrl = protectedPath

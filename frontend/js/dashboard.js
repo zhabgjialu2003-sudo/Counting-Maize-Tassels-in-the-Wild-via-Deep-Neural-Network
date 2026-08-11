@@ -22,13 +22,18 @@
   document.getElementById('totalTassels').textContent = Number(statsResponse.data.total_detected_tassels ?? 0).toLocaleString();
   document.getElementById('avgCount').textContent = Number(statsResponse.data.average_tassel_count ?? 0).toFixed(1);
   const records = Array.isArray(historyResponse.data.records) ? historyResponse.data.records.map(normalizeResult) : [];
+  const latestResultLink = document.getElementById('latestResultLink');
   if (!records.length) {
+    if (latestResultLink) latestResultLink.href = 'upload.html';
     const row = table.insertRow();
     const cell = row.insertCell();
     cell.colSpan = 5;
     cell.className = 'info-text';
     cell.textContent = 'No tassel-counting records yet.';
     return;
+  }
+  if (latestResultLink) {
+    latestResultLink.href = `result.html?id=${encodeURIComponent(records[0].resultId)}`;
   }
   records.forEach(record => {
     const row = table.insertRow();

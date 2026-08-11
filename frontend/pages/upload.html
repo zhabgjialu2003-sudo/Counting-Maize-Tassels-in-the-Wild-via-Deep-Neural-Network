@@ -249,6 +249,13 @@ function fileToDataUrl(file) {
   });
 }
 
+function resultPageUrl(result) {
+  const resultId = result && result.resultId;
+  return resultId === null || resultId === undefined
+    ? 'result.html'
+    : `result.html?id=${encodeURIComponent(resultId)}`;
+}
+
 async function uploadAndPredict(file, onProgress) {
   const idempotencyKey = idempotencyKeyFor(file);
   const uploadRes = typeof onProgress === 'function'
@@ -310,7 +317,7 @@ async function submitUpload() {
     }
     document.getElementById('errorBox').innerHTML +=
       `<div class="alert ${failed ? 'alert-warning' : 'alert-success'}"><strong>Batch complete:</strong> ${success} successful, ${failed} failed.</div>`;
-    if (lastResult) setTimeout(() => location.href = 'result.html', 1500);
+    if (lastResult) setTimeout(() => location.href = resultPageUrl(lastResult), 1500);
   } else {
     // Show elapsed time while waiting for inference
     const startTime = Date.now();
@@ -344,7 +351,7 @@ async function submitUpload() {
       console.warn('Image preview too large for sessionStorage, will load from backend');
     }
     document.getElementById('errorBox').innerHTML = '<div class="alert alert-success">Upload successful! Redirecting to result...</div>';
-    setTimeout(() => location.href = 'result.html', 1000);
+    setTimeout(() => location.href = resultPageUrl(result), 1000);
   }
   btn.disabled = false;
   btn.textContent = 'Analyze';
