@@ -131,6 +131,19 @@ The bootstrap command prompts for the first administrator email, name, and a
 hidden password. The repository contains no deployable default password. Sample
 identities remain disabled until an administrator assigns individual passwords.
 
+For a local assessment demonstration, set `DEMO_ACCESS_ENABLED=true` and a
+policy-compliant `DEMO_ACCOUNT_PASSWORD` in the ignored `backend/.env`, then run:
+
+```powershell
+python -m backend.scripts.configure_demo_accounts
+```
+
+This explicit command configures the fixed Farmer, Researcher, Agronomist, and
+Admin demo identities. The login-page helper is loopback-only by default. A
+controlled same-Wi-Fi demonstration can additionally set
+`DEMO_ACCESS_ALLOW_PRIVATE_NETWORK=true`; public hosts never receive the
+configured password.
+
 Run the VS Code launch configuration named `Run Maize Detector`, or start the
 production-oriented local server directly:
 
@@ -177,7 +190,7 @@ Run the complete local suite against the configured PostgreSQL database:
 python -m unittest discover -s tests -v
 ```
 
-The latest verified baseline is **91 automated tests with zero failures**.
+The latest verified baseline is **113 automated tests with zero failures**.
 Exact environment notes, real-model smoke tests, and SHA-256 evidence are in
 [`docs/testing/TEST_RESULTS.md`](docs/testing/TEST_RESULTS.md).
 

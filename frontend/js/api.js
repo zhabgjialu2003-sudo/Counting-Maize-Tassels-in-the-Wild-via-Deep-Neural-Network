@@ -169,6 +169,19 @@ function apiReviewDiseaseDiagnosis(diagnosisId, review) {
   return apiPost(`/api/agronomy/diagnoses/${diagnosisId}/review`, review);
 }
 
+function apiRequestDiseaseReview(diagnosisId, fieldId, reason = '') {
+  return apiPost(`/api/agronomy/diagnoses/${diagnosisId}/review-request`, {
+    field_id: fieldId,
+    reason,
+  });
+}
+
+function apiStartDiseaseReview(diagnosisId) {
+  return apiPatch(`/api/agronomy/diagnoses/${diagnosisId}/review-status`, {
+    status: 'in_review',
+  });
+}
+
 function normalizeResult(raw) {
   const bboxData = normalizeBBoxData(raw.bbox_data ?? raw.bboxData ?? null);
   return {

@@ -99,14 +99,14 @@ function buildNav() {
   const pages = isMobileFarmer
     ? ['mobile.html', 'upload.html', 'leaf.html', 'history.html', 'profile.html']
     : (session.role === 'Farmer'
-      ? ['dashboard.html', 'upload.html', 'result.html']
+      ? ['dashboard.html', 'upload.html', 'leaf.html', 'result.html']
       : (ROLE_PAGES[session.role] || []));
   const navMap = {
     'mobile.html': 'Home',
     'dashboard.html': 'Home',
     'researcher.html': 'Dashboard',
     'upload.html': 'Upload',
-    'leaf.html': 'Leaf Assistant',
+    'leaf.html': 'Leaf Health',
     'result.html': 'Result',
     'history.html': 'History',
     'profile.html': 'My account',

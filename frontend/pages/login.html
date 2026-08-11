@@ -22,8 +22,18 @@
   .auth-tabs button { min-height:40px; }
   .auth-tabs button.active { background:var(--green); color:#fff; border-color:var(--green); }
   #createForm { display:none; }
+  .demo-access { margin-top:1.25rem; padding-top:1rem; border-top:1px solid var(--gray-100); }
+  .demo-access h3 { margin:0; color:var(--green); font-size:1rem; }
+  .demo-access-note { margin:0.2rem 0 0.75rem; color:var(--gray-500); font-size:0.8rem; }
+  .demo-role-grid { display:grid; grid-template-columns:1fr 1fr; gap:0.55rem; }
+  .demo-role-button { display:grid; gap:0.1rem; min-width:0; padding:0.65rem 0.7rem; text-align:left; }
+  .demo-role-button strong { font-size:0.9rem; }
+  .demo-role-button small { overflow:hidden; color:inherit; font-size:0.72rem; text-overflow:ellipsis; white-space:nowrap; }
+  .demo-password { margin:0.75rem 0 0; padding:0.55rem 0.7rem; border-radius:7px; background:var(--green-bg); color:var(--green); font-size:0.8rem; }
+  .demo-selection { min-height:1.25rem; margin:0.45rem 0 0; color:var(--green); font-size:0.78rem; font-weight:700; }
   @media (max-width:520px) {
     .login-card { margin:32px auto; }
+    .demo-role-grid { grid-template-columns:1fr; }
   }
 </style>
 </head>
@@ -74,6 +84,14 @@
       </button>
     </div>
 
+    <section class="demo-access" id="demoAccess" aria-labelledby="demoAccessTitle" hidden>
+      <h3 id="demoAccessTitle">Quick Demo Access</h3>
+      <p class="demo-access-note">Choose a role to fill the sign-in form. You will still control when to sign in.</p>
+      <div class="demo-role-grid" id="demoRoleGrid"></div>
+      <p class="demo-password">Shared demo password: <code id="demoPassword"></code></p>
+      <p class="demo-selection" id="demoSelection" role="status" aria-live="polite"></p>
+    </section>
+
   </div>
 </div>
 
@@ -99,6 +117,37 @@ function setAuthMode(mode) {
   document.getElementById('tabSignIn').classList.toggle('active', !isCreate);
   document.getElementById('tabCreate').classList.toggle('active', isCreate);
   document.getElementById('errorBox').innerHTML = '';
+}
+
+function fillDemoAccount(account, password) {
+  setAuthMode('signin');
+  document.getElementById('email').value = account.email;
+  document.getElementById('password').value = password;
+  document.getElementById('demoSelection').textContent = account.role + ' account is ready. Select Sign In to continue.';
+  document.getElementById('loginBtn').focus();
+}
+
+async function loadDemoAccess() {
+  var result = await apiGet('/api/demo-access');
+  if (!result.ok || !result.data.enabled || !Array.isArray(result.data.accounts)) return;
+  var password = String(result.data.shared_password || '');
+  if (!password) return;
+
+  var grid = document.getElementById('demoRoleGrid');
+  result.data.accounts.forEach(function(account) {
+    var button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'btn btn-outline demo-role-button';
+    var role = document.createElement('strong');
+    role.textContent = account.role;
+    var email = document.createElement('small');
+    email.textContent = account.email;
+    button.append(role, email);
+    button.addEventListener('click', function() { fillDemoAccount(account, password); });
+    grid.appendChild(button);
+  });
+  document.getElementById('demoPassword').textContent = password;
+  document.getElementById('demoAccess').hidden = false;
 }
 
 // SHARED CONTROL CALL: POST /api/auth/login, then route by server role.
@@ -163,6 +212,8 @@ document.getElementById('password').addEventListener('keydown', function(e) {
 document.getElementById('newPassword').addEventListener('keydown', function(e) {
   if (e.key === 'Enter') handleCreateAccount();
 });
+
+loadDemoAccess();
 </script>
 </body>
 </html>

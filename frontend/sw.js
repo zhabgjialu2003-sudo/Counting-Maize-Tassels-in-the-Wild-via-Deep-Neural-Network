@@ -1,4 +1,4 @@
-const SHELL_CACHE = 'maize-shell-v3';
+const SHELL_CACHE = 'maize-shell-v6';
 const SHELL_ASSETS = [
   './offline.html',
   './pages/login.html',
@@ -13,6 +13,8 @@ const SHELL_ASSETS = [
   './js/api.js',
   './js/auth.js',
   './js/mobile.js',
+  './js/leaf.js',
+  './js/dashboard.js',
   './js/pwa.js',
   './icons/maize-icon-192.png',
   './icons/maize-icon-512.png'

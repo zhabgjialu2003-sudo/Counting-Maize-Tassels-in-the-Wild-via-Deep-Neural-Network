@@ -293,6 +293,19 @@ function renderTab(type) {
 
 function renderDiagnosisTab() {
   const el = document.getElementById('tabContent');
+  const photoSourceText = agronomyLanguage === 'zh-CN'
+    ? {
+        take: '拍摄照片',
+        takeLabel: '拍摄一张玉米叶片照片',
+        gallery: '从相册选择',
+        galleryLabel: '从相册选择一张玉米叶片照片'
+      }
+    : {
+        take: 'Take photo',
+        takeLabel: 'Take a maize leaf photo',
+        gallery: 'Choose from gallery',
+        galleryLabel: 'Choose a maize leaf photo from gallery'
+      };
   const preview = diagnosisPreviewUrl
     ? '<img class="leaf-preview" id="leafPreview" src="' + diagnosisPreviewUrl + '" alt="Selected maize leaf">'
     : '<div id="leafPreviewPrompt"><strong>' + esc(at('choosePhoto')) + '</strong><br><small>JPG / PNG · max 10 MB</small></div>';
@@ -310,9 +323,17 @@ function renderDiagnosisTab() {
           '<div class="photo-guide-item"><strong>' + esc(at('guideSteady')) + '</strong>' + esc(at('guideSteadyBody')) + '</div>' +
         '</div>' +
         '<form id="diseaseDiagnosisForm">' +
-          '<label class="leaf-dropzone">' + preview +
-            '<input id="leafPhoto" type="file" accept="image/jpeg,image/png" capture="environment" aria-label="' + aesc(at('choosePhoto')) + '">' +
-          '</label>' + retained +
+          '<div class="leaf-dropzone">' + preview + '</div>' +
+          '<div class="photo-source-actions" aria-label="Choose photo source">' +
+            '<label class="btn btn-primary photo-source-control" for="agronomistCameraPhoto">' +
+              '<span>' + esc(photoSourceText.take) + '</span>' +
+              '<input id="agronomistCameraPhoto" type="file" accept="image/jpeg,image/png" capture="environment" aria-label="' + aesc(photoSourceText.takeLabel) + '">' +
+            '</label>' +
+            '<label class="btn btn-outline photo-source-control" for="agronomistGalleryPhoto">' +
+              '<span>' + esc(photoSourceText.gallery) + '</span>' +
+              '<input id="agronomistGalleryPhoto" type="file" accept="image/jpeg,image/png" aria-label="' + aesc(photoSourceText.galleryLabel) + '">' +
+            '</label>' +
+          '</div>' + retained +
           '<div class="form-group"><label for="diagnosisField">' + esc(at('field')) + '</label>' +
             '<select id="diagnosisField"><option value="">' + esc(at('noField')) + '</option>' +
               fields.map(field => '<option value="' + field.fieldId + '"' +
@@ -335,25 +356,144 @@ function renderDiagnosisTab() {
       '<aside id="diagnosisResult" aria-live="polite">' +
         (latestDiagnosis ? diagnosisResultHtml(latestDiagnosis) : '') +
       '</aside>' +
-    '</div>';
+    '</div>' +
+    '<section class="card agronomist-review-queue" aria-labelledby="reviewQueueTitle">' +
+      '<div class="leaf-section-heading"><div><p class="eyebrow">Farmer requests</p>' +
+      '<h2 id="reviewQueueTitle">Assigned Leaf Review Queue</h2></div>' +
+      '<button class="btn btn-sm btn-outline" id="refreshReviewQueue" type="button">Refresh</button></div>' +
+      '<p class="info-text">Only checks explicitly shared by Farmers from fields assigned to you appear here.</p>' +
+      '<div id="diseaseReviewQueue" class="agronomist-review-list" aria-live="polite"></div>' +
+    '</section>';
 
-  document.getElementById('leafPhoto').addEventListener('change', function() {
-    const file = this.files && this.files[0];
+  function handleDiagnosisPhotoSelection(event) {
+    const input = event.currentTarget;
+    const file = input.files && input.files[0];
     if (!file) return;
     diagnosisDraftFile = file;
     if (diagnosisPreviewUrl) URL.revokeObjectURL(diagnosisPreviewUrl);
     diagnosisPreviewUrl = URL.createObjectURL(file);
-    const dropzone = this.closest('.leaf-dropzone');
+    const dropzone = document.querySelector('#diseaseDiagnosisForm .leaf-dropzone');
     const existing = dropzone.querySelector('.leaf-preview, #leafPreviewPrompt');
     existing.outerHTML = '<img class="leaf-preview" id="leafPreview" src="' + diagnosisPreviewUrl + '" alt="Selected maize leaf">';
     document.getElementById('retainedPhoto').innerHTML =
       esc(at('retainedPhoto')) + ': <strong>' + esc(file.name) + '</strong>';
+    input.value = '';
+  }
+  ['agronomistCameraPhoto', 'agronomistGalleryPhoto'].forEach(function(inputId) {
+    document.getElementById(inputId).addEventListener('change', handleDiagnosisPhotoSelection);
   });
   document.getElementById('diseaseDiagnosisForm').addEventListener('submit', function(event) {
     event.preventDefault();
     submitDiseaseDiagnosis(false);
   });
   wireDiseaseReviewControls();
+  document.getElementById('refreshReviewQueue').addEventListener('click', loadDiseaseReviewQueue);
+  loadDiseaseReviewQueue();
+}
+
+function reviewQueueElement(tag, className, value) {
+  const element = document.createElement(tag);
+  if (className) element.className = className;
+  if (value !== undefined) element.textContent = String(value);
+  return element;
+}
+
+function reviewDecisionForm(record) {
+  const form = reviewQueueElement('form', 'review-queue-form');
+  const decisionLabel = reviewQueueElement('label', '', 'Professional decision');
+  const decision = reviewQueueElement('select');
+  decision.name = 'decision';
+  [['confirmed', 'Confirm model result'], ['corrected', 'Correct the result'], ['inconclusive', 'Inconclusive']]
+    .forEach(([value, label]) => decision.append(new Option(label, value)));
+  decisionLabel.append(decision);
+  const conditionLabel = reviewQueueElement('label', '', 'Reviewed condition');
+  const condition = reviewQueueElement('select');
+  condition.name = 'reviewed_condition';
+  [['healthy', 'No supported disease clearly detected'], ['common_rust', 'Common rust'],
+   ['gray_leaf_spot', 'Gray leaf spot'], ['northern_leaf_blight', 'Northern corn leaf blight'],
+   ['other', 'Other / needs field inspection']].forEach(([value, label]) => condition.append(new Option(label, value)));
+  conditionLabel.append(condition);
+  conditionLabel.hidden = true;
+  decision.addEventListener('change', () => { conditionLabel.hidden = decision.value !== 'corrected'; });
+  const noteLabel = reviewQueueElement('label', '', 'Farmer-friendly review note');
+  const note = reviewQueueElement('textarea');
+  note.name = 'note';
+  note.rows = 3;
+  note.maxLength = 2000;
+  note.required = true;
+  note.placeholder = 'Explain what you observed and the safest next step.';
+  noteLabel.append(note);
+  const submit = reviewQueueElement('button', 'btn btn-primary', 'Complete review');
+  submit.type = 'submit';
+  const message = reviewQueueElement('p', 'form-message');
+  form.append(decisionLabel, conditionLabel, noteLabel, submit, message);
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    if (!note.value.trim()) { message.textContent = 'Add a short explanation for the Farmer.'; return; }
+    submit.disabled = true;
+    message.textContent = 'Saving review…';
+    const response = await apiReviewDiseaseDiagnosis(record.diagnosis_id, {
+      decision: decision.value,
+      reviewed_condition: condition.value,
+      note: note.value.trim(),
+    });
+    if (!response.ok) {
+      submit.disabled = false;
+      message.textContent = response.error || 'Review could not be saved.';
+      return;
+    }
+    await loadDiseaseReviewQueue();
+  });
+  return form;
+}
+
+function renderDiseaseReviewQueue(records) {
+  const root = document.getElementById('diseaseReviewQueue');
+  if (!root) return;
+  root.replaceChildren();
+  if (!records.length) {
+    root.append(reviewQueueElement('p', 'info-text', 'No Farmer review requests are waiting.'));
+    return;
+  }
+  records.forEach(record => {
+    const item = reviewQueueElement('article', 'agronomist-review-item');
+    const heading = reviewQueueElement('div', 'leaf-section-heading');
+    const titleGroup = reviewQueueElement('div');
+    titleGroup.append(
+      reviewQueueElement('strong', '', record.condition_name || record.headline || 'Leaf screening'),
+      reviewQueueElement('p', 'info-text', record.created_at ? new Date(record.created_at).toLocaleString() : '')
+    );
+    heading.append(titleGroup, reviewQueueElement('span', `review-status review-status-${record.review_status}`, String(record.review_status || '').replace('_', ' ')));
+    item.append(heading);
+    if (record.review_request_reason) item.append(reviewQueueElement('p', 'review-request-reason', `Farmer's question: ${record.review_request_reason}`));
+    if (record.review_status === 'requested') {
+      const start = reviewQueueElement('button', 'btn btn-outline', 'Start review');
+      start.type = 'button';
+      start.addEventListener('click', async () => {
+        start.disabled = true;
+        const response = await apiStartDiseaseReview(record.diagnosis_id);
+        if (!response.ok) { start.disabled = false; start.textContent = response.error || 'Could not start review'; return; }
+        await loadDiseaseReviewQueue();
+      });
+      item.append(start);
+    } else if (record.review_status === 'in_review') {
+      item.append(reviewDecisionForm(record));
+    } else if (record.review_status === 'reviewed') {
+      const note = reviewQueueElement('p', 'leaf-review-note');
+      note.append(reviewQueueElement('b', '', 'Saved review: '), document.createTextNode(record.reviewer_note || 'Completed'));
+      item.append(note);
+    }
+    root.append(item);
+  });
+}
+
+async function loadDiseaseReviewQueue() {
+  const root = document.getElementById('diseaseReviewQueue');
+  if (!root) return;
+  root.textContent = 'Loading Farmer requests…';
+  const response = await apiGet('/api/agronomy/diagnoses');
+  if (!response.ok) { root.textContent = response.error || 'Review queue could not be loaded.'; return; }
+  renderDiseaseReviewQueue(Array.isArray(response.data.records) ? response.data.records : []);
 }
 
 async function submitDiseaseDiagnosis(silentLanguageRefresh) {
@@ -416,7 +556,7 @@ function diagnosisResultHtml(result) {
       '<span class="confidence-language">' + esc(at(condition.confidence_band)) + '</span></div>'
     : '';
   const persistenceText = result.persistence?.status === 'saved' ? at('saved') : at('saveFailed');
-  const reviewBlock = result.diagnosis_id
+  const reviewBlock = result.review_status === 'in_review' && result.diagnosis_id
     ? '<div class="diagnosis-section" id="diseaseReviewBox"><h4>' + esc(at('reviewTitle')) + '</h4>' +
       '<div class="form-group"><label for="diseaseReviewDecision">' + esc(at('decision')) + '</label>' +
         '<select id="diseaseReviewDecision"><option value="confirmed">' + esc(at('confirmed')) + '</option>' +

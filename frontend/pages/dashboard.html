@@ -1,102 +1,58 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Maize Detector — Dashboard</title>
-<link rel="stylesheet" href="../css/style.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Maize Detector | Farmer Dashboard</title>
+  <link rel="stylesheet" href="../css/style.css">
 </head>
 <body>
+  <nav class="nav" id="mainNav"></nav>
+  <main class="container farmer-dashboard-container">
+    <p class="eyebrow">Farmer workspace</p>
+    <h1 class="page-title">What would you like to check?</h1>
+    <p class="page-subtitle">Choose the photo type that matches your task.</p>
 
-<nav class="nav" id="mainNav"></nav>
-
-<div class="container">
-  <!-- USER STORY A.8 Boundary: simple navigation, quick actions, and summaries. -->
-  <h2 class="page-title">Farmer Dashboard</h2>
-  <p class="page-subtitle">Upload maize field images and review the latest tassel count</p>
-
-  <!-- Quick Action Buttons (A.8 BCE: DashboardPage.showQuickActions) -->
-  <div class="card" style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1.5rem;">
-    <a href="upload.html" class="btn btn-primary btn-lg">Upload Image</a>
-    <a href="result.html" class="btn btn-outline btn-lg">Latest Result</a>
-  </div>
-
-  <!-- Summary Cards (A.8 BCE: DashboardPage.showSummaryCards) -->
-  <div class="card-grid">
-    <div class="stat-card">
-      <div class="value" id="totalImages">128</div>
-      <div class="label">Total Uploaded Images</div>
+    <div class="farmer-task-grid" aria-label="Farmer tools">
+      <a href="upload.html" class="farmer-task-card farmer-task-primary">
+        <span class="farmer-task-kicker">Wide field photo</span>
+        <strong>Count Maize Tassels</strong>
+        <span>Upload a maize-field image to mark and count visible tassels.</span>
+        <b>Start counting →</b>
+      </a>
+      <a href="leaf.html" class="farmer-task-card farmer-task-leaf">
+        <span class="farmer-task-kicker">Close-up leaf photo</span>
+        <strong>Check Leaf Health</strong>
+        <span>Screen visible leaf signs and optionally ask your Agronomist for help.</span>
+        <b>Check a leaf →</b>
+      </a>
+      <a href="result.html" class="farmer-task-card">
+        <span class="farmer-task-kicker">Saved result</span>
+        <strong>Latest Tassel Result</strong>
+        <span>Return to your most recent marked image and count.</span>
+        <b>View result →</b>
+      </a>
     </div>
-    <div class="stat-card">
-      <div class="value" id="totalTassels">3,482</div>
-      <div class="label">Total Detected Tassels</div>
+
+    <div class="card-grid">
+      <div class="stat-card"><div class="value" id="totalImages">0</div><div class="label">Total Uploaded Images</div></div>
+      <div class="stat-card"><div class="value" id="totalTassels">0</div><div class="label">Total Detected Tassels</div></div>
+      <div class="stat-card"><div class="value" id="avgCount">0.0</div><div class="label">Average Tassel Count</div></div>
+      <div class="stat-card"><div class="value" id="modelStatus">Active</div><div class="label">Model Status</div></div>
     </div>
-    <div class="stat-card">
-      <div class="value" id="avgCount">27.2</div>
-      <div class="label">Average Tassel Count</div>
-    </div>
-    <div class="stat-card">
-      <div class="value" id="modelStatus">Active</div>
-      <div class="label">Model Status</div>
-    </div>
-  </div>
 
-  <!-- Recent Records (A.8 BCE: DashboardPage.simpleNavigation → linked records) -->
-  <div class="card">
-    <h3 style="margin-bottom:0.75rem;color:var(--green);">Recent Detection Records</h3>
-    <div class="table-wrap">
-    <table>
-      <thead><tr><th>Image</th><th>Date</th><th>Count</th><th>Confidence</th><th></th></tr></thead>
-      <tbody id="recentTable"></tbody>
-    </table>
-    </div>
-  </div>
-</div>
-
-<script src="../js/api.js?v=20260610-2"></script>
-<script src="../js/auth.js?v=20260610-2"></script>
-<script>
-setActiveNav();
-
-if (!requireRole(["Farmer"])) throw new Error('Access denied');
-initNav();
-
-
-
-// USER STORY A.8 Control calls: validate session and load own summary/history.
-async function loadDashboard() {
-  if (!await validateSession()) return;
-  const [statsRes, resultsRes] = await Promise.all([
-    apiGet('/api/stats'),
-    apiGet('/api/history'),
-  ]);
-
-  if (!statsRes.ok || !resultsRes.ok) {
-    document.getElementById('recentTable').innerHTML =
-      '<tr><td colspan="5" class="info-text">Unable to load dashboard data. Check the backend service.</td></tr>';
-    return;
-  }
-
-  const totalImages = statsRes.data.total_uploaded_images ?? 0;
-  const totalTassels = statsRes.data.total_detected_tassels ?? 0;
-  const avgCount = statsRes.data.average_tassel_count ?? 0;
-  const recentRecords = Array.isArray(resultsRes.data.records)
-    ? resultsRes.data.records.map(r => normalizeResult(r))
-    : [];
-
-  document.getElementById('totalImages').textContent = totalImages;
-  document.getElementById('totalTassels').textContent = Number(totalTassels).toLocaleString();
-  document.getElementById('avgCount').textContent = Number(avgCount).toFixed(1);
-
-  const rows = recentRecords.map(r => {
-    const badge = r.confidenceScore >= 0.9 ? 'badge-green' : 'badge-yellow';
-    return `<tr><td>${esc(r.imageName)}</td><td>${formatDate(r.createdAt)}</td><td>${r.tasselCount}</td><td><span class="badge ${badge}">${formatPercent(r.confidenceScore)}</span></td><td><a href="result.html?id=${r.resultId}" class="btn btn-sm btn-outline">View</a></td></tr>`;
-  }).join('');
-  document.getElementById('recentTable').innerHTML = rows ||
-    '<tr><td colspan="5" class="info-text">No detection records yet.</td></tr>';
-}
-
-loadDashboard();
-</script>
+    <section class="card">
+      <h2 class="dashboard-section-title">Recent Tassel Counts</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Image</th><th>Date</th><th>Count</th><th>Confidence</th><th></th></tr></thead>
+          <tbody id="recentTable"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+  <script src="../js/api.js?v=20260811-1"></script>
+  <script src="../js/auth.js?v=20260811-1"></script>
+  <script src="../js/dashboard.js?v=20260811-1"></script>
 </body>
 </html>
