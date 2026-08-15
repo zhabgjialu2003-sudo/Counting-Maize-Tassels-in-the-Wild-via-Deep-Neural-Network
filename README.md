@@ -212,7 +212,7 @@ Run the complete local suite against the configured PostgreSQL database:
 python -m unittest discover -s tests -v
 ```
 
-The latest verified baseline is **135 automated tests with zero failures**.
+The latest verified baseline is **136 automated tests with zero failures**.
 Exact environment notes, real-model smoke tests, and SHA-256 evidence are in
 [`docs/testing/TEST_RESULTS.md`](docs/testing/TEST_RESULTS.md).
 
