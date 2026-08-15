@@ -175,6 +175,28 @@ See [tassel model provenance](models/tassel/MODEL_PROVENANCE.md), the
 [disease model card](models/disease/MODEL_CARD.md), and
 [training and evaluation guidance](training/README.md).
 
+## Public HTTPS deployment
+
+[`render.yaml`](render.yaml) defines the assessment deployment as one Render
+Standard Python web service and one paid Render PostgreSQL database in
+Singapore. The deployment uses the same origin for the desktop interface,
+mobile interface, and API.
+
+The build installs CPU-only PyTorch, materialises both Git LFS model files, and
+checks their SHA-256 digests. The pre-deploy command initialises only an empty
+database, applies non-destructive migrations, and provisions the four fixed
+assessment accounts. `DEMO_ACCOUNT_PASSWORD` is entered as a Render secret and
+is never committed. Public one-click Demo Access remains unavailable; users
+must sign in normally.
+
+Create the Blueprint after the deployment commit is available on `main`:
+
+[`Deploy to Render`](https://dashboard.render.com/blueprint/new?repo=https://github.com/zhabgjialu2003-sudo/Counting-Maize-Tassels-in-the-Wild-via-Deep-Neural-Network)
+
+The first release keeps automatic deployment disabled. Enable it only after the
+public health check, four role logins, tassel counting, and leaf screening have
+all passed.
+
 ## Dataset policy
 
 Large third-party datasets are not committed as a miscellaneous image dump.
@@ -190,7 +212,7 @@ Run the complete local suite against the configured PostgreSQL database:
 python -m unittest discover -s tests -v
 ```
 
-The latest verified baseline is **122 automated tests with zero failures**.
+The latest verified baseline is **135 automated tests with zero failures**.
 Exact environment notes, real-model smoke tests, and SHA-256 evidence are in
 [`docs/testing/TEST_RESULTS.md`](docs/testing/TEST_RESULTS.md).
 

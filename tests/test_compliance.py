@@ -2,9 +2,12 @@ import io
 import json
 import tempfile
 import unittest
+import uuid
 import zipfile
 from pathlib import Path
 from unittest.mock import patch
+
+from PIL import Image
 
 import backend.app as backend
 
@@ -100,6 +103,92 @@ class ComplianceApiTests(unittest.TestCase):
             )
         self.assertEqual(response.status_code, 409)
         self.assertIn("approved storage", response.get_json()["message"])
+
+    def test_admin_can_list_stored_images_for_preprocessing(self):
+        response = self.client.get(
+            "/api/system/images?limit=5",
+            headers=self.headers("Admin", 4),
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertLessEqual(len(payload["images"]), 5)
+        self.assertEqual(payload["total"], len(payload["images"]))
+        if payload["images"]:
+            self.assertIn("image_id", payload["images"][0])
+            self.assertIn("original_filename", payload["images"][0])
+        source = (Path(__file__).resolve().parents[1] / "frontend" / "pages" / "system.html").read_text("utf-8")
+        self.assertIn('<select id="preprocessImageId" disabled>', source)
+        self.assertIn("apiGet('/api/system/images?limit=50')", source)
+        self.assertNotIn('id="preprocessImageId" type="number" value="1"', source)
+
+    def test_non_admin_cannot_list_preprocessing_images(self):
+        response = self.client.get(
+            "/api/system/images",
+            headers=self.headers("Researcher", 2),
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_admin_preprocesses_an_encrypted_database_original(self):
+        raw = io.BytesIO()
+        Image.new("RGB", (900, 700), (24, 120, 40)).save(raw, format="PNG")
+        original = raw.getvalue()
+        image_name = f"preprocess-{uuid.uuid4().hex}.png"
+        with backend.db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO images (
+                        user_id, image_name, image_path, status, file_size,
+                        original_filename, mime_type, image_width, image_height, validated
+                    ) VALUES (%s, %s, %s, 'pending', %s, %s, 'image/png', 900, 700, TRUE)
+                    RETURNING image_id
+                    """,
+                    (1, image_name, f"database://images/{image_name}", len(original), "field-test.png"),
+                )
+                image_id = cur.fetchone()["image_id"]
+            backend.store_image_blob(
+                conn,
+                image_id,
+                "original",
+                image_name,
+                "image/png",
+                backend.encryption_cipher().encrypt(original),
+                encrypted=True,
+            )
+
+        old_upload_dir = backend.UPLOAD_DIR
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                backend.UPLOAD_DIR = Path(directory)
+                response = self.client.post(
+                    f"/api/system/preprocess/{image_id}",
+                    headers=self.headers("Admin", 4),
+                    json={"augment": True},
+                )
+                self.assertEqual(response.status_code, 200)
+                payload = response.get_json()
+                self.assertTrue(payload["preprocessed"])
+                self.assertIn("horizontal augmentation", payload["steps"])
+                with Image.open(io.BytesIO(backend.secure_read_bytes(payload["preprocessed_name"]))) as processed:
+                    self.assertLessEqual(max(processed.size), 640)
+                with backend.db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "SELECT preprocessed, preprocessed_path FROM images WHERE image_id = %s",
+                            (image_id,),
+                        )
+                        row = cur.fetchone()
+                self.assertTrue(row["preprocessed"])
+                self.assertTrue(row["preprocessed_path"])
+        finally:
+            backend.UPLOAD_DIR = old_upload_dir
+            with backend.db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "DELETE FROM system_logs WHERE action = 'image_preprocessed' AND details LIKE %s",
+                        (f"image_id={image_id},%",),
+                    )
+                    cur.execute("DELETE FROM images WHERE image_id = %s", (image_id,))
 
     def test_farmer_cannot_compare_models(self):
         response = self.client.post(

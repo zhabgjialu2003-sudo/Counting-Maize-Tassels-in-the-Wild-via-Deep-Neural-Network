@@ -718,6 +718,11 @@ def create_scheduled_backup() -> Path:
 def start_backup_scheduler() -> None:
     """Start one daemon that creates regular backups while the API is running."""
     global _backup_scheduler_started
+    if os.getenv("AUTO_BACKUP_ENABLED", "true").strip().lower() not in {
+        "1", "true", "yes", "on"
+    }:
+        app.logger.info("Scheduled filesystem backups are disabled")
+        return
     if _backup_scheduler_started:
         return
     _backup_scheduler_started = True
@@ -1097,6 +1102,24 @@ def uploaded_file(filename: str):
 @app.route("/api/health", methods=["GET"])
 def health():
     ready, error = db_ready()
+    tassel_health = {
+        "available": False,
+        "status": "unavailable",
+        "model_path": None,
+        "error": "Tassel inference module could not be imported",
+    }
+    if get_predictor is not None:
+        try:
+            predictor = get_predictor()
+            available = bool(predictor.available)
+            tassel_health = {
+                "available": available,
+                "status": "ready" if available else "unavailable",
+                "model_path": predictor.model_path.name,
+                "error": None if available else "Tassel artifact unavailable",
+            }
+        except Exception:
+            tassel_health["error"] = "Tassel model health check is unavailable"
     disease_health = {
         "available": False,
         "status": "unavailable",
@@ -1109,15 +1132,19 @@ def health():
             disease_health = get_disease_predictor().health()
         except Exception as exc:
             disease_health["error"] = "Disease model health check is unavailable"
+    models_ready = tassel_health["available"] and disease_health["available"]
+    require_models = os.getenv("REQUIRE_MODELS_HEALTHY", "false").lower() == "true"
+    service_ready = ready and (models_ready or not require_models)
     payload = {
-        "status": "ok" if ready else "degraded",
+        "status": "ok" if service_ready else "degraded",
         "service": "Maize Detector API",
         "version": "1.1.0",
         "database": "connected" if ready else "unavailable",
         "database_error": "Database connection unavailable" if not ready else None,
+        "tassel_model": tassel_health,
         "disease_model": disease_health,
     }
-    return ok(payload, 200 if ready else 503)
+    return ok(payload, 200 if service_ready else 503)
 
 
 # Shared authentication control (A.7, A.8, D.1, D.5).
@@ -4056,6 +4083,40 @@ def field_insights():
     })
 
 
+# USER STORY E.1 - List stored originals that are ready for preprocessing.
+@app.route("/api/system/images", methods=["GET"])
+@require_roles("Admin")
+def preprocessing_images():
+    try:
+        limit = max(1, min(int(request.args.get("limit", 50)), 100))
+    except (TypeError, ValueError):
+        return fail("limit must be an integer between 1 and 100", 400)
+    try:
+        with db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT i.image_id,
+                           i.image_name,
+                           COALESCE(NULLIF(i.original_filename, ''), i.image_name) AS original_filename,
+                           i.preprocessed,
+                           i.upload_time,
+                           f.file_size
+                    FROM images i
+                    JOIN image_files f
+                      ON f.image_id = i.image_id
+                     AND f.file_type = 'original'
+                    ORDER BY i.upload_time DESC, i.image_id DESC
+                    LIMIT %s
+                    """,
+                    (limit,),
+                )
+                images = cur.fetchall()
+        return ok({"images": images, "total": len(images), "source": "database"})
+    except Exception as exc:
+        return db_error_response(exc)
+
+
 # USER STORY E.1 - Preprocess and securely save an image.
 @app.route("/api/system/preprocess/<int:image_id>", methods=["POST"])
 @require_roles("Admin")
@@ -4065,17 +4126,37 @@ def preprocess_image(image_id: int):
     try:
         with db_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT image_name FROM images WHERE image_id = %s", (image_id,))
+                cur.execute(
+                    """
+                    SELECT i.image_name,
+                           f.image_data,
+                           f.encrypted
+                    FROM images i
+                    LEFT JOIN image_files f
+                      ON f.image_id = i.image_id
+                     AND f.file_type = 'original'
+                    WHERE i.image_id = %s
+                    """,
+                    (image_id,),
+                )
                 image = cur.fetchone()
         if not image:
             return fail("Image not found", 404)
         from PIL import Image, ImageOps
-        with materialized_image(image["image_name"]) as source:
-            processed = ImageOps.exif_transpose(Image.open(source).convert("RGB"))
-            processed.thumbnail((640, 640))
-            if augment:
-                processed = ImageOps.mirror(processed)
-            output = tempfile.SpooledTemporaryFile()
+        if image.get("image_data") is not None:
+            original_data = bytes(image["image_data"])
+            if image.get("encrypted", True):
+                original_data = encryption_cipher().decrypt(original_data)
+            with Image.open(io.BytesIO(original_data)) as opened:
+                processed = ImageOps.exif_transpose(opened).convert("RGB")
+        else:
+            with materialized_image(image["image_name"]) as source:
+                with Image.open(source) as opened:
+                    processed = ImageOps.exif_transpose(opened).convert("RGB")
+        processed.thumbnail((640, 640))
+        if augment:
+            processed = ImageOps.mirror(processed)
+        with tempfile.SpooledTemporaryFile() as output:
             processed.save(output, format="JPEG", quality=90)
             output.seek(0)
             data = output.read()
