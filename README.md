@@ -10,6 +10,7 @@ in field images. It combines real YOLO inference, calibrated maize leaf-disease
 screening, PostgreSQL persistence, secure image handling, role-based workflows,
 and an installable mobile Progressive Web App (PWA).
 
+- Live application: [Maize Detector HTTPS service](https://maize-detector.onrender.com)
 - Project website: [GitHub Pages](https://zhabgjialu2003-sudo.github.io/Counting-Maize-Tassels-in-the-Wild-via-Deep-Neural-Network/)
 - Assessment entry point: [Assessment Evidence Index](docs/ASSESSMENT_INDEX.md)
 - User instructions: [User Manual](docs/manuals/USER_MANUAL.md)
