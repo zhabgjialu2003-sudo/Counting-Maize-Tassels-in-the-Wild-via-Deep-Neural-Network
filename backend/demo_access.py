@@ -1,4 +1,4 @@
-"""Local-only demo account metadata and exposure controls."""
+"""Demo account metadata and explicit exposure controls."""
 
 from __future__ import annotations
 
@@ -31,11 +31,13 @@ def normalized_hostname(host: str | None) -> str:
 
 
 def demo_access_payload(host: str | None) -> dict:
-    """Return credentials only for an explicitly enabled trusted local request."""
+    """Return credentials only when demo access is explicitly enabled for the host."""
     if not environment_flag("DEMO_ACCESS_ENABLED"):
         return {"enabled": False}
     hostname = normalized_hostname(host)
-    trusted_host = hostname in LOOPBACK_HOSTS
+    trusted_host = hostname in LOOPBACK_HOSTS or environment_flag(
+        "DEMO_ACCESS_ALLOW_PUBLIC"
+    )
     if not trusted_host and environment_flag("DEMO_ACCESS_ALLOW_PRIVATE_NETWORK"):
         try:
             address = ip_address(hostname)

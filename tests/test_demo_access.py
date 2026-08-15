@@ -18,6 +18,7 @@ class DemoAccessApiTests(unittest.TestCase):
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("DEMO_ACCESS_ENABLED", None)
             os.environ.pop("DEMO_ACCESS_ALLOW_PRIVATE_NETWORK", None)
+            os.environ.pop("DEMO_ACCESS_ALLOW_PUBLIC", None)
             os.environ.pop("DEMO_ACCOUNT_PASSWORD", None)
             response = self.client.get("/api/demo-access", headers={"Host": "localhost:5000"})
         self.assertEqual(response.status_code, 200)
@@ -28,6 +29,7 @@ class DemoAccessApiTests(unittest.TestCase):
         configured = {
             "DEMO_ACCESS_ENABLED": "true",
             "DEMO_ACCESS_ALLOW_PRIVATE_NETWORK": "false",
+            "DEMO_ACCESS_ALLOW_PUBLIC": "false",
             "DEMO_ACCOUNT_PASSWORD": "local-demo-pass",
         }
         with patch.dict(os.environ, configured, clear=False):
@@ -39,6 +41,7 @@ class DemoAccessApiTests(unittest.TestCase):
         configured = {
             "DEMO_ACCESS_ENABLED": "true",
             "DEMO_ACCESS_ALLOW_PRIVATE_NETWORK": "true",
+            "DEMO_ACCESS_ALLOW_PUBLIC": "false",
             "DEMO_ACCOUNT_PASSWORD": "local-demo-pass",
         }
         with patch.dict(os.environ, configured, clear=False):
@@ -48,7 +51,11 @@ class DemoAccessApiTests(unittest.TestCase):
         self.assertTrue(response.get_json()["enabled"])
 
     def test_enabled_demo_access_returns_four_roles_only_on_loopback(self):
-        configured = {"DEMO_ACCESS_ENABLED": "true", "DEMO_ACCOUNT_PASSWORD": "local-demo-pass"}
+        configured = {
+            "DEMO_ACCESS_ENABLED": "true",
+            "DEMO_ACCESS_ALLOW_PUBLIC": "false",
+            "DEMO_ACCOUNT_PASSWORD": "local-demo-pass",
+        }
         with patch.dict(os.environ, configured, clear=False):
             for host in ("localhost:5000", "127.0.0.1:5000", "[::1]:5000"):
                 response = self.client.get("/api/demo-access", headers={"Host": host})
@@ -59,6 +66,25 @@ class DemoAccessApiTests(unittest.TestCase):
                     [account["role"] for account in data["accounts"]],
                     ["Farmer", "Researcher", "Agronomist", "Admin"],
                 )
+
+    def test_public_demo_access_requires_explicit_opt_in(self):
+        configured = {
+            "DEMO_ACCESS_ENABLED": "true",
+            "DEMO_ACCESS_ALLOW_PUBLIC": "true",
+            "DEMO_ACCOUNT_PASSWORD": "public-demo-pass",
+        }
+        with patch.dict(os.environ, configured, clear=False):
+            response = self.client.get(
+                "/api/demo-access", headers={"Host": "maize-detector.onrender.com"}
+            )
+        data = response.get_json()
+        self.assertTrue(data["enabled"])
+        self.assertEqual(data["shared_password"], "public-demo-pass")
+        self.assertEqual(
+            [account["role"] for account in data["accounts"]],
+            ["Farmer", "Researcher", "Agronomist", "Admin"],
+        )
+        self.assertEqual(response.headers["Cache-Control"], "no-store")
 
 
 class DemoAccessFrontendTests(unittest.TestCase):
@@ -75,6 +101,7 @@ class DemoAccessFrontendTests(unittest.TestCase):
         example = (ROOT / ".env.example").read_text(encoding="utf-8")
         self.assertIn("DEMO_ACCESS_ENABLED=false", example)
         self.assertIn("DEMO_ACCESS_ALLOW_PRIVATE_NETWORK=false", example)
+        self.assertIn("DEMO_ACCESS_ALLOW_PUBLIC=false", example)
         self.assertIn("DEMO_ACCOUNT_PASSWORD=", example)
 
 

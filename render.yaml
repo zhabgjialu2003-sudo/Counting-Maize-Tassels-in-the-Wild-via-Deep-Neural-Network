@@ -80,6 +80,8 @@ services:
         value: "true"
       - key: DEMO_ACCESS_ALLOW_PRIVATE_NETWORK
         value: "false"
+      - key: DEMO_ACCESS_ALLOW_PUBLIC
+        value: "true"
       - key: ALLOW_QUERY_TOKEN
         value: "false"
       - key: AUTO_MIGRATE
