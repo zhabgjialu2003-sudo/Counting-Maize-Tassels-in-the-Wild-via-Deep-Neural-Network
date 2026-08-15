@@ -68,6 +68,14 @@ services:
         value: "52428800"
       - key: INFERENCE_CACHE_SIZE
         value: "16"
+      - key: INFERENCE_FAST_IMAGE_SIZE
+        value: "1024"
+      - key: OMP_NUM_THREADS
+        value: "1"
+      - key: MKL_NUM_THREADS
+        value: "1"
+      - key: MALLOC_ARENA_MAX
+        value: "2"
       - key: DEMO_ACCESS_ENABLED
         value: "true"
       - key: DEMO_ACCESS_ALLOW_PRIVATE_NETWORK

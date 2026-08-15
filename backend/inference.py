@@ -47,6 +47,16 @@ TILE_SIZE = 640
 TILE_OVERLAP = 0.30   # 30% overlap between tiles
 CONF_THRESHOLD = 0.25
 IOU_NMS = 0.4
+DEFAULT_FAST_IMAGE_SIZE = 2560
+
+
+def _configured_fast_image_size() -> int:
+    """Return a bounded fast-mode size so hosted CPU inference stays stable."""
+    try:
+        configured = int(os.getenv("INFERENCE_FAST_IMAGE_SIZE", str(DEFAULT_FAST_IMAGE_SIZE)))
+    except ValueError:
+        configured = DEFAULT_FAST_IMAGE_SIZE
+    return max(640, min(configured, DEFAULT_FAST_IMAGE_SIZE))
 
 
 def _load_yolo(model_path: Path) -> Any:
@@ -100,10 +110,16 @@ def _nms_boxes(boxes_xyxy, scores, iou_thr):
 class YOLOPredictor:
     """YOLO predictor with automatic SAHI tiling for large images."""
 
-    def __init__(self, model_path: Path | None = None, max_cache_entries: int | None = None):
+    def __init__(
+        self,
+        model_path: Path | None = None,
+        max_cache_entries: int | None = None,
+        fast_image_size: int | None = None,
+    ):
         self._model_path = model_path or DEFAULT_MODEL_PATH
         self._model: Any = None  # ultralytics.YOLO or None
         self._available: bool | None = None
+        self._fast_image_size = fast_image_size or _configured_fast_image_size()
         configured_capacity = int(os.getenv("INFERENCE_CACHE_SIZE", "128"))
         self._max_cache_entries = max(1, max_cache_entries or configured_capacity)
         self._cache: OrderedDict[str, dict[str, Any]] = OrderedDict()
@@ -186,7 +202,10 @@ class YOLOPredictor:
             raise RuntimeError("YOLO model is not available for inference")
 
         image_path = Path(image_path)
-        cache_key = f"{self._content_digest(image_path)}:{self._model_identity()}:{mode}"
+        cache_key = (
+            f"{self._content_digest(image_path)}:{self._model_identity()}:"
+            f"{mode}:{self._fast_image_size}"
+        )
         with self._lock:
             if cache_key in self._cache:
                 self._cache.move_to_end(cache_key)
@@ -203,7 +222,7 @@ class YOLOPredictor:
             if mode == "fast":
                 all_boxes = self._detect_single(
                     img,
-                    image_size=2560,
+                    image_size=self._fast_image_size,
                     confidence_threshold=0.15,
                 )
             elif W <= TILE_SIZE * 1.5 and H <= TILE_SIZE * 1.5:

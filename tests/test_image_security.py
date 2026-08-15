@@ -87,6 +87,18 @@ class InferenceCacheTests(unittest.TestCase):
                     predictor.detect(path)
         self.assertEqual(predictor.cache_info(), {"size": 1, "capacity": 1})
 
+    def test_fast_image_size_can_be_reduced_for_hosted_inference(self):
+        with patch.dict("os.environ", {"INFERENCE_FAST_IMAGE_SIZE": "1024"}):
+            predictor = YOLOPredictor(Path("test-model.pt"))
+        predictor._available = True
+        predictor._model = object()
+        with tempfile.TemporaryDirectory() as directory:
+            image_path = Path(directory) / "field.png"
+            image_path.write_bytes(image_bytes((20, 120, 40)))
+            with patch.object(predictor, "_detect_single", return_value=[]) as detect:
+                predictor.detect(image_path, mode="fast")
+        self.assertEqual(detect.call_args.kwargs["image_size"], 1024)
+
 
 if __name__ == "__main__":
     unittest.main()
