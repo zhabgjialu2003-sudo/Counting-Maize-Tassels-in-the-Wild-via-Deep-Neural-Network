@@ -2,6 +2,7 @@ services:
   - type: web
     name: maize-detector
     runtime: python
+    repo: https://github.com/zhabgjialu2003-sudo/Counting-Maize-Tassels-in-the-Wild-via-Deep-Neural-Network
     plan: standard
     region: singapore
     branch: main
