@@ -17,11 +17,11 @@
   <div class="card">
     <h3 style="color:var(--green);">E.1 Image Preprocessing</h3>
     <div style="display:flex;gap:0.75rem;align-items:end;flex-wrap:wrap;">
-      <div class="form-group"><label>Database Image ID</label><input id="preprocessImageId" type="number" value="1" min="1"></div>
+      <div class="form-group"><label for="preprocessImageId">Stored maize image</label><select id="preprocessImageId" disabled><option>Loading stored images...</option></select></div>
       <label class="toggle"><input id="augmentImage" type="checkbox"> Apply horizontal augmentation</label>
       <button class="btn btn-primary" id="runPreprocess">Run Pipeline</button>
     </div>
-    <p id="preprocessMsg" class="info-text"></p>
+    <p id="preprocessMsg" class="info-text" role="status" aria-live="polite"></p>
   </div>
 
   <div class="card">
@@ -77,12 +77,15 @@ function metric(value) {
 }
 
 async function loadSystem() {
-  const [statusResult, modelResult, datasetResult] = await Promise.all([
-    apiGet('/api/system/status'), apiGet('/api/models'), apiGet('/api/datasets')
+  const [statusResult, modelResult, datasetResult, imageResult] = await Promise.all([
+    apiGet('/api/system/status'), apiGet('/api/models'), apiGet('/api/datasets'),
+    apiGet('/api/system/images?limit=50')
   ]);
   const status = statusResult.ok ? statusResult.data : {};
   models = modelResult.ok ? modelResult.data.models : [];
   const datasets = datasetResult.ok ? datasetResult.data.datasets : [];
+  const storedImages = imageResult.ok && Array.isArray(imageResult.data.images)
+    ? imageResult.data.images : [];
   document.getElementById('systemCards').innerHTML =
     '<div class="stat-card"><div class="value">' + (status.model_file_exists ? 'Found' : 'Missing') + '</div><div class="label">Tassel model</div></div>' +
     '<div class="stat-card"><div class="value">' + (status.inference_available ? 'Ready' : 'Fallback') + '</div><div class="label">Inference Service</div></div>' +
@@ -102,15 +105,40 @@ async function loadSystem() {
   document.getElementById('trainingDataset').innerHTML = datasets.map(dataset =>
     '<option value="' + dataset.dataset_id + '">' + esc(dataset.dataset_name) + '</option>'
   ).join('');
+  const imageSelect = document.getElementById('preprocessImageId');
+  const preprocessButton = document.getElementById('runPreprocess');
+  imageSelect.innerHTML = storedImages.length
+    ? storedImages.map(image =>
+        '<option value="' + image.image_id + '">#' + image.image_id + ' — ' +
+        esc(image.original_filename) + (image.preprocessed ? ' (processed)' : ' (ready)') + '</option>'
+      ).join('')
+    : '<option value="">No stored images available</option>';
+  imageSelect.disabled = !storedImages.length;
+  preprocessButton.disabled = !storedImages.length;
+  if (!storedImages.length) {
+    document.getElementById('preprocessMsg').textContent = imageResult.ok
+      ? 'Upload a maize image before running preprocessing.'
+      : (imageResult.error || 'Stored images could not be loaded.');
+  }
 }
 
 // USER STORY E.1 Control call: preprocess one stored image.
 document.getElementById('runPreprocess').onclick = async function() {
-  const result = await apiPost('/api/system/preprocess/' + document.getElementById('preprocessImageId').value, {
+  const imageId = Number(document.getElementById('preprocessImageId').value);
+  const message = document.getElementById('preprocessMsg');
+  if (!Number.isInteger(imageId) || imageId < 1) {
+    message.textContent = 'Choose a stored image first.';
+    return;
+  }
+  this.disabled = true;
+  message.textContent = 'Preprocessing the selected image...';
+  const result = await apiPost('/api/system/preprocess/' + imageId, {
     augment: document.getElementById('augmentImage').checked
   });
-  document.getElementById('preprocessMsg').textContent = result.ok
+  message.textContent = result.ok
     ? 'Completed and saved: ' + result.data.steps.join(', ') : (result.error || 'Preprocessing failed.');
+  this.disabled = false;
+  if (result.ok) loadSystem();
 };
 
 // USER STORY E.2 Control call: queue or execute an Ultralytics training run.

@@ -6,7 +6,7 @@
 |------|--------|--------|-------------|
 | 1 | Open project website | index.html | "This is our project entry point showing the overview, team, and document links." |
 | 2 | Click "Live Prototype" → Login | login.html | "We have 4 demo roles: Farmer, Researcher, Agronomist, Admin. Let me log in as Farmer." |
-| 3 | Login as john@farm.com / 123456 | dashboard.html | "The Farmer dashboard shows quick actions and recent results." |
+| 3 | Login as `john@farm.com` with the configured Demo password | dashboard.html | "The Farmer dashboard shows quick actions and recent results." |
 | 4 | Click "Upload Image" → Select JPG | upload.html | "Upload a maize field image — JPG/PNG supported, PDF rejected with error message." |
 | 5 | Click "Analyze" | loading → result.html | "The system processes the image. If the AI model is connected, it uses YOLO26s; otherwise mock data runs the same flow." |
 | 6 | Show result page | result.html | "Tassel count, confidence score, annotated image with bounding boxes, compare toggle." |

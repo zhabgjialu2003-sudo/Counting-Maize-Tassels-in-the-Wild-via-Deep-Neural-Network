@@ -45,7 +45,7 @@ class SubmissionReadinessTests(unittest.TestCase):
             "Admin",
             "System",
             "Assessment Evidence Index",
-            "122 automated tests with zero failures",
+            "135 automated tests with zero failures",
             "models/deployment/tassel-best.pt",
             "models/deployment/maize-disease.torchscript.pt",
         ):
@@ -74,9 +74,13 @@ class SubmissionReadinessTests(unittest.TestCase):
         schema = (ROOT / "database/schema/schema_postgresql.sql").read_text(
             encoding="utf-8"
         )
+        demo_flow = (
+            ROOT / "coursework/week-10/submission/04-Demo-Flow-and-Backup-Plan.md"
+        ).read_text(encoding="utf-8")
         self.assertNotIn("fillDemo(", login)
         self.assertNotIn("Password: 123456", login)
         self.assertNotIn("sha256$8d969eef6eca", schema)
+        self.assertNotIn("john@farm.com / 123456", demo_flow)
         self.assertTrue((ROOT / "backend/scripts/bootstrap_admin.py").is_file())
 
 
